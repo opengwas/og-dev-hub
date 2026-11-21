@@ -18,8 +18,18 @@ work out.
 "OpenGWASDB" is retired. "OpenGWAS" is the whole platform, and "legacy
 OpenGWAS" is the service in production today. OpenGWAS is pre-release, so the
 rename rewrites every old name, ADR bodies included, rather than mapping old
-names to new. The one exception is the host directory `/data/opengwasdb/`,
-which moves separately, once no run is writing there.
+names to new. There are two exceptions.
+
+- **The host directory `/data/opengwasdb/`.** It moves separately, once no run
+  is writing there.
+- **Names written inside the data.** These are labels that code looks up in
+  Stores already built, not prose: the LD Store key `software.ogld`; the GWAS
+  Store record keys `opengwasdb_version`, `opengwasdb_rev` and
+  `opengwasdb_executable`; and the `opengwasdb.*` reader IDs in Release
+  Bundles and inventories. Renaming them changes the format: every Store on
+  `/data` would fail validation or lose its provenance. They keep their names
+  in the current format versions, and each changes in its engine's next format
+  version, when the Stores are rebuilt anyway.
 
 ## Considered options
 
