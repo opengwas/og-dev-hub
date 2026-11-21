@@ -111,7 +111,8 @@ A name is held in four kinds of place, and each kind changes differently.
 
 ```bash
 # in each clone, once its repository is renamed
-git remote set-url origin git@github.com:opengwas/<new-name>.git
+# keeps the clone's protocol (HTTPS or SSH); <old-name> and <new-name> as in the table
+git remote set-url origin "$(git remote get-url origin | sed 's#/<old-name>\(\.git\)\{0,1\}$#/<new-name>.git#')"
 git fetch origin && git rebase origin/main    # or your branch's new base
 pixi reinstall --locked                       # the old package name is gone
 # rename any OPENGWASDB_*, OGSTORES_*, OGLD_*, OGDB_* variables in your shell profile and job scripts
