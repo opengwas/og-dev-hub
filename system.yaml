@@ -1,0 +1,134 @@
+# The OpenGWAS system model: the hub's hand-written half (ADR 0001).
+#
+# One container per thing that is deployed or published. Each repository's own
+# docs/architecture/components.yaml claims the components inside its
+# containers. The collector measures everything else (size, imports, which ADRs
+# cite what), so none of it is written here.
+#
+# DRAFT. Repositories are named as they will be after the rename (ADR 0004).
+# `visibility` decides how much the public site draws: a private repository is
+# drawn as a container only, until it is made public.
+#
+# Not yet here: the pipeline stages. The GWAS pipeline's stages are in
+# opengwasdb-stores' components.yaml, and the LD pipeline has none written
+# down. Where stages live is decided when the site moves here.
+
+system:
+  name: OpenGWAS
+  summary: Harmonised GWAS summary statistics and LD, built into versioned GWAS Stores and LD Stores and served through one Data API.
+
+people:
+  - id: researcher
+    name: Researcher
+    summary: Queries GWAS Stores and LD Stores through the Data API, from R, Python or the website (MR, PheWAS, colocalisation, clumping).
+  - id: curator
+    name: Curator / operator
+    summary: Selects sources and panels, runs and approves builds, publishes GWAS Stores and LD Stores.
+  - id: developer
+    name: Developer
+    summary: Builds OpenGWAS; reads the Dev Hub and the ops dashboard.
+
+external:
+  - id: sources
+    name: Summary-statistic sources
+    summary: GWAS Catalog (GWAS-SSF), FinnGen, legacy OpenGWAS/UKB (GWAS-VCF), eQTLGen and pQTL (BESD), dbGaP MVP.
+  - id: panels
+    name: Genotype and LD panels
+    summary: HGDP+1kGP genotypes, Pan-UKB LD, gnomAD and the Ancestry Reference Panels.
+  - id: tools
+    name: Analysis tools
+    summary: ieugwasr, TwoSampleMR and local R and Python sessions.
+  - id: legacy
+    name: Legacy OpenGWAS
+    summary: The OpenGWAS service in production today, which ieugwasr and ieugwaspy call, until OpenGWAS replaces it.
+  - id: github
+    name: GitHub
+    summary: Issues, the OpenGWAS project board, CI, releases and the published sites.
+
+repos:
+  - {name: og-gwas, formerly: opengwasdb, visibility: public}
+  - {name: og-gwas-stores, formerly: opengwasdb-stores, visibility: public}
+  - {name: og-ld, formerly: ogld, visibility: private}
+  - {name: og-ld-stores, formerly: null, visibility: null}
+  - {name: og-data-api, formerly: ogdb-api, visibility: private}
+  - {name: og-gateway, formerly: opengwas-gateway, visibility: public}
+  - {name: og-website, formerly: opengwasdb-website, visibility: public}
+  - {name: og-ops-dashboard, formerly: ogdb-dashboard, visibility: private}
+  - {name: og-dev-hub, formerly: null, visibility: public}
+  - {name: og-agent-skills, formerly: agent-skills, visibility: public}
+  - {name: opengwaspy, formerly: opengwaspy, visibility: public}
+  - {name: opengwasr, formerly: opengwasr, visibility: public}
+
+containers:
+  # GWAS
+  - {id: gwas_engine, name: og-gwas, repo: og-gwas, tech: Python package + CLI,
+     summary: "Reads sources, resolves Analyses, builds, validates, completes and queries GWAS Stores. Owns the GWAS Store format."}
+  - {id: gwas_registry, name: GWAS Store Registry, repo: og-gwas-stores, tech: Release Bundles in git,
+     summary: "The accepted Release Bundle of every GWAS Store, its lineage and status."}
+  - {id: gwas_generation, name: Manifest Generation, repo: og-gwas-stores, tech: Python + Snakemake,
+     summary: "Source Inventory to candidate Release Bundle, through source connectors and curation."}
+  - {id: gwas_orchestration, name: Release orchestration, repo: og-gwas-stores, tech: Python + Snakemake,
+     summary: "Plans and runs og-gwas for a Release Bundle, records each step, registers and publishes."}
+  - {id: catalog, name: Analysis Catalog, repo: og-gwas-stores, tech: SQLite,
+     summary: "A generated, versioned database over every Release Bundle."}
+  - {id: gwas_stores, name: GWAS Stores, repo: null, tech: Zarr v3 + SQLite + TSV on /data,
+     summary: "Built and Reference-Completed GWAS Store Releases (OGS-*)."}
+  # LD
+  - {id: ld_engine, name: og-ld, repo: og-ld, tech: Python package + CLI,
+     summary: "Builds, validates and queries LD Stores: clump, proxies, matrices. Owns the LD Store format."}
+  - {id: ld_registry, name: LD Store Registry, repo: og-ld-stores, tech: in git (format decided in og-ld-stores' first epic),
+     summary: "The curated record of every LD Store: panel, assembly, og-ld version, location, status."}
+  - {id: ld_builds, name: LD Store builds, repo: og-ld-stores, tech: Python,
+     summary: "The recipes that build each LD Store from its Source Panel, and the evidence for its release."}
+  - {id: ld_stores, name: LD Stores, repo: null, tech: LD Store format on /data,
+     summary: "One LD Store per (Source Panel, Reference Assembly)."}
+  # Serving
+  - {id: gateway, name: og-gateway, repo: og-gateway, tech: service,
+     summary: "Authentication, keys, rate limiting, logging and routing in front of the Data API."}
+  - {id: data_api, name: og-data-api, repo: og-data-api, tech: Python service,
+     summary: "GWAS Store and LD Store queries as jobs, with scheduling, a results cache and ieugwasr/ieugwaspy compatibility endpoints."}
+  # Clients and sites
+  - {id: opengwaspy, name: opengwaspy, repo: opengwaspy, tech: Python package,
+     summary: "The Data API and the gateway from Python, with an ieugwaspy-compatible layer."}
+  - {id: opengwasr, name: opengwasr, repo: opengwasr, tech: R package,
+     summary: "The Data API and the gateway from R."}
+  - {id: website, name: og-website, repo: og-website, tech: static site,
+     summary: "opengwas.io: browsing GWAS Stores and LD Stores, for researchers."}
+  - {id: ops_dashboard, name: og-ops-dashboard, repo: og-ops-dashboard, tech: web app,
+     summary: "Running state for developers: the Data API's workers and queue, the server, the loaded catalog version, and audited operations."}
+  - {id: dev_hub, name: Dev Hub, repo: og-dev-hub, tech: Quarto website,
+     summary: "Built state for developers, with the board's plan over it, the epics and both Store Registries."}
+
+container_relations:
+  - [curator, gwas_generation, "selects sources and maps traits with"]
+  - [curator, gwas_orchestration, "runs and approves GWAS builds with"]
+  - [curator, ld_builds, "runs and approves LD builds with"]
+  - [gwas_generation, sources, "inventories and downloads"]
+  - [gwas_generation, gwas_registry, "proposes Release Bundles to"]
+  - [gwas_generation, gwas_engine, "resolves Analyses with"]
+  - [gwas_orchestration, gwas_registry, "reads accepted bundles from"]
+  - [gwas_orchestration, gwas_engine, "runs build, validate and complete through"]
+  - [gwas_engine, panels, "completes and assigns ancestry against"]
+  - [gwas_engine, gwas_stores, "writes and reads"]
+  - [catalog, gwas_registry, "is generated from"]
+  - [ld_builds, panels, "reads genotypes and LD from"]
+  - [ld_builds, ld_engine, "builds and validates through"]
+  - [ld_builds, ld_registry, "records each LD Store in"]
+  - [ld_engine, ld_stores, "writes and reads"]
+  - [researcher, tools, "analyses with"]
+  - [researcher, website, "browses"]
+  - [tools, gateway, "query through"]
+  - [opengwaspy, gateway, "calls"]
+  - [opengwasr, gateway, "calls"]
+  - [gateway, data_api, "routes to"]
+  - [data_api, gwas_engine, "queries GWAS Stores through"]
+  - [data_api, ld_engine, "queries LD Stores through"]
+  - [data_api, catalog, "loads"]
+  - [website, catalog, "lists GWAS Stores from"]
+  - [website, ld_registry, "lists LD Stores from"]
+  - [developer, dev_hub, "reads"]
+  - [developer, ops_dashboard, "operates through"]
+  - [ops_dashboard, data_api, "monitors and operates"]
+  - [dev_hub, gwas_registry, "collects"]
+  - [dev_hub, ld_registry, "collects"]
+  - [dev_hub, github, "collects the board and every repository from"]
