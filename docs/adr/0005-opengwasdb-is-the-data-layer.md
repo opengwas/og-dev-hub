@@ -27,8 +27,11 @@ We consolidate the data layer, which is what "OpenGWASDB" now names:
 - **ogld is archived, not deleted.** Its open issues move to opengwasdb, and
   its history stays readable.
 
-All of it is licensed GPL-3.0-only with the CLA. opengwasdb and
-opengwasdb-stores move from the Sustainable Use License before any code moves.
+All of it is licensed GPL-3.0-only with the CLA, and the University of Bristol
+holds the copyright, as it does for ogld and opengwaspy. Before any code moves,
+opengwasdb moves from the Sustainable Use License (opengwasdb ADR 0082,
+superseded by opengwasdb ADR 0086) and opengwasdb-stores from AGPL-3.0
+(opengwasdb#452).
 
 Names change only where the merge needs them. `opengwasdb`, `opengwasdb-stores`
 and `ogstores` keep their names, and so do the names written inside GWAS
