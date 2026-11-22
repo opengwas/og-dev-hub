@@ -1,5 +1,9 @@
 # Repository name = package name = command, and OpenGWASDB is retired
 
+> **Superseded by [ADR 0005](./0005-opengwasdb-is-the-data-layer.md)** (owner, 22 November 2026).
+> No repository is renamed under this ADR. ogld merges into opengwasdb instead,
+> "OpenGWASDB" names the data layer, and the names below were never adopted.
+
 Each repository's name is the name of the package it installs and of the
 command it provides, and the import name is the same with `_` in place of `-`.
 For example, `og-ld` is installed as `og-ld`, imported as `og_ld` and run as

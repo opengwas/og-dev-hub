@@ -4,8 +4,8 @@ OpenGWAS spans a dozen repositories, and its architecture, epics and Store
 inventories had no one place to be seen. We decided that og-dev-hub *draws*
 them, and owns none of them:
 - each repository claims its own components (`docs/architecture/components.yaml`);
-- the GWAS Store Registry stays in og-gwas-stores, and the LD Store Registry
-  lives in og-ld-stores, where the pull request that builds a Store also records it;
+- the GWAS Store Registry and the LD Store Registry live in opengwasdb-stores,
+  where the pull request that builds a Store also records it;
 - epic records stay in each epic's own repository;
 - the hub measures the rest (size, imports, which ADRs cite what) from the code.
 
@@ -22,7 +22,7 @@ falling behind must not stop the others being drawn.
 The three kinds of state each have one home:
 - planned state is on the OpenGWAS project board;
 - built state is in the Dev Hub;
-- running state is on og-ops-dashboard.
+- running state is on the ops dashboard (ogdb-dashboard).
 
 None of them copies another.
 
