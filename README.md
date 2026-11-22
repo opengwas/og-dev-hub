@@ -23,21 +23,21 @@ repository writes by hand only what no single repository owns:
 |---|---|
 | Planned: what is being built, and where it stands | The [OpenGWAS project board](https://github.com/orgs/opengwas/projects/1) |
 | Built: components, imports, decisions | This hub |
-| Running: whether each service is up, and how loaded it is | og-ops-dashboard |
+| Running: whether each service is up, and how loaded it is | The ops dashboard (ogdb-dashboard) |
 
 ## What every repository provides
 
 - `docs/architecture/components.yaml`: its components, and the paths each one claims
 - `CONTEXT.md`: its own terms. A term shared with another repository is in this hub's `CONTEXT.md`
-- `docs/adr/`: its decisions, which can be empty. A citation that crosses repositories names the repository: `og-gwas ADR 0039`
+- `docs/adr/`: its decisions, which can be empty. A citation that crosses repositories names the repository: `opengwasdb ADR 0039`
 
 A repository missing one is drawn as a gap, never a failed build. Each
 repository adds them when its next epic starts.
 
 ## Status
 
-**Draft.** The repositories are named here by the names they take after the
-rename ([ADR 0004](docs/adr/0004-repo-name-is-package-name-is-command.md)).
-The rename has not happened yet and is being scheduled with the developers. The
-site itself (the collector and the pages, now in opengwasdb-stores'
-`project_site`) moves here after the rename.
+**Draft.** The repositories are named here as they are today. ogld is being
+merged into opengwasdb ([ADR 0005](docs/adr/0005-opengwasdb-is-the-data-layer.md),
+[the consolidation plan](docs/consolidation-plan.md)). The site itself (the
+collector and the pages, now in opengwasdb-stores' `project_site`) moves here
+afterwards.

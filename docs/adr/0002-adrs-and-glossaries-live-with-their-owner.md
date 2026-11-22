@@ -1,15 +1,15 @@
 # ADRs and glossaries live with their owner
 
 An ADR lives in the repository that owns what it decides, as a component lives
-in the repository that owns its code. A decision binding og-gwas-stores to the
-GWAS Store format lives in og-gwas, which owns the format. og-dev-hub holds
+in the repository that owns its code. A decision binding opengwasdb-stores to the
+GWAS Store format lives in opengwasdb, which owns the format. og-dev-hub holds
 only:
 - decisions with no single owner;
 - the glossary of terms that cross repositories;
 - a map of every repository's `CONTEXT.md`;
 - a generated index of every ADR in every repository.
 
-A citation that crosses repositories names the repository (`og-gwas ADR 0039`),
+A citation that crosses repositories names the repository (`opengwasdb ADR 0039`),
 because the same number means different things in different repositories.
 
 Agents work in one checkout. They load that repository's `CONTEXT.md` and ADRs

@@ -9,8 +9,14 @@ repositories; each repository's `CONTEXT.md` holds its own.
 **OpenGWAS**:
 The whole platform: every data system, service, client and site the
 organisation builds.
-_Avoid_: OpenGWASDB (a retired name with no referent); "the platform" in
+_Avoid_: OpenGWASDB, when the whole platform is meant; "the platform" in
 writing that will outlive the conversation.
+
+**OpenGWASDB**:
+The data layer of OpenGWAS: the engine that builds and validates GWAS Stores
+and LD Stores and owns both formats, the Stores themselves, and their
+registries. Not the services, clients or sites that read it.
+_Avoid_: OpenGWASDB for the whole platform; OpenGWASDB for the GWAS side alone.
 
 **Legacy OpenGWAS**:
 The OpenGWAS service in production today, which ieugwasr and ieugwaspy call,
@@ -34,7 +40,8 @@ repositories.
 
 **LD Store**:
 Short for OpenGWAS LD Store: the published LD of one Source Panel on one
-Reference Assembly (defined in ogld's `CONTEXT.md`). Not a kind of GWAS Store:
+Reference Assembly (defined in ogld's `CONTEXT.md` until ogld merges into
+opengwasdb). Not a kind of GWAS Store:
 the two share a word and nothing else.
 _Avoid_: bare "Store" in writing that crosses repositories; LD panel; LD
 Reference Panel, which is the engine's per-block resource for reference
