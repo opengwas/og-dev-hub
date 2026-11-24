@@ -26,6 +26,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Sequence
 
+from project_site import staging
 from project_site.collect.architecture_model import split_nul
 from project_site.collect.common import CollectError
 
@@ -54,24 +55,12 @@ def named_for(name: str, repo: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def _git(git_dir: Path, *args: str) -> str:
+def _git(git_dir: Path, *args: str, accept: tuple[int, ...] = (0,)) -> str:
+    """git's output; an exit status outside `accept` is the collector's error, naming the command."""
     done = subprocess.run(["git", "-C", str(git_dir), *args], capture_output=True, check=False)
-    if done.returncode != 0:
+    if done.returncode not in accept:
         raise CollectError(f"git {args[0]} exited {done.returncode}: {done.stderr.decode(errors='replace').strip()}")
     return done.stdout.decode("utf-8", "replace")
-
-
-def _fetch(git_dir: Path, remote: str, refspec: str) -> dict[str, Any]:
-    try:
-        done = subprocess.run(
-            ["git", "-C", str(git_dir), "fetch", "--quiet", "--prune", remote, refspec],
-            capture_output=True, text=True, check=False, timeout=600,
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        return {"ok": False, "error": f"{type(error).__name__}: {error}"}
-    if done.returncode != 0:
-        return {"ok": False, "error": done.stderr.strip() or f"git fetch exited {done.returncode}"}
-    return {"ok": True, "error": None}
 
 
 def collect(
@@ -95,7 +84,7 @@ def collect(
     git_dir = Path(git_dir)
     now = now or dt.datetime.now(dt.timezone.utc)
     cutoff = now - dt.timedelta(days=days)
-    fetched = _fetch(git_dir, remote, fetch) if fetch else None
+    fetched = staging.ensure_clone(git_dir, refspec=fetch, remote=remote) if fetch else None
     main_commit = _git(git_dir, "rev-parse", "--verify", f"{main_ref}^{{commit}}").strip()
     listing = _git(
         git_dir, "for-each-ref", "--format=%(refname)%09%(committerdate:iso-strict)%00", *prefixes
@@ -135,8 +124,5 @@ def collect(
 
 
 def _has_merge_base(git_dir: Path, main_commit: str, ref: str) -> bool:
-    """Whether `ref` shares history with `main`; `git merge-base` exits 1 when it does not."""
-    done = subprocess.run(["git", "-C", str(git_dir), "merge-base", main_commit, ref], capture_output=True, check=False)
-    if done.returncode not in (0, 1):
-        raise CollectError(f"git merge-base exited {done.returncode}: {done.stderr.decode(errors='replace').strip()}")
-    return done.returncode == 0
+    """Whether `ref` shares history with `main`: `git merge-base` prints one, or exits 1 when there is none."""
+    return bool(_git(git_dir, "merge-base", main_commit, ref, accept=(0, 1)).strip())

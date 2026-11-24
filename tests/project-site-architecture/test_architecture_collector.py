@@ -16,6 +16,7 @@ from pathlib import Path
 
 import architecture_fixtures as fx
 
+from project_site import staging
 from project_site.collect import architecture
 from project_site.collect.common import CollectError
 
@@ -31,8 +32,7 @@ class Fixture:
         self.engine_commit = fx.make_repo(self.engine, engine_files or fx.ENGINE_FILES)
 
     def collect(self) -> dict:
-        return architecture.collect(self.registry, engine_git=self.engine, engine_ref="main",
-                                    registry_ref="HEAD")
+        return architecture.collect(staging.registry_root(self.registry), engine_git=self.engine, engine_ref="main")
 
 
 class CombinedModelTests(unittest.TestCase):
@@ -162,7 +162,7 @@ class RefreshTests(unittest.TestCase):
     def test_a_refresh_that_fails_is_recorded_with_gits_error(self) -> None:
         fixture = Fixture(self)
         bare = self.clone(fixture, str(fixture.engine.parent / "no-such-origin"))
-        result = architecture.collect(fixture.registry, engine_git=bare, refresh_engine=True)
+        result = architecture.collect(staging.registry_root(fixture.registry), engine_git=bare, refresh_engine=True)
         self.assertFalse(result["engine"]["refresh"]["ok"])
         self.assertIn("no-such-origin", result["engine"]["refresh"]["error"])
         self.assertEqual(result["engine"]["commit"], fixture.engine_commit)
@@ -174,7 +174,7 @@ class RefreshTests(unittest.TestCase):
         fx.git(fixture.engine, "add", "opengwasdb/store/extra.py")
         fx.git(fixture.engine, "-c", "user.name=t", "-c", "user.email=t@e.org", "commit", "-q", "-m", "more")
         head = fx.git(fixture.engine, "rev-parse", "HEAD")
-        result = architecture.collect(fixture.registry, engine_git=bare, refresh_engine=True)
+        result = architecture.collect(staging.registry_root(fixture.registry), engine_git=bare, refresh_engine=True)
         self.assertEqual(result["engine"]["refresh"], {"ok": True, "error": None})
         self.assertEqual(result["engine"]["commit"], head)
         self.assertNotEqual(head, fixture.engine_commit)

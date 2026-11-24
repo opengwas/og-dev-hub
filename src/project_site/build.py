@@ -69,10 +69,11 @@ SECTION_TITLES = {
 
 @dataclass
 class BuildReport:
-    """One render, with what the summary prints."""
+    """One render, with what the summary prints: the hub rendered, and the commits it documents."""
 
-    repo: Path
-    commit: str
+    hub: Path
+    hub_commit: str
+    registry_commit: str
     engine_commit: str
     staging: Path
     output: Path
@@ -81,7 +82,6 @@ class BuildReport:
     pages: int
     links: LinkReport
     served: list[urlcheck.PathStatus]
-    hub_commit: str | None = None
 
 
 # What a directory that already holds a render has. A render replaces a previous
@@ -105,9 +105,7 @@ def collect_data(mirror: Path, registry: staging.Registry, engine_clone: Path | 
         registry=registry.root / "stores",
         epics_dir=registry.root / "docs" / "_epics",
         yardstick_dir=registry.root / "docs" / "_yardstick",
-        repo_root=registry.git_dir,
-        registry_ref=registry.ref,
-        registry_tree=registry.root,
+        source=registry,
         engine_git=engine_clone,
         refresh_engine=True,
     )
@@ -222,21 +220,20 @@ SERVED_PATHS_FILE = Path("resources/site/legacy-served-paths.txt")
 
 @dataclass
 class Stage:
-    """What a render reads: the commits it documents and the mirror it renders.
+    """What a render reads: each repository, the commit of it the render documents, and the mirror.
 
-    `commit` is the registry's: the commit the registry's pages and the generated
-    links to its Release Bundles name. `hub` and `hub_commit` are this hub's
-    checkout and commit, which its own pages under `dev-hub/` link to.
+    `registry_commit` is the commit the registry's pages and the generated links
+    to its Release Bundles name; `hub_commit` is the one this hub's own pages
+    under `dev-hub/` link to.
     """
 
-    repo: Path
-    commit: str
+    hub: Path
+    hub_commit: str
+    registry: staging.Registry
+    registry_commit: str
+    engine_clone: Path
     engine_commit: str
-    clone: Path
     mirror: Path
-    registry: staging.Registry | None = None
-    hub: Path | None = None
-    hub_commit: str | None = None
 
 
 def stage_everything(
@@ -250,10 +247,11 @@ def stage_everything(
     """Stage the mirror: the registry's docs, this hub's site and docs, the engine's docs and the glossary.
 
     `repo` is the og-dev-hub checkout being rendered. `registry` is the
-    opengwasdb-stores it documents; left out, it is `main` of the site's clone
-    (`staging.registry_root`). `clone` and `revision` name the engine repository
-    and commit; left out, they come from the revision the registry's `pixi.lock`
-    pins and the clone under the work root. `stage_dir` is where the mirror is
+    opengwasdb-stores it documents; left out, it is `main` of the site's clone,
+    fetched first: this is the build's refresh step (`staging.registry_root`).
+    `clone` and `revision` name the engine repository and commit; left out, they
+    come from the revision the registry's `pixi.lock` pins and the clone under
+    the work root, fetched only when it lacks that revision. `stage_dir` is where the mirror is
     built; left out, it sits beside the output under the work root. A publish
     gives its own, because the checkout it renders is a worktree that must stay
     clean for `git worktree remove` to accept it.
@@ -261,10 +259,10 @@ def stage_everything(
     repo = repo.resolve()
     mirror = Path(stage_dir) if stage_dir is not None else paths.staging_dir(repo)
     if registry is None:
-        registry = staging.registry_root(tree=mirror.with_name(f"{mirror.name}-registry"))
-    commit = paths.commit_of(registry.git_dir) if registry.ref == "HEAD" else registry.ref
+        registry = staging.registry_root(tree=paths.registry_tree_dir(mirror), refresh=True)
+    registry_commit = paths.commit_of(registry.git_dir) if registry.ref == "HEAD" else registry.ref
     pinned = revision or paths.pinned_opengwasdb_revision(registry.root / "pixi.lock")
-    clone = Path(clone) if clone is not None else staging.ensure_clone(paths.ENGINE, revision=pinned)
+    clone = Path(clone) if clone is not None else _engine_clone(pinned)
     staging.mirror_docs(registry.root, mirror)
     staging.mirror_docs(repo, mirror, docs=SITE_DIR, replace=False)
     engine_section = mirror / ENGINE_SECTION
@@ -278,29 +276,33 @@ def stage_everything(
     staging.stage_glossary(registry.root / "CONTEXT.md", mirror / "glossary.md")
     write_engine_index(engine_section, revision=pinned, repository_url=paths.ENGINE_URL)
     return Stage(
-        repo=registry.root, commit=commit, engine_commit=pinned, clone=clone, mirror=mirror,
-        registry=registry, hub=repo, hub_commit=paths.commit_of(repo),
+        hub=repo, hub_commit=paths.commit_of(repo), registry=registry, registry_commit=registry_commit,
+        engine_clone=clone, engine_commit=pinned, mirror=mirror,
     )
+
+
+def _engine_clone(revision: str) -> Path:
+    """The site's clone of the engine, holding `revision`: fetched only when it does not, since a pin never moves."""
+    clone = paths.clone_dir(paths.ENGINE)
+    fetched = staging.ensure_clone(clone, url=paths.clone_url(paths.ENGINE), fetch=not staging.has_revision(clone, revision))
+    if not staging.has_revision(clone, revision):
+        why = f": {fetched['error']}" if fetched and not fetched["ok"] else ""
+        raise SystemExit(f"the {paths.ENGINE} clone at {clone} does not have revision {revision}{why}")
+    return clone
 
 
 def rewrite(stage: Stage) -> LinkReport:
     """Point the mirror's outbound links at GitHub and spell its Mermaid fences for Quarto."""
-    registry_git = stage.registry.git_dir if stage.registry is not None else stage.repo
-    hub = (
-        [(f"{HUB_SECTION}/", stage.hub, stage.hub_commit, paths.HUB_URL)]
-        if stage.hub is not None and stage.hub_commit
-        else []
-    )
     return staging.rewrite_mirror(
         stage.mirror,
-        registry=registry_git,
-        commit=stage.commit,
+        registry=stage.registry.git_dir,
+        commit=stage.registry_commit,
         registry_url=paths.REGISTRY_URL,
-        engine=stage.clone,
+        engine=stage.engine_clone,
         engine_commit=stage.engine_commit,
         engine_url=paths.ENGINE_URL,
         engine_prefix=f"{ENGINE_SECTION}/",
-        sections=hub,
+        sections=[(f"{HUB_SECTION}/", stage.hub, stage.hub_commit, paths.HUB_URL)],
     )
 
 
@@ -343,11 +345,11 @@ def build_site(
     output = Path(output).resolve() if output is not None else paths.output_dir(repo)
     source = staging.registry_root(registry) if registry is not None else None
     stage = stage_everything(repo, registry=source, stage_dir=stage_dir)
-    collect_data(stage.mirror, stage.registry, stage.clone)
+    collect_data(stage.mirror, stage.registry, stage.engine_clone)
     links = rewrite(stage)
 
     started = time.monotonic()
-    _quarto_render(stage.mirror, output, commit=stage.commit, jobs=jobs)
+    _quarto_render(stage.mirror, output, commit=stage.registry_commit, jobs=jobs)
     _write_raw_pages(output, links.raw_pages)
     seconds = time.monotonic() - started
 
@@ -355,9 +357,9 @@ def build_site(
     served = urlcheck.check_paths(served_paths(repo), output) if check_urls else []
 
     return BuildReport(
+        hub=repo,
         hub_commit=stage.hub_commit,
-        repo=repo,
-        commit=stage.commit,
+        registry_commit=stage.registry_commit,
         engine_commit=stage.engine_commit,
         staging=stage.mirror,
         output=output,
@@ -369,18 +371,14 @@ def build_site(
     )
 
 
-def render_checkout(
-    source_commit: str, checkout: Path, output: Path, *, jobs: int = render.DEFAULT_JOBS, registry: Path | None = None
-) -> Path:
+def render_checkout(source_commit: str, checkout: Path, output: Path, *, jobs: int = render.DEFAULT_JOBS) -> Path:
     """The renderer `project_site.publish` calls: the ref's own docs, rendered cleanly.
 
     The mirror sits beside the output, not under the work root's name for this
     checkout: the checkout is a scratch worktree, and a render that wrote inside it
     would leave it dirty and unremovable.
     """
-    report = build_site(
-        repo=checkout, output=output, stage_dir=output.with_name(f"{output.name}-stage"), jobs=jobs, registry=registry
-    )
+    report = build_site(repo=checkout, output=output, stage_dir=output.with_name(f"{output.name}-stage"), jobs=jobs)
     print(f"rendered {report.pages} pages from {source_commit} in {report.seconds:.1f}s")
     print(f"served   {urlcheck.summarise(report.served)}")
     missing = [status.path for status in report.served if status.state == "missing"]
@@ -396,8 +394,8 @@ def report_summary(report: BuildReport) -> str:
     lines = [
         f"rendered  {report.pages} pages, {report.bytes / 1e6:.1f} MB, {report.seconds:.1f}s",
         f"output    {report.output}",
-        f"commit    {report.commit} of {paths.REGISTRY} (engine {report.engine_commit}"
-        + (f"; {paths.HUB} {report.hub_commit})" if report.hub_commit else ")"),
+        f"commit    {report.registry_commit} of {paths.REGISTRY} (engine {report.engine_commit};"
+        f" {paths.HUB} {report.hub_commit})",
         f"links     {report.links.rewritten} rewritten to GitHub on {report.links.pages} pages",
     ]
     if report.links.missing:
@@ -418,7 +416,7 @@ def report_summary(report: BuildReport) -> str:
         )
         for page, target in report.links.unparsed:
             lines.append(f"            {page}: {target}")
-    if not (report.repo / SERVED_PATHS_FILE).exists():
+    if not (report.hub / SERVED_PATHS_FILE).exists():
         lines.append(f"served    not checked: {SERVED_PATHS_FILE} is written from the first publish")
     if report.served:
         lines.append(f"served    {urlcheck.summarise(report.served)}")
@@ -562,7 +560,7 @@ def preview(repo: Path | None = None, registry: Path | None = None) -> int:
         target=_restage_on_change, args=(repo, served, stop, stage.registry, registry), daemon=True
     )
     watcher.start()
-    process = subprocess.Popen(["quarto", "preview", str(served)], env=render_env(stage.commit))
+    process = subprocess.Popen(["quarto", "preview", str(served)], env=render_env(stage.registry_commit))
     try:
         process.wait()
     except KeyboardInterrupt:
@@ -596,7 +594,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         report = build_site(
             repo=args.repo, output=args.output, check_urls=not args.no_url_check, jobs=args.jobs, registry=args.registry
         )
-    except render.RenderFailed as failure:
+    except (render.RenderFailed, collect_common.CollectError) as failure:
         print(f"render failed: {failure}", file=sys.stderr)
         return 2
     print(report_summary(report))

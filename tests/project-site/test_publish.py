@@ -318,7 +318,7 @@ class PublishCollectsItsOwnData(unittest.TestCase):
         self.assertNotEqual(registry.parent, self.repo)
         self.assertEqual(Path(kwargs["epics_dir"]), registry.parent / "docs" / "_epics")
         self.assertEqual(Path(kwargs["yardstick_dir"]), registry.parent / "docs" / "_yardstick")
-        self.assertEqual(kwargs["registry_ref"], self.registry_commit)
+        self.assertEqual(kwargs["source"].ref, self.registry_commit)
         self.assertFalse(registry.exists(), "the extracted registry is this run's, and goes with it")
 
         published = sorted(git(self.repo, "ls-tree", "-r", "--name-only", "gh-pages").splitlines())

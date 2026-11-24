@@ -16,11 +16,18 @@ reads, because an installed package knows no checkout. It reads
 `/data/opengwasdb/stores` only through read-only SQLite URIs.
 
 **Where the registry is read from.** `main` of the site's bare clone,
-`/data/opengwasdb/work/site/opengwasdb-stores.git`, fetched at every render, with
-the files the collectors read (`stores/`, `docs/`, `CONTEXT.md`, `pixi.lock`,
-`ogstores.yaml`) extracted at that commit by `git archive`, and git read at the
-same commit. `--registry PATH` reads that checkout instead, at its `HEAD`
-(`project_site.staging.registry_root`, the one owner of this choice).
+`/data/opengwasdb/work/site/opengwasdb-stores.git`, cloned the first time it is
+needed and fetched only by a render (`pixi run site`, `site-publish`) and by
+`--refresh` (`--refresh-engine` for `site-data`), with the files the collectors
+read (`stores/`, `docs/`, `CONTEXT.md`, `pixi.lock`, `ogstores.yaml`) extracted
+at that commit by `git archive`, and git read at the same commit.
+`--registry PATH` reads that checkout instead, at its `HEAD`
+(`project_site.staging.registry_root`, the one owner of this choice). Every
+clone and fetch the site makes goes through one owner,
+`project_site.staging.ensure_clone`: a fetch prunes, and one that fails is
+recorded and never raised, so what the clone already holds is read. A registry
+that cannot be read at all (no clone, and no network to make one) makes each
+source that reads it unavailable, naming why, and no other source.
 
 ## The served-path baseline
 
@@ -320,7 +327,7 @@ placement are measured.
 
 | Key | Content |
 |---|---|
-| `registry`, `engine` | `repo`, `ref`, `commit` read, `committed` (that commit's date), `refresh`, `model` (`true`, or `false` when the ref has no model file) and `note`. The engine's `refresh` is `null` when no fetch was asked for, else `{ok, error}` with git's own message; the pages show the commit and its date, and a visible line when the refresh failed |
+| `registry`, `engine` | `repo`, `ref`, `commit` read, `committed` (that commit's date), `refresh`, `model` (`true`, or `false` when the ref has no model file) and `note`. Each `refresh` is `null` when no fetch was asked for, else `{ok, error}` with git's own message (the registry's is its clone's refresh; a named checkout is never fetched); the pages show the commit and its date, and a visible line when the refresh failed |
 | `model` | `system`, `people`, `external`, `containers`, `container_relations`, `stages` (this repository's), `layers` (the engine's; `[]` without its model) |
 | `components` | this repository's, then the engine's: the model's keys plus `repo` (`registry` or `engine`), `files` and `lines` (claimed code files), `tracked` (every tracked file claimed) |
 | `files` | `{registry: [...], engine: [...]}` (#422): every tracked code file of each tree at the ref read (the files the ownership rule counts as code), sorted, read NUL-safely. A planned `adds` is told to exist from it. Added to the file; no other field changed |

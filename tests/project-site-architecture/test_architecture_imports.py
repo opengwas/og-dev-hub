@@ -18,6 +18,7 @@ from pathlib import Path
 
 import architecture_fixtures as fx
 
+from project_site import staging
 from project_site.collect import architecture
 
 
@@ -26,7 +27,7 @@ def collect_edges(test: unittest.TestCase) -> list[dict]:
     test.addCleanup(__import__("shutil").rmtree, root, True)
     fx.make_repo(root / "registry", fx.REGISTRY_FILES)
     fx.make_repo(root / "engine", fx.ENGINE_FILES)
-    result = architecture.collect(root / "registry", engine_git=root / "engine")
+    result = architecture.collect(staging.registry_root(root / "registry"), engine_git=root / "engine")
     return result["edges"]
 
 
@@ -65,7 +66,7 @@ class ImportGraphTests(unittest.TestCase):
         self.addCleanup(__import__("shutil").rmtree, root, True)
         fx.make_repo(root / "registry", fx.REGISTRY_FILES)
         fx.make_repo(root / "engine", engine)
-        edges = architecture.collect(root / "registry", engine_git=root / "engine")["edges"]
+        edges = architecture.collect(staging.registry_root(root / "registry"), engine_git=root / "engine")["edges"]
         # `opengwasdb` (the package) is claimed by cli, but `opengwasdb.orphan` is a module of its own
         self.assertNotIn(("check", "cli"), [(e["from"], e["to"]) for e in edges])
         self.assertEqual([e for e in edges if e["from"] == "check"], [edge("check", "query", 1, "engine")])
@@ -75,7 +76,7 @@ class ImportGraphTests(unittest.TestCase):
         self.addCleanup(__import__("shutil").rmtree, root, True)
         fx.make_repo(root / "registry", fx.REGISTRY_FILES)
         fx.make_repo(root / "engine", fx.ENGINE_FILES)
-        summary = architecture.collect(root / "registry", engine_git=root / "engine")["summary"]
+        summary = architecture.collect(staging.registry_root(root / "registry"), engine_git=root / "engine")["summary"]
         self.assertEqual(summary["upward_edges"], 3)
         self.assertEqual(summary["upward_imports"], 3)
         self.assertEqual(summary["registry_to_engine_imports"], 5)

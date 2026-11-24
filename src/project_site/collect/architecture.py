@@ -29,6 +29,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Mapping
 
+from project_site import paths, staging
 from project_site.collect import architecture_adrs, architecture_graph, architecture_model as model_rules
 from project_site.collect.common import CollectError
 
@@ -36,7 +37,6 @@ ENGINE_REPO = "opengwas/opengwasdb"
 REGISTRY_REPO = "opengwas/opengwasdb-stores"
 MODEL_PATH = "docs/architecture/components.yaml"
 DEFAULT_ENGINE_REF = "main"
-DEFAULT_REGISTRY_REF = "HEAD"
 
 
 class Tree:
@@ -90,22 +90,24 @@ class Tree:
 
 
 def collect(
-    registry_root: Path | None = None,
+    source: staging.Registry | None = None,
     *,
     engine_git: Path | None = None,
     engine_ref: str = DEFAULT_ENGINE_REF,
-    registry_ref: str = DEFAULT_REGISTRY_REF,
     refresh_engine: bool = False,
 ) -> dict[str, Any]:
-    """Both repositories' components, gaps, import graph and ADRs, as the site's `architecture` source."""
-    if registry_root is None:
-        from project_site import staging
+    """Both repositories' components, gaps, import graph and ADRs, as the site's `architecture` source.
 
-        registry = staging.registry_root(files=False)
-        registry_root, registry_ref = registry.git_dir, registry.ref
-    engine_git = engine_git or _default_engine_clone()
-    registry = Tree(registry_root, registry_ref)
-    refresh = _refresh(engine_git, engine_ref) if refresh_engine else None
+    `source` is the registry (`staging.registry_root`'s, by default its clone's
+    `main`); `engine_git` the engine's git directory (by default the site's clone).
+    """
+    source = source or staging.registry_root(files=False)
+    engine_git = engine_git or paths.clone_dir(paths.ENGINE)
+    registry = Tree(source.git_dir, source.ref)
+    # A refresh that fails is recorded and the ref the clone already has is read:
+    # the page shows both, so a stale `main` is never silent.
+    refresh = staging.ensure_clone(
+        engine_git, refspec=f"+refs/heads/{engine_ref}:refs/heads/{engine_ref}") if refresh_engine else None
     engine = Tree(engine_git, engine_ref)
 
     registry_text = registry.read([MODEL_PATH]).get(MODEL_PATH)
@@ -150,7 +152,7 @@ def collect(
         }
     adrs = architecture_adrs.place(trees, claims, components, architecture_graph.modules_of(trees))
     return {
-        "registry": _repository(REGISTRY_REPO, registry, True, None),
+        "registry": _repository(REGISTRY_REPO, registry, True, None, source.fetch),
         "engine": _repository(
             ENGINE_REPO, engine, engine_model is not None,
             None if engine_model is not None
@@ -184,12 +186,6 @@ def collect(
     }
 
 
-def _default_engine_clone() -> Path:
-    from project_site import paths
-
-    return paths.clone_dir(paths.ENGINE)
-
-
 def _repository(
     repo: str, tree: Tree, model: bool, note: str | None, refresh: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -197,25 +193,6 @@ def _repository(
         "repo": repo, "ref": tree.ref, "commit": tree.commit, "committed": tree.committed,
         "refresh": refresh, "model": model, "note": note,
     }
-
-
-def _refresh(git_dir: Path, ref: str) -> dict[str, Any]:
-    """Fetch the engine's `ref` into the clone, and say whether that worked.
-
-    The clone is bare and has no fetch refspec, so the branch is named. A failure
-    (offline, no access) is recorded with git's own message and the ref the clone
-    already has is read: the page shows both, so a stale `main` is never silent.
-    """
-    try:
-        done = subprocess.run(
-            ["git", "-C", str(git_dir), "fetch", "--quiet", "origin", f"+refs/heads/{ref}:refs/heads/{ref}"],
-            capture_output=True, text=True, check=False, timeout=300,
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        return {"ok": False, "error": f"{type(error).__name__}: {error}"}
-    if done.returncode != 0:
-        return {"ok": False, "error": done.stderr.strip() or f"git fetch exited {done.returncode}"}
-    return {"ok": True, "error": None}
 
 
 def _components(registry_model: Mapping[str, Any], engine_model: Mapping[str, Any] | None) -> list[dict[str, Any]]:

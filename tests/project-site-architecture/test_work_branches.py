@@ -20,9 +20,11 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import architecture_fixtures as fx
 
+from project_site import staging
 from project_site.collect import branches, common, work
 from project_site.collect.common import CollectError
 
@@ -170,6 +172,22 @@ class OrphanBranchTests(unittest.TestCase):
     def test_a_repository_without_one_skips_nothing(self) -> None:
         self.assertEqual(Fixture(self).collect()["skipped"], [])
 
+    def test_a_merge_base_that_fails_otherwise_is_an_error_not_a_skip(self) -> None:
+        # Only "no merge base" (exit 1) means an orphan; any other failure of
+        # `git merge-base` (exit 128, here a ref that cannot be resolved) is the
+        # collector's error, as every other git failure is.
+        fixture = self.orphan()
+        real = branches._git
+
+        def unresolvable(git_dir, *args, **kwargs):
+            if args[0] == "merge-base":
+                args = (*args[:-1], "refs/heads/no-such-branch")
+            return real(git_dir, *args, **kwargs)
+
+        with mock.patch.object(branches, "_git", unresolvable), self.assertRaises(CollectError) as caught:
+            fixture.collect()
+        self.assertIn("git merge-base exited 128", str(caught.exception))
+
     def test_the_work_source_stays_available_and_says_what_it_left_out(self) -> None:
         fixture = self.orphan()
         data = fixture.root / "data"
@@ -181,7 +199,7 @@ class OrphanBranchTests(unittest.TestCase):
         }))
 
         result = common.collect_source("work", lambda: work.collect(
-            data, registry_root=fixture.repo, engine_git=fixture.repo, now=NOW))
+            data, registry=staging.registry_root(fixture.repo), engine_git=fixture.repo, now=NOW))
 
         self.assertTrue(result["available"], result["error"])
         # The fixture stands in for the engine's clone, whose branches are read as `refs/heads/*`.

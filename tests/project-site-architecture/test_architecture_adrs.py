@@ -18,6 +18,7 @@ from pathlib import Path
 
 import architecture_fixtures as fx
 
+from project_site import staging
 from project_site.collect import architecture
 
 
@@ -26,7 +27,7 @@ def collect(test: unittest.TestCase) -> dict:
     test.addCleanup(__import__("shutil").rmtree, root, True)
     fx.make_repo(root / "registry", {**fx.REGISTRY_FILES, **fx.REGISTRY_ADRS})
     fx.make_repo(root / "engine", {**fx.ENGINE_FILES, **fx.ENGINE_ADRS})
-    return architecture.collect(root / "registry", engine_git=root / "engine")
+    return architecture.collect(staging.registry_root(root / "registry"), engine_git=root / "engine")
 
 
 class AdrPlacementTests(unittest.TestCase):

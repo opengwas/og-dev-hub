@@ -87,42 +87,46 @@ def run(
     registry: Path | None = None,
     epics_dir: Path | None = None,
     yardstick_dir: Path | None = None,
-    repo_root: Path | None = None,
+    source: staging.Registry | None = None,
     engine_git: Path | None = None,
     engine_ref: str = architecture.DEFAULT_ENGINE_REF,
     refresh_engine: bool = False,
     out: Callable[[str], Any] = print,
-    registry_ref: str = architecture.DEFAULT_REGISTRY_REF,
-    registry_tree: Path | None = None,
     checkout: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Run every collector into `data_dir`.
 
-    `registry` (the Release Bundles), `epics_dir`, `yardstick_dir`,
-    `registry_tree` (the registry's files) and `repo_root` (its git directory,
-    read at `registry_ref`) say where opengwasdb-stores is. What is left out
-    comes from `staging.registry_root(checkout)`, read once.
+    `source` is the opengwasdb-stores to read; left out, it is
+    `staging.registry_root(checkout)`, read once, the first time a collector
+    needs it, and fetched first when `refresh_engine` asks for a refresh.
+    `registry` (the Release Bundles), `epics_dir`, `yardstick_dir` and
+    `catalog_root` name other directories to read instead. A registry that
+    cannot be read makes each source that needs it unavailable, and no other.
     """
-    if None in (registry, epics_dir, yardstick_dir, repo_root) or (catalog_root is None and registry_tree is None):
-        source = staging.registry_root(checkout)
-        registry = registry or source.root / "stores"
-        epics_dir = epics_dir or source.root / "docs" / "_epics"
-        yardstick_dir = yardstick_dir or source.root / "docs" / "_yardstick"
-        registry_tree = registry_tree or source.root
-        if repo_root is None:
-            repo_root, registry_ref = source.git_dir, source.ref
+    found: dict[str, Any] = {"registry": source}
+
+    def opengwasdb_stores() -> staging.Registry:
+        if found["registry"] is None:
+            found["registry"] = staging.registry_root(checkout, refresh=refresh_engine)
+        return found["registry"]
+
+    def files(*parts: str) -> Path:
+        root = opengwasdb_stores().root
+        if root is None:
+            raise common.CollectError("only opengwasdb-stores' git was read, not its files")
+        return root.joinpath(*parts)
+
     collectors: list[tuple[str, Callable[[], dict[str, Any]]]] = [
         ("board", lambda: board.collect(gh)),
-        ("catalog", lambda: catalog.collect(catalog_root, registry_tree)),
+        ("catalog", lambda: catalog.collect(catalog_root or catalog.default_root(files()))),
         ("releases", lambda: releases.collect(gh)),
-        ("stores", lambda: stores.collect(registry)),
-        ("records", lambda: records.collect(epics_dir, yardstick_dir)),
+        ("stores", lambda: stores.collect(registry or files("stores"))),
+        ("records", lambda: records.collect(epics_dir or files("docs", "_epics"), yardstick_dir or files("docs", "_yardstick"))),
         ("architecture", lambda: architecture.collect(
-            repo_root, engine_git=engine_git, engine_ref=engine_ref, registry_ref=registry_ref,
-            refresh_engine=refresh_engine)),
+            opengwasdb_stores(), engine_git=engine_git, engine_ref=engine_ref, refresh_engine=refresh_engine)),
         # After board and architecture: it reads the files those two just wrote to `data_dir`.
         ("work", lambda: work.collect(
-            data_dir, registry_root=repo_root, engine_git=engine_git, refresh=refresh_engine)),
+            data_dir, registry=opengwasdb_stores(), engine_git=engine_git, refresh=refresh_engine)),
     ]
     results = []
     for source, collect in collectors:

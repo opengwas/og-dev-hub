@@ -25,7 +25,8 @@ from unittest import mock
 import yaml
 from pathlib import Path
 
-from project_site import records
+from project_site import paths as site_paths
+from project_site import records, staging
 from project_site.collect import __main__ as site_data
 from project_site.collect import board, catalog, common, releases, stores
 from project_site.collect import records as records_collector
@@ -924,7 +925,7 @@ class TestSiteData(unittest.TestCase):
         results = site_data.run(
             self.data, gh=gh, catalog_root=self.catalog_root, registry=self.registry,
             epics_dir=self.epics, yardstick_dir=self.tmp / "_yardstick", out=lines.append,
-            repo_root=self.checkout, engine_git=self.engine,
+            source=staging.registry_root(self.checkout), engine_git=self.engine,
         )
         return results, lines
 
@@ -959,6 +960,24 @@ class TestSiteData(unittest.TestCase):
         self.assertEqual(len(lines), 7)
         self.assertEqual(lines[0], "UNAVAILABLE board: CollectError: gh api graphql exited 4: could not resolve host")
         self.assertEqual(lines[1], "catalog: 1 versions, current none")
+
+    def test_without_network_or_a_clone_the_registrys_sources_are_unavailable_and_the_rest_are_written(self) -> None:
+        # og-dev-hub#7: the registry is read from the site's clone; with no clone and no
+        # network, each source that reads it says so, and nothing raises.
+        def gh(args: list[str], stdin: str | None = None) -> str:
+            raise common.CollectError("gh: offline")
+
+        with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": str(self.tmp / "work")}), \
+                mock.patch.object(site_paths, "GITHUB", str(self.tmp / "no-network")):
+            results = site_data.run(self.data, gh=gh, out=lambda line: None, refresh_engine=True)
+
+        by_source = {r["source"]: r for r in results}
+        self.assertEqual(list(by_source), ["board", "catalog", "releases", "stores", "records", "architecture", "work"])
+        for source in ("catalog", "stores", "records", "architecture", "work"):
+            self.assertFalse(by_source[source]["available"], source)
+            self.assertIn("opengwasdb-stores", by_source[source]["error"], source)
+        self.assertEqual(sorted(p.name for p in self.data.iterdir()),
+                         ["architecture.json", "board.json", "catalog.json", "records.json", "releases.json", "stores.json", "work.json"])
 
     def test_an_unavailable_source_exits_0_unless_strict(self) -> None:
         down = [common.envelope("board", available=False, error="CollectError: offline"),

@@ -19,11 +19,12 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import architecture_fixtures as afx
 from work_fixtures import ARCHITECTURE, NO_ENGINE_MODEL, board, branch, branch_set, compute, epic, ticket
 
-from project_site import architecture as cli
+from project_site import architecture as cli, staging
 from project_site.collect import architecture as architecture_collector, common
 
 CITED = ["opengwasdb/encoding/se_range.py"]
@@ -246,8 +247,8 @@ class GitFailureTests(unittest.TestCase):
         self.data = self.root / "data"
         common.write_source(self.data, board())
         common.write_source(self.data, common.collect_source("architecture", lambda: architecture_collector.collect(
-            self.root / "registry", engine_git=self.root / "engine", engine_ref="main")))
-        self.args = ["--data", str(self.data), "--registry-root", str(self.root / "registry"),
+            staging.registry_root(self.root / "registry"), engine_git=self.root / "engine", engine_ref="main")))
+        self.args = ["--data", str(self.data), "--registry", str(self.root / "registry"),
                      "--engine-git", str(self.root / "engine"), "--repo", "registry", "--files", "src/gen/x.py"]
 
     def test_an_inaccessible_local_directory_exits_2_with_a_reason(self) -> None:
@@ -277,7 +278,7 @@ class GitFailureTests(unittest.TestCase):
 
     def test_collecting_on_the_spot_with_no_usable_work_root_exits_2_naming_the_path_and_the_variable(self) -> None:
         root = self.unusable_work_root()
-        code, text = run("conflicts", "--registry-root", str(self.root / "registry"), "--engine-git", str(self.root / "engine"),
+        code, text = run("conflicts", "--registry", str(self.root / "registry"), "--engine-git", str(self.root / "engine"),
                          "--repo", "registry", "--files", "src/gen/x.py")
         self.assertEqual(code, 2)
         self.assertEqual(len(text.strip().splitlines()), 1)
@@ -303,13 +304,29 @@ class GitFailureTests(unittest.TestCase):
         self.assertIn("layering baseline", text)
 
 
+class OfflineTests(unittest.TestCase):
+    """With no network and no clone yet, the command cannot decide, and says so (og-dev-hub#7)."""
+
+    def test_conflicts_without_the_registrys_clone_cannot_decide_and_never_raises(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="offline-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        with mock.patch.dict(os.environ, {cli.site_paths.WORK_ROOT_ENV: str(root / "work")}), \
+                mock.patch.object(cli.site_paths, "GITHUB", str(root / "no-network")), \
+                mock.patch.object(common, "gh_runner", lambda *a, **k: "{}"):
+            code, text = run("conflicts", "--refresh", "--repo", "registry", "--files", "src/gen/x.py")
+        self.assertEqual(code, 2)
+        self.assertTrue(text.startswith("cannot decide: "), text)
+        self.assertIn("opengwasdb-stores", text)
+        self.assertNotIn("Traceback", text)
+
+
 class CheckTests(unittest.TestCase):
     def fixtures(self, *, registry: dict | None = None, engine: dict | None = None) -> list[str]:
         root = Path(tempfile.mkdtemp(prefix="check-"))
         self.addCleanup(shutil.rmtree, root, True)
         afx.make_repo(root / "registry", registry or afx.REGISTRY_FILES, branch="trunk")
         afx.make_repo(root / "engine", engine or afx.ENGINE_FILES)
-        return ["--registry-root", str(root / "registry"), "--engine-git", str(root / "engine"), "--engine-ref", "main"]
+        return ["--registry", str(root / "registry"), "--engine-git", str(root / "engine"), "--engine-ref", "main"]
 
     def test_clean_claims_exit_0(self) -> None:
         code, text = run("check", *self.fixtures())

@@ -98,9 +98,14 @@ def clone_dir(name: str) -> Path:
     return Path(configured) if configured.strip() else work_root() / f"{name}.git"
 
 
-def registry_tree_dir(repo: Path) -> Path:
-    """Where the registry's files are extracted for a render of `repo`, beside its mirror."""
-    return work_root() / checkout_name(repo) / "_stage-registry"
+def clone_url(name: str) -> str:
+    """Where the site clones the opengwas repository `name` from: GitHub."""
+    return f"{GITHUB}/{name}"
+
+
+def registry_tree_dir(mirror: Path) -> Path:
+    """Where the registry's files are extracted for a render: beside its mirror, `<mirror>-registry`."""
+    return mirror.with_name(f"{mirror.name}-registry")
 
 
 def pinned_opengwasdb_revision(lock: Path) -> str:

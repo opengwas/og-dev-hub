@@ -22,8 +22,8 @@ was read may be out of date.
 
 Both run from data collected on the spot with the site's own collectors, or from an
 existing collection with `--data DIR`. opengwasdb-stores is read from the site's
-bare clone of it, or from the checkout `--registry` names (`--registry-root` is
-the same option's older name). `--local GIT_DIR` adds the local branches of a
+bare clone of it, fetched first with `--refresh`, or from the checkout
+`--registry` names. `--local GIT_DIR` adds the local branches of a
 clone (an orchestrate host's lanes live there), which the published page never shows.
 """
 
@@ -61,7 +61,7 @@ def _architecture(args: argparse.Namespace) -> dict[str, Any]:
             raise Unavailable(why)
         return document
     result = common.collect_source("architecture", lambda: architecture.collect(
-        args.registry_root, engine_git=args.engine_git, engine_ref=args.engine_ref, refresh_engine=getattr(args, "refresh", False)))
+        args.source, engine_git=args.engine_git, engine_ref=args.engine_ref, refresh_engine=getattr(args, "refresh", False)))
     if not result["available"]:
         raise Unavailable(f"architecture is unavailable: {result['error']}")
     return result
@@ -90,7 +90,7 @@ def _work(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any]]:
         directory = Path(scratch.name)
         for source, collect in (("board", lambda: board.collect(common.gh_runner)),
                                 ("architecture", lambda: architecture.collect(
-                                    args.registry_root, engine_git=args.engine_git, engine_ref=args.engine_ref,
+                                    args.source, engine_git=args.engine_git, engine_ref=args.engine_ref,
                                     refresh_engine=args.refresh))):
             common.write_source(directory, common.collect_source(source, collect))
         return _collected(args, directory)
@@ -100,7 +100,7 @@ def _collected(args: argparse.Namespace, directory: Path) -> tuple[dict[str, Any
     """`(work, architecture)` computed from the collection in `directory` and the branches read now."""
     try:
         document = work.collect(
-            directory, registry_root=args.registry_root, engine_git=args.engine_git,
+            directory, registry=args.source, engine_git=args.engine_git,
             refresh=args.refresh, local=[Path(p) for p in args.local], days=args.days)
     except common.CollectError as error:
         raise Unavailable(f"work is unavailable: {error}") from error
@@ -150,7 +150,7 @@ def _baseline(args: argparse.Namespace, document: Mapping[str, Any], out: TextIO
     """Print how the engine's baseline compares with the measured upward imports; True when it does not match."""
     engine = document["engine"]
     try:
-        git_dir = args.engine_git or architecture._default_engine_clone()
+        git_dir = args.engine_git or site_paths.clone_dir(site_paths.ENGINE)
         text = architecture.Tree(Path(git_dir), engine["commit"]).read([BASELINE_PATH]).get(BASELINE_PATH)
     except (common.CollectError, OSError) as error:
         # An unreadable repository is not an absent baseline: never certify the check.
@@ -314,7 +314,7 @@ def main(argv: Sequence[str] | None = None, *, stdout: TextIO | None = None) -> 
     for name in ("check", "conflicts"):
         p = sub.add_parser(name)
         p.add_argument("--data", type=Path, default=None, help="read this collection (docs/_data) instead of collecting now")
-        p.add_argument("--registry", "--registry-root", dest="registry_root", type=Path, default=None,
+        p.add_argument("--registry", type=Path, default=None,
                        help="an opengwasdb-stores checkout or git directory (default: the site's clone of it, at main)")
         p.add_argument("--engine-git", type=Path, default=None, help="the engine's git directory (default: the site's bare clone)")
         p.add_argument("--engine-ref", default=architecture.DEFAULT_ENGINE_REF)
@@ -329,9 +329,14 @@ def main(argv: Sequence[str] | None = None, *, stdout: TextIO | None = None) -> 
     conflict.add_argument("--days", type=int, default=branches.WINDOW_DAYS)
     args = parser.parse_args(argv)
     try:
-        if args.registry_root is None and not (args.data and not getattr(args, "local", None)):
-            # One read of the registry for the whole command, by its one owner.
-            args.registry_root = staging.registry_root(files=False).git_dir
+        # One read of the registry for the whole command, by its one owner; a collection
+        # read with --data alone needs none.
+        args.source = None
+        if not (args.data and not getattr(args, "local", None)):
+            try:
+                args.source = staging.registry_root(args.registry, files=False, refresh=args.refresh)
+            except common.CollectError as error:
+                raise Unavailable(str(error)) from error
         return (check if args.command == "check" else conflicts)(args, out)
     except Unavailable as error:
         print(f"cannot decide: {error}", file=out)

@@ -22,6 +22,7 @@ from pathlib import Path
 from unittest import mock
 
 from project_site import build, paths, staging
+from project_site.collect.common import CollectError
 from project_site.staging import stage_docs
 
 REGISTRY_LOCK = Path(__file__).resolve().parent / "fixtures" / "registry-pixi.lock"
@@ -146,7 +147,7 @@ class StageIntoTheMirrorTest(unittest.TestCase):
             ["a.md", "adr/x.md", "glossary.md", "opengwasdb/guide.md", "opengwasdb/index.qmd"],
         )
         # The records the render reports still name the commits it documented.
-        self.assertEqual(stage.commit, self.commit)
+        self.assertEqual(stage.registry_commit, self.commit)
         self.assertEqual(stage.engine_commit, self.engine_commit)
 
     def test_two_work_roots_stage_independently(self) -> None:
@@ -186,7 +187,7 @@ class StageIntoTheMirrorTest(unittest.TestCase):
         self.assertEqual((stage.mirror / "a.md").read_text(encoding="utf-8"), "# A, from the hub\n")
         self.assertEqual((stage.mirror / "adr" / "x.md").read_text(encoding="utf-8"), "# X\n")
         self.assertTrue(os.access(stage.mirror / "pre-render.sh", os.X_OK), "the hook stays runnable")
-        self.assertEqual(stage.commit, self.commit)
+        self.assertEqual(stage.registry_commit, self.commit)
         self.assertEqual(stage.hub_commit, git(self.hub, "rev-parse", "HEAD"))
 
     def test_a_hub_page_links_out_to_the_hub_at_its_commit(self) -> None:
@@ -273,149 +274,207 @@ class MermaidPageReachabilityTest(unittest.TestCase):
         self.assertEqual(report.unparsed, [])
 
 
+class GithubFixture:
+    """A stand-in for github.com/opengwas: bare repositories under one directory (og-dev-hub#7).
+
+    `paths.GITHUB` is pointed at it, so the site clones from here exactly as it
+    would from GitHub; a test of the network being gone points it nowhere.
+    """
+
+    def __init__(self, test: unittest.TestCase) -> None:
+        tmp = tempfile.TemporaryDirectory(prefix="project-site-github-")
+        test.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.github = self.root / "github"
+        self.work = self.root / "work"
+        for patch in (mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": str(self.work)}),
+                      mock.patch.object(paths, "GITHUB", str(self.github))):
+            patch.start()
+            test.addCleanup(patch.stop)
+        self.authors: dict[str, Path] = {}
+        self.test = test
+
+    def repository(self, name: str, files: dict[str, str]) -> str:
+        """`opengwas/<name>`, with `files` committed on `main`; returns the commit."""
+        origin = self.github / name
+        origin.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origin)], check=True)
+        author = self.root / "authors" / name
+        subprocess.run(["git", "clone", "-q", str(origin), str(author)], check=True, capture_output=True)
+        git(author, "config", "user.email", "test@example.org")
+        git(author, "config", "user.name", "Test")
+        self.authors[name] = author
+        return self.commit(name, files)
+
+    def commit(self, name: str, files: dict[str, str], branch: str = "main") -> str:
+        author = self.authors[name]
+        for relative, text in files.items():
+            (author / relative).parent.mkdir(parents=True, exist_ok=True)
+            (author / relative).write_text(text, encoding="utf-8")
+        git(author, "add", "-A")
+        git(author, "commit", "-q", "-m", "change")
+        git(author, "push", "-q", "origin", f"HEAD:refs/heads/{branch}")
+        return git(author, "rev-parse", "HEAD")
+
+    def offline(self) -> None:
+        """No network: every origin is gone, and a new clone is pointed at a path that does not exist."""
+        self.github.rename(self.root / "unreachable")
+        patch = mock.patch.object(paths, "GITHUB", str(self.root / "no-network"))
+        patch.start()
+        self.test.addCleanup(patch.stop)
+
+
 class CloneOwnerTest(unittest.TestCase):
-    """One owner keeps a bare clone of each opengwas repository under the work root (og-dev-hub#7)."""
+    """One owner clones and fetches every repository the site reads, and never raises (og-dev-hub#7).
+
+    A fetch that fails is recorded, never raised, and the refs already there are
+    read (docs/spec/project-site.md, Work).
+    """
 
     def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory(prefix="project-site-clone-")
-        self.addCleanup(self._tmp.cleanup)
-        self.root = Path(self._tmp.name)
-        # The origin a clone is made from: a bare repository, as GitHub would be.
-        self.origin = self.root / "origin.git"
-        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(self.origin)], check=True)
-        self.author = self.root / "author"
-        subprocess.run(["git", "clone", "-q", str(self.origin), str(self.author)], check=True, capture_output=True)
-        git(self.author, "config", "user.email", "test@example.org")
-        git(self.author, "config", "user.name", "Test")
-        self.first = self._commit("CONTEXT.md", "# Glossary\n")
-        self.work = self.root / "work"
-        self.environ = mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": str(self.work)})
-        self.environ.start()
-        self.addCleanup(self.environ.stop)
+        self.hub = GithubFixture(self)
+        self.first = self.hub.repository("opengwasdb-stores", {"CONTEXT.md": "# Glossary\n"})
+        self.clone = paths.clone_dir("opengwasdb-stores")
 
-    def _commit(self, relative: str, text: str, branch: str = "main") -> str:
-        path = self.author / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-        git(self.author, "add", "-A")
-        git(self.author, "commit", "-q", "-m", relative)
-        git(self.author, "push", "-q", "origin", f"HEAD:refs/heads/{branch}")
-        return git(self.author, "rev-parse", "HEAD")
+    def ensure(self, **kwargs) -> dict | None:
+        return staging.ensure_clone(self.clone, url=paths.clone_url("opengwasdb-stores"), **kwargs)
 
     def test_a_named_repository_is_cloned_bare_under_the_work_root(self) -> None:
-        clone = staging.ensure_clone("opengwasdb-stores", url=str(self.origin))
+        self.assertEqual(self.ensure(), {"ok": True, "error": None})
 
-        self.assertEqual(clone, self.work / "opengwasdb-stores.git")
-        self.assertEqual(git(clone, "rev-parse", "--is-bare-repository"), "true")
-        self.assertEqual(git(clone, "rev-parse", "main"), self.first)
+        self.assertEqual(self.clone, self.hub.work / "opengwasdb-stores.git")
+        self.assertEqual(git(self.clone, "rev-parse", "--is-bare-repository"), "true")
+        self.assertEqual(git(self.clone, "rev-parse", "main"), self.first)
 
-    def test_a_second_call_fetches_what_the_origin_gained(self) -> None:
-        clone = staging.ensure_clone("opengwasdb-stores", url=str(self.origin))
-        newer = self._commit("docs/a.md", "# A\n")
-        side = self._commit("docs/b.md", "# B\n", branch="feature")
+    def test_a_fetch_brings_what_the_origin_gained_and_prunes_what_it_lost(self) -> None:
+        side = self.hub.commit("opengwasdb-stores", {"docs/b.md": "# B\n"}, branch="feature")
+        self.ensure()
+        newer = self.hub.commit("opengwasdb-stores", {"docs/a.md": "# A\n"})
+        git(self.hub.authors["opengwasdb-stores"], "push", "-q", "origin", ":refs/heads/feature")
 
-        self.assertEqual(staging.ensure_clone("opengwasdb-stores", url=str(self.origin)), clone)
+        self.assertEqual(self.ensure(), {"ok": True, "error": None})
 
-        self.assertEqual(git(clone, "rev-parse", "main"), newer)
-        self.assertEqual(git(clone, "rev-parse", "refs/heads/feature"), side)
+        self.assertEqual(git(self.clone, "rev-parse", "main"), newer)
+        self.assertNotIn(side, git(self.clone, "for-each-ref", "--format=%(objectname)"))
 
-    def test_a_held_revision_is_not_fetched_again_and_a_missing_one_is(self) -> None:
-        clone = staging.ensure_clone("opengwasdb", url=str(self.origin), revision=self.first)
-        newer = self._commit("docs/a.md", "# A\n")
+    def test_without_fetch_a_clone_it_holds_is_left_as_it_is(self) -> None:
+        self.ensure()
+        self.hub.commit("opengwasdb-stores", {"docs/a.md": "# A\n"})
 
-        staging.ensure_clone("opengwasdb", url=str(self.origin), revision=self.first)
-        self.assertEqual(git(clone, "rev-parse", "main"), self.first, "a pinned revision it holds needs no fetch")
+        self.assertIsNone(self.ensure(fetch=False))
 
-        staging.ensure_clone("opengwasdb", url=str(self.origin), revision=newer)
-        self.assertEqual(git(clone, "rev-parse", "main"), newer)
+        self.assertEqual(git(self.clone, "rev-parse", "main"), self.first)
 
-    def test_a_revision_the_origin_does_not_have_stops_the_build(self) -> None:
-        with self.assertRaises(SystemExit) as caught:
-            staging.ensure_clone("opengwasdb", url=str(self.origin), revision="f" * 40)
+    def test_a_clone_that_cannot_be_made_is_recorded_not_raised(self) -> None:
+        self.hub.offline()
 
-        self.assertIn("f" * 40, str(caught.exception))
+        result = self.ensure()
+
+        self.assertFalse(result["ok"])
+        self.assertIn("no-network", result["error"])
+        self.assertFalse((self.clone / "HEAD").exists())
+
+    def test_a_fetch_that_fails_is_recorded_and_the_clone_is_kept(self) -> None:
+        self.ensure()
+        self.hub.offline()
+
+        result = self.ensure()
+
+        self.assertFalse(result["ok"])
+        self.assertIn("opengwasdb-stores", result["error"], "git's own message, naming the origin it could not reach")
+        self.assertEqual(git(self.clone, "rev-parse", "main"), self.first)
 
     def test_the_engine_clone_can_still_be_named_by_its_variable(self) -> None:
-        named = self.root / "elsewhere.git"
+        named = self.hub.root / "elsewhere.git"
         with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ENGINE_CLONE": str(named)}):
             self.assertEqual(paths.clone_dir("opengwasdb"), named)
-        self.assertEqual(paths.clone_dir("opengwasdb"), self.work / "opengwasdb.git")
+        self.assertEqual(paths.clone_dir("opengwasdb"), self.hub.work / "opengwasdb.git")
 
 
 class RegistryTreeTest(unittest.TestCase):
     """The registry the collectors read: its clone's `main`, extracted, or a checkout named instead (og-dev-hub#7)."""
 
+    FILES = {
+        "stores/OGS-00001/release.yaml": "store_id: OGS-00001\n",
+        "docs/_epics/opengwasdb-stores-1.yaml": "repo: opengwasdb-stores\n",
+        "docs/a.md": "# A\n",
+        "CONTEXT.md": "# Glossary\n",
+        "pixi.lock": "packages: []\n",
+        "src/ogstores/bundle.py": "# not read from a tree\n",
+    }
+
     def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory(prefix="project-site-registry-")
-        self.addCleanup(self._tmp.cleanup)
-        self.root = Path(self._tmp.name)
-        self.origin = self.root / "origin.git"
-        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(self.origin)], check=True)
-        self.checkout = self.root / "opengwasdb-stores"
-        subprocess.run(["git", "clone", "-q", str(self.origin), str(self.checkout)], check=True, capture_output=True)
-        git(self.checkout, "config", "user.email", "test@example.org")
-        git(self.checkout, "config", "user.name", "Test")
-        files = {
-            "stores/OGS-00001/release.yaml": "store_id: OGS-00001\n",
-            "docs/_epics/opengwasdb-stores-1.yaml": "repo: opengwasdb-stores\n",
-            "docs/a.md": "# A\n",
-            "CONTEXT.md": "# Glossary\n",
-            "pixi.lock": "packages: []\n",
-            "src/ogstores/bundle.py": "# not read from a tree\n",
-        }
-        for relative, text in files.items():
-            (self.checkout / relative).parent.mkdir(parents=True, exist_ok=True)
-            (self.checkout / relative).write_text(text, encoding="utf-8")
-        git(self.checkout, "add", "-A")
-        git(self.checkout, "commit", "-q", "-m", "registry")
-        git(self.checkout, "push", "-q", "origin", "HEAD:refs/heads/main")
-        self.commit = git(self.checkout, "rev-parse", "HEAD")
-        self.work = self.root / "work"
-        self.environ = mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": str(self.work)})
-        self.environ.start()
-        self.addCleanup(self.environ.stop)
+        self.hub = GithubFixture(self)
+        self.commit = self.hub.repository("opengwasdb-stores", self.FILES)
+        self.checkout = self.hub.authors["opengwasdb-stores"]
+        self.tree = self.hub.root / "tree"
 
     def test_a_clones_ref_is_extracted_as_the_tree_the_collectors_read(self) -> None:
-        clone = staging.ensure_clone("opengwasdb-stores", url=str(self.origin))
-        tree = self.root / "tree"
+        clone = paths.clone_dir("opengwasdb-stores")
+        staging.ensure_clone(clone, url=paths.clone_url("opengwasdb-stores"))
 
-        commit = staging.extract_tree(clone, "main", tree)
+        commit = staging.extract_tree(clone, "main", self.tree)
 
         self.assertEqual(commit, self.commit)
-        self.assertTrue((tree / "stores" / "OGS-00001" / "release.yaml").is_file())
-        self.assertTrue((tree / "docs" / "_epics" / "opengwasdb-stores-1.yaml").is_file())
-        self.assertTrue((tree / "CONTEXT.md").is_file())
-        self.assertTrue((tree / "pixi.lock").is_file())
+        self.assertTrue((self.tree / "stores" / "OGS-00001" / "release.yaml").is_file())
+        self.assertTrue((self.tree / "docs" / "_epics" / "opengwasdb-stores-1.yaml").is_file())
+        self.assertTrue((self.tree / "CONTEXT.md").is_file())
+        self.assertTrue((self.tree / "pixi.lock").is_file())
 
     def test_a_second_extraction_replaces_the_first(self) -> None:
-        clone = staging.ensure_clone("opengwasdb-stores", url=str(self.origin))
-        tree = self.root / "tree"
-        staging.extract_tree(clone, "main", tree)
-        (tree / "docs" / "left-behind.md").write_text("# Gone\n", encoding="utf-8")
+        clone = paths.clone_dir("opengwasdb-stores")
+        staging.ensure_clone(clone, url=paths.clone_url("opengwasdb-stores"))
+        staging.extract_tree(clone, "main", self.tree)
+        (self.tree / "docs" / "left-behind.md").write_text("# Gone\n", encoding="utf-8")
 
-        staging.extract_tree(clone, "main", tree)
+        staging.extract_tree(clone, "main", self.tree)
 
-        self.assertFalse((tree / "docs" / "left-behind.md").exists())
+        self.assertFalse((self.tree / "docs" / "left-behind.md").exists())
 
     def test_without_a_checkout_the_registry_is_its_clones_main(self) -> None:
-        tree = self.root / "tree"
+        registry = staging.registry_root(tree=self.tree)
 
-        registry = staging.registry_root(tree=tree, url=str(self.origin))
-
-        self.assertEqual(registry.root, tree)
-        self.assertEqual(registry.git_dir, self.work / "opengwasdb-stores.git")
+        self.assertEqual(registry.root, self.tree)
+        self.assertEqual(registry.git_dir, self.hub.work / "opengwasdb-stores.git")
         self.assertEqual(registry.ref, self.commit)
-        self.assertTrue((tree / "docs" / "_epics" / "opengwasdb-stores-1.yaml").is_file())
-        self.assertFalse((tree / "src").exists(), "only what the site reads is extracted")
+        self.assertTrue(registry.clone)
+        self.assertTrue((self.tree / "docs" / "_epics" / "opengwasdb-stores-1.yaml").is_file())
+        self.assertFalse((self.tree / "src").exists(), "only what the site reads is extracted")
+
+    def test_reading_the_registry_fetches_only_when_a_refresh_is_asked_for(self) -> None:
+        staging.registry_root(tree=self.tree)
+        newer = self.hub.commit("opengwasdb-stores", {"docs/a.md": "# A, again\n"})
+
+        self.assertEqual(staging.registry_root(tree=self.tree).ref, self.commit, "a read is not a fetch")
+        refreshed = staging.registry_root(tree=self.tree, refresh=True)
+
+        self.assertEqual(refreshed.ref, newer)
+        self.assertEqual(refreshed.fetch, {"ok": True, "error": None})
+
+    def test_a_failed_refresh_is_recorded_and_the_main_it_has_is_read(self) -> None:
+        staging.registry_root(tree=self.tree)
+        self.hub.offline()
+
+        registry = staging.registry_root(tree=self.tree, refresh=True)
+
+        self.assertEqual(registry.ref, self.commit)
+        self.assertFalse(registry.fetch["ok"])
+
+    def test_a_registry_that_cannot_be_cloned_cannot_be_read_and_says_why(self) -> None:
+        self.hub.offline()
+
+        with self.assertRaises(CollectError) as caught:
+            staging.registry_root(tree=self.tree)
+
+        self.assertIn("opengwasdb-stores", str(caught.exception))
+        self.assertIn("no-network", str(caught.exception))
 
     def test_a_reader_of_git_alone_extracts_nothing(self) -> None:
-        tree = self.root / "tree"
-
-        registry = staging.registry_root(tree=tree, url=str(self.origin), files=False)
+        registry = staging.registry_root(tree=self.tree, files=False)
 
         self.assertIsNone(registry.root)
-        self.assertEqual((registry.git_dir, registry.ref), (self.work / "opengwasdb-stores.git", self.commit))
-        self.assertFalse(tree.exists())
+        self.assertEqual((registry.git_dir, registry.ref), (self.hub.work / "opengwasdb-stores.git", self.commit))
+        self.assertFalse(self.tree.exists())
 
     def test_a_named_checkout_is_the_registry_itself(self) -> None:
         registry = staging.registry_root(self.checkout)
@@ -423,7 +482,40 @@ class RegistryTreeTest(unittest.TestCase):
         self.assertEqual(registry.root, self.checkout.resolve())
         self.assertEqual(registry.git_dir, self.checkout.resolve())
         self.assertEqual(registry.ref, "HEAD")
-        self.assertFalse((self.work / "opengwasdb-stores.git").exists(), "a named checkout needs no clone")
+        self.assertFalse(registry.clone)
+        self.assertFalse((self.hub.work / "opengwasdb-stores.git").exists(), "a named checkout needs no clone")
+
+
+class EngineRevisionTest(unittest.TestCase):
+    """A render stages the engine's docs at the registry's pin, fetching the engine only to get it."""
+
+    def setUp(self) -> None:
+        self.hub = GithubFixture(self)
+        self.first = self.hub.repository("opengwasdb", {"docs/guide.md": "# Guide\n"})
+        self.hub.repository("opengwasdb-stores", {"docs/a.md": "# A\n", "CONTEXT.md": "# Glossary\n"})
+        self.hub_checkout = self.hub.root / "og-dev-hub"
+        self.hub_checkout.mkdir()
+        git(self.hub_checkout, "init", "-q", "-b", "main")
+        git(self.hub_checkout, "-c", "user.email=t@e.org", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "hub")
+
+    def stage(self, revision: str) -> build.Stage:
+        registry = staging.registry_root(tree=self.hub.root / "tree")
+        return build.stage_everything(self.hub_checkout, registry=registry, revision=revision)
+
+    def test_a_pinned_revision_the_clone_lacks_is_fetched(self) -> None:
+        self.stage(self.first)
+        newer = self.hub.commit("opengwasdb", {"docs/later.md": "# Later\n"})
+
+        stage = self.stage(newer)
+
+        self.assertEqual(stage.engine_commit, newer)
+        self.assertTrue((stage.mirror / "opengwasdb" / "later.md").is_file())
+
+    def test_a_revision_the_engine_does_not_have_stops_the_render_naming_it(self) -> None:
+        with self.assertRaises(SystemExit) as caught:
+            self.stage("f" * 40)
+
+        self.assertIn("f" * 40, str(caught.exception))
 
 
 class PinnedRevisionTest(unittest.TestCase):

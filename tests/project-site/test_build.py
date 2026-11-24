@@ -94,10 +94,12 @@ class ServedPathGateTest(unittest.TestCase):
     def test_a_render_missing_a_baseline_path_is_refused_naming_the_path(self) -> None:
         self._baseline(["index.html", "adr/0001-store-registry-boundary.md"])
         stage = build.Stage(
-            repo=self.repo,
-            commit="0" * 40,
+            hub=self.repo,
+            hub_commit="2" * 40,
+            registry=staging.Registry(root=self.root / "registry", git_dir=self.root / "registry", ref="HEAD"),
+            registry_commit="0" * 40,
+            engine_clone=self.root / "engine",
             engine_commit="1" * 40,
-            clone=self.root / "engine",
             mirror=self.root / "mirror",
         )
 

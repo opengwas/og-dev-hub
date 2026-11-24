@@ -26,9 +26,10 @@ import subprocess
 import tarfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 from project_site import paths
+from project_site.collect.common import CollectError
 from project_site.links import convert_mermaid_fences, rewrite_document
 
 # Documentation, not data: the engine's `docs/` also holds logs, JSON, JSONL and
@@ -98,43 +99,61 @@ def stage_docs(repo: Path, revision: str, dest: Path) -> list[str]:
     files = _documentation_files(repo, revision)
     if not files:
         return []
+    _extract(repo, revision, files, dest, strip="docs/")
+    return sorted(path.relative_to(dest).as_posix() for path in dest.rglob("*") if path.is_file())
+
+
+def _extract(repo: Path, revision: str, names: list[str], dest: Path, *, strip: str = "") -> None:
+    """Extract the files `names` of `repo` at `revision` into `dest` with `git archive`, less a `strip` prefix."""
     archive = subprocess.run(
-        ["git", "-C", str(repo), "archive", "--format=tar", revision, "--", *files],
-        capture_output=True,
-        check=True,
+        ["git", "-C", str(repo), "archive", "--format=tar", revision, "--", *names], capture_output=True, check=True
     ).stdout
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
         members = []
         for member in tar.getmembers():
             if not member.isfile():
                 continue
-            member.name = member.name[len("docs/"):]
+            member.name = member.name[len(strip):]
             members.append(member)
         tar.extractall(dest, members=members, filter="data")
-    return sorted(path.relative_to(dest).as_posix() for path in dest.rglob("*") if path.is_file())
 
 
-def ensure_clone(name: str, *, revision: str | None = None, url: str | None = None) -> Path:
-    """The site's bare clone of the opengwas repository `name`, cloned and fetched as needed.
+# Every branch of the origin, as a bare clone holds them.
+BRANCHES = "+refs/heads/*:refs/heads/*"
 
-    It lives at `paths.clone_dir(name)`, `<work root>/<name>.git`, and is cloned
-    from `url` (GitHub's `opengwas/<name>` unless a test names another) the first
-    time. With `revision`, it is fetched only when it does not hold that commit,
-    because a pinned commit never moves; without one, it is always fetched, so
-    its branches are the origin's now. Branches are fetched as `refs/heads/*`,
-    the same refs a fresh bare clone has.
+
+def ensure_clone(
+    git_dir: Path, *, url: str | None = None, fetch: bool = True, refspec: str = BRANCHES, remote: str = "origin"
+) -> dict[str, Any] | None:
+    """The one owner of cloning and fetching the repositories the site reads (og-dev-hub#7).
+
+    With `url`, a `git_dir` that is not a repository yet is cloned from it,
+    bare. Otherwise, with `fetch`, `refspec` is fetched from `remote`, pruning
+    what the remote no longer has. Returns `{ok, error}` for the clone or fetch
+    that ran, with git's own message on failure, or `None` when neither ran.
+    It never raises: a failure is recorded, and whatever the git directory
+    already holds is still read (docs/spec/project-site.md, Work).
     """
-    clone = paths.clone_dir(name)
-    if not (clone / "HEAD").exists():
-        clone.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["git", "clone", "--bare", "--quiet", url or f"{paths.GITHUB}/{name}", str(clone)], check=True)
-    if revision is None or not _has_revision(clone, revision):
-        subprocess.run(
-            ["git", "-C", str(clone), "fetch", "--quiet", "origin", "+refs/heads/*:refs/heads/*"], check=True
-        )
-    if revision is not None and not _has_revision(clone, revision):
-        raise SystemExit(f"the {name} clone at {clone} does not have revision {revision}")
-    return clone
+    git_dir = Path(git_dir)
+    if url is not None and not (git_dir / "HEAD").exists():
+        try:
+            git_dir.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            return {"ok": False, "error": f"{type(error).__name__}: {error}"}
+        return _recorded(["git", "clone", "--bare", "--quiet", url, str(git_dir)])
+    if not fetch:
+        return None
+    return _recorded(["git", "-C", str(git_dir), "fetch", "--quiet", "--prune", remote, refspec])
+
+
+def _recorded(command: list[str]) -> dict[str, Any]:
+    try:
+        done = subprocess.run(command, capture_output=True, text=True, check=False, timeout=600)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return {"ok": False, "error": f"{type(error).__name__}: {error}"}
+    if done.returncode != 0:
+        return {"ok": False, "error": done.stderr.strip() or f"git {command[1]} exited {done.returncode}"}
+    return {"ok": True, "error": None}
 
 
 # What the site reads from the registry's files, as opposed to through git: the
@@ -144,22 +163,18 @@ def ensure_clone(name: str, *, revision: str | None = None, url: str | None = No
 REGISTRY_TREE = ("stores", "docs", "CONTEXT.md", "pixi.lock", "ogstores.yaml")
 
 
-def extract_tree(clone: Path, ref: str, dest: Path, members: tuple[str, ...] = REGISTRY_TREE) -> str:
-    """Extract `members` of `clone` at `ref` into `dest` with `git archive`; return the commit.
+def extract_tree(clone: Path, ref: str, dest: Path) -> str:
+    """Extract the registry's `REGISTRY_TREE` of `clone` at `ref` into `dest`; return the commit.
 
     `dest` is rebuilt, so a file the ref no longer has is never left behind. A
     path the ref does not hold is left out rather than failing the archive.
     """
     commit = _git(clone, "rev-parse", "--verify", f"{ref}^{{commit}}").strip()
-    present = [path for path in members if _git(clone, "ls-tree", "--name-only", commit, "--", path).strip()]
+    present = [path for path in REGISTRY_TREE if _git(clone, "ls-tree", "--name-only", commit, "--", path).strip()]
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
-    archive = subprocess.run(
-        ["git", "-C", str(clone), "archive", "--format=tar", commit, "--", *present], capture_output=True, check=True
-    ).stdout
-    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
-        tar.extractall(dest, filter="data")
+    _extract(clone, commit, present, dest)
     return commit
 
 
@@ -168,38 +183,51 @@ class Registry:
     """opengwasdb-stores as the site reads it: files from `root`, history from `git_dir` at `ref`.
 
     `root` is `None` when only its history was asked for (`registry_root(files=False)`).
+    `clone` says the git directory is the site's bare clone, whose pushed branches
+    are `refs/heads/*`, rather than a checkout, whose are `refs/remotes/origin/*`.
+    `fetch` is the refresh's `{ok, error}`, or `None` when none was asked for.
     """
 
     root: Path | None
     git_dir: Path
     ref: str
+    clone: bool = False
+    fetch: dict[str, Any] | None = None
 
 
 def registry_root(
-    checkout: Path | None = None, *, tree: Path | None = None, url: str | None = None, files: bool = True
+    checkout: Path | None = None, *, tree: Path | None = None, files: bool = True, refresh: bool = False
 ) -> Registry:
     """The one owner of where the site reads opengwasdb-stores from (og-dev-hub#7).
 
     A named `checkout` (`--registry PATH`) is read as it is: its files, and its
     git at `HEAD`. Otherwise the registry is `main` of the site's bare clone,
-    fetched now, with the files the site reads extracted into `tree` (by
-    default beside this hub checkout's mirror) and git read at that same commit.
-    A caller that reads only git (the architecture and work collectors, the
-    `architecture` command) passes `files=False`, and nothing is extracted, so it
-    never rewrites a tree a render is reading.
+    cloned the first time and fetched only on a `refresh` (`--refresh`, and the
+    build's refresh step), with the files the site reads extracted into `tree`
+    (by default beside this hub checkout's mirror) and git read at that same
+    commit. A refresh that fails is recorded in `fetch` and the `main` the clone
+    has is read; a clone with no `main` at all is a `CollectError`, naming why.
+    A caller that reads only git passes `files=False`, and nothing is extracted,
+    so it never rewrites a tree a render is reading.
     """
     if checkout is not None:
         checkout = Path(checkout).resolve()
         return Registry(root=checkout, git_dir=checkout, ref="HEAD")
-    clone = ensure_clone(paths.REGISTRY, url=url)
-    if not files:
-        return Registry(root=None, git_dir=clone, ref=_git(clone, "rev-parse", "--verify", "main^{commit}").strip())
-    tree = Path(tree) if tree is not None else paths.registry_tree_dir(paths.repo_root())
-    commit = extract_tree(clone, "main", tree)
-    return Registry(root=tree, git_dir=clone, ref=commit)
+    clone = paths.clone_dir(paths.REGISTRY)
+    fetched = ensure_clone(clone, url=paths.clone_url(paths.REGISTRY), fetch=refresh)
+    try:
+        commit = _git(clone, "rev-parse", "--verify", "main^{commit}").strip()
+    except (OSError, subprocess.CalledProcessError) as error:
+        why = fetched["error"] if fetched and not fetched["ok"] else getattr(error, "stderr", "") or str(error)
+        raise CollectError(f"{paths.REGISTRY} cannot be read from its clone at {clone}: {str(why).strip()}") from error
+    root = None
+    if files:
+        root = Path(tree) if tree is not None else paths.registry_tree_dir(paths.staging_dir(paths.repo_root()))
+        extract_tree(clone, commit, root)
+    return Registry(root=root, git_dir=clone, ref=commit, clone=True, fetch=fetched if refresh else None)
 
 
-def _has_revision(clone: Path, revision: str) -> bool:
+def has_revision(clone: Path, revision: str) -> bool:
     return (
         subprocess.run(
             ["git", "-C", str(clone), "cat-file", "-e", f"{revision}^{{commit}}"],

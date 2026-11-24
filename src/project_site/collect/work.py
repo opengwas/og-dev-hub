@@ -29,6 +29,7 @@ from itertools import combinations
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from project_site import paths, staging
 from project_site.collect import architecture_model as model_rules, branches as branch_reader, citations, plans as plan_reader
 from project_site.collect.common import CollectError
 
@@ -340,19 +341,13 @@ def repo_of(git_dir: Path) -> str:
     return "opengwasdb" if "opengwasdb" in top else "opengwasdb-stores"
 
 
-def _is_bare(git_dir: Path) -> bool:
-    done = subprocess.run(["git", "-C", str(git_dir), "rev-parse", "--is-bare-repository"],
-                          capture_output=True, text=True, check=False)
-    return done.stdout.strip() == "true"
-
-
 def _has_ref(git_dir: Path, ref: str) -> bool:
     return subprocess.run(["git", "-C", str(git_dir), "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
                           capture_output=True, check=False).returncode == 0
 
 
 def read_branches(
-    *, registry_root: Path, engine_git: Path, refresh: bool = False,
+    *, registry: staging.Registry, engine_git: Path, refresh: bool = False,
     local: Sequence[Path] = (), days: int = branch_reader.WINDOW_DAYS, now: dt.datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Pushed branches of both repositories, then those of each local git directory given.
@@ -361,7 +356,8 @@ def read_branches(
     bare clone; a registry checkout (`--registry`) holds them as
     `refs/remotes/origin/*`. `refresh` fetches each first, recording a failure.
     """
-    if _is_bare(registry_root):
+    registry_root = registry.git_dir
+    if registry.clone:
         registry_main, registry_prefix, registry_fetch = "main", "refs/heads/", ENGINE_FETCH
     else:
         registry_main = next((r for r in ("origin/main", "main") if _has_ref(registry_root, r)), "HEAD")
@@ -383,28 +379,25 @@ def read_branches(
 def collect(
     data_dir: Path,
     *,
-    registry_root: Path | None = None,
+    registry: staging.Registry | None = None,
     engine_git: Path | None = None,
     refresh: bool = False,
     local: Sequence[Path] = (),
     days: int = branch_reader.WINDOW_DAYS,
     now: dt.datetime | None = None,
 ) -> dict[str, Any]:
-    """The `work` source: the board and architecture files of `data_dir`, and the branches read now."""
+    """The `work` source: the board and architecture files of `data_dir`, and the branches read now.
+
+    `registry` is opengwasdb-stores (`staging.registry_root`'s, by default its
+    clone); `engine_git` the engine's git directory (by default the site's clone).
+    """
     data_dir = Path(data_dir)
     board, board_why = _read(data_dir, "board")
     architecture, architecture_why = _read(data_dir, "architecture")
     if board is None or architecture is None:
         problems = [why for doc, why in ((board, board_why), (architecture, architecture_why)) if doc is None]
         raise CollectError("; ".join(problems))
-    if registry_root is None:
-        from project_site import staging
-
-        registry_root = staging.registry_root(files=False).git_dir
-    if engine_git is None:
-        from project_site import paths as site_paths
-
-        engine_git = site_paths.clone_dir(site_paths.ENGINE)
-    sets = read_branches(registry_root=registry_root, engine_git=engine_git, refresh=refresh,
+    sets = read_branches(registry=registry or staging.registry_root(files=False),
+                         engine_git=engine_git or paths.clone_dir(paths.ENGINE), refresh=refresh,
                          local=local, days=days, now=now)
     return compute(board, architecture, sets)

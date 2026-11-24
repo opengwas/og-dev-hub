@@ -78,8 +78,8 @@ def _version(directory: Path, current: str | None) -> dict[str, Any]:
     }
 
 
-def collect(root: Path | None = None, registry: Path | None = None) -> dict[str, Any]:
-    root = default_root(registry) if root is None else Path(root)
+def collect(root: Path | None = None) -> dict[str, Any]:
+    root = default_root() if root is None else Path(root)
     if not root.is_dir():
         raise CollectError(f"catalog root {root} does not exist")
     link = root.parent / "current"

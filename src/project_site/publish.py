@@ -35,6 +35,7 @@ from typing import Callable, Sequence
 
 from project_site import paths
 from project_site.build import SiteCheckFailed, render_checkout
+from project_site.collect.common import CollectError
 from project_site.render import DEFAULT_JOBS, RenderFailed
 
 Render = Callable[[str, Path, Path], Path]
@@ -187,7 +188,8 @@ def publish(
     published = _scratch(work_root, name, "gh-pages")
     # The render reads a mirror, beside it the registry's files it extracted, and
     # writes its output; all three are this run's.
-    derived = [output, output.with_name(f"{output.name}-stage"), output.with_name(f"{output.name}-stage-registry")]
+    stage = output.with_name(f"{output.name}-stage")
+    derived = [output, stage, paths.registry_tree_dir(stage)]
     made: list[Path] = [checkout, published]
     leftovers: list[str] = []
     try:
@@ -254,7 +256,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         result = publish(repo=args.repo, ref=args.ref, remote=args.remote, dry_run=args.dry_run, render=render)
-    except (PublishRefused, SiteCheckFailed, RenderFailed) as refusal:
+    except (PublishRefused, SiteCheckFailed, RenderFailed, CollectError) as refusal:
         print(f"refused: {refusal}", file=sys.stderr)
         return 2
     print(f"ref          {result.ref}")
