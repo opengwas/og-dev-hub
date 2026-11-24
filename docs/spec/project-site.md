@@ -277,10 +277,19 @@ named in `stores_view`, and every text a collector wrote has its host paths cut 
 name (`architecture_public.reason`), so no `/data/...` path reaches the file, including in an
 error.
 
-- **`inventory[]`**: the row above, each cell `{text, gap, detail}`: `text` the figure as
-  drawn (`62.1 GB`, `11,191,070`, `AFR 1 · EUR 2 · unassigned 1`, top hits
-  `p < 5e-08: 10`), or `gap` the cause. `url` links the Store's bundle on GitHub at the
-  commit read.
+- **`inventory[]`** (og-dev-hub#21): one row per Store, drawn as a tile (`static/js/stores.js`, a `<details>`: the header, short description and facts are its `<summary>`, so a click anywhere on them opens it; the body holds the registry link, the full description and "Why n/a"; Escape closes every open tile). Each cell is `{text, gap, display, detail}`:
+  - `text`: the figure as drawn (`62.1 GB`, `11,191,070`, `AFR 1 · EUR 2 · unassigned 1`, top hits `p < 5e-08: 10`), or `null` for a gap;
+  - `gap`: the cause, or `null`. It stays in `stores.json` and is shown only in the open tile;
+  - `display`: what the tile draws, written by the build: `text`, or `n/a` for every gap (pending, not built, unknown or not computed);
+  - `detail`: a note beside the figure (excluded rows, how many have a sample size), or `null`.
+  - the `status` cell also has `tone`, the Release Status tag's tone written by the build: `validated` and `built` `ok`, `candidate` and `accepted` `null` (neutral), `withdrawn` and `superseded` `muted`.
+
+  A row also holds:
+  - `url`: the Store's bundle on GitHub at the commit read;
+  - `description`: the full text, host paths cut to the last name;
+  - `summary`: the short description, the first sentence of the description as written, cut to about 160 characters on a word boundary and ending in `…` when cut. The cut is made before host paths are scrubbed; a full stop after "et al.", "e.g.", "i.e." or a single initial does not end the sentence; a cut text that holds a host path ends before it, so a summary never shows a scrubbed `…/path` beside the cut's `…`. `null` for no description;
+  - `facts`: the tile's list, in order (Layout, Coverage, Size on disk, Variants, Analyses, Median sample size, Ancestry, Top hits, HM3, Rho), each `{label, display, detail, na}` with `na` true when `display` is `n/a`;
+  - `why_na`: `{label, reason}` for each gap among those facts and Release Status, the reasons the open tile lists under "Why n/a".
 - **`yardstick`** (in `data/benchmarking.json`, not `stores.json`; `static/js/benchmarking.js` draws it, trends first, under the line "One fixed query workload (the yardstick), run at the finish of every epic that changes the engine.", which is the tab's lede and shows even with no results; the script draws the trends first): `stores` (the latest run per Store), `trends`, `unmeasured`, `invalid`,
   `runs`, `workloads`, `load_rule`, `veeam_rule`. Raw runs are not listed.
   - *The latest run per Store* is the latest run that measured it (a Store `pending` in every run

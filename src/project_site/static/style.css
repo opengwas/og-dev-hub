@@ -148,6 +148,7 @@ select { font: inherit; padding: 5px 8px; border-radius: 6px; border: 1px solid 
 .tag-ok { background: var(--good-soft); color: var(--good); }
 .tag-caution { background: var(--warn-soft); color: var(--warn); }
 .tag-fault { background: var(--bad-soft); color: var(--bad); }
+.tag-muted { background: transparent; border: 1px solid var(--rule); color: var(--muted); }
 .tag-link { background: var(--accent-soft); color: var(--accent); }
 .tag-row { display: flex; flex-wrap: wrap; gap: 4px; }
 
@@ -198,12 +199,25 @@ select { font: inherit; padding: 5px 8px; border-radius: 6px; border: 1px solid 
 .tag.key { background: transparent; border: 1px solid var(--series); color: var(--ink-2); }
 
 
-/* #19: full-width tables, pinned headers, wrapped descriptions */
-/* Only a bounded-height scroller pins its header: it is the sticky container, so the header stays visible from the first
- * row to the last. Other tables scroll with the page and keep a plain header. */
-.scroller-tall { max-height: min(72vh, 900px); overflow: auto; }
-.scroller-tall th { position: sticky; top: 0; z-index: 2; box-shadow: 0 1px 0 var(--line-strong); }
-th.wide-col, td.wide-col { min-width: 28rem; width: 40%; white-space: normal; overflow-wrap: break-word; }
+/* Stores: one tile per Store (#21). */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr)); gap: 12px; align-items: start; }
+.tile { margin: 0; padding: 12px 14px; }
+.tile summary { cursor: pointer; list-style: none; }
+.tile summary::-webkit-details-marker { display: none; }
+.tile summary::after { content: "Show more"; display: block; margin-top: 6px; color: var(--accent); font-size: 12px; font-weight: 600; }
+.tile[open] summary::after { content: "Show less"; }
+.tile-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.tile-id { font-family: var(--mono); font-size: 0.92em; }
+.tile-label { color: var(--ink); overflow-wrap: anywhere; }
+.tile[open] .tile-summary { display: none; }
+.tile-summary { display: block; margin-top: 4px; color: var(--muted); font-size: 13px; }
+.tile-facts { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 10px 0 0; font-size: 13px; }
+.tile-facts dt { color: var(--muted); }
+.tile-facts dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.tile-facts .detail { display: block; color: var(--muted); font-size: 12px; }
+.tile-more { margin-top: 10px; padding-top: 2px; border-top: 1px solid var(--rule); font-size: 13px; }
+.tile-more h3 { margin: 10px 0 4px; font-size: 13px; }
+.tile-why { margin: 0; padding-left: 18px; }
 td { min-width: 6rem; }
 td:first-child { white-space: nowrap; }
 
@@ -215,4 +229,4 @@ td:first-child { white-space: nowrap; }
 .drawing-wrap.drawing-full { position: fixed; inset: 0; z-index: 50; background: var(--white); overflow: auto; padding: 14px; }
 .drawing-full .drawing-bar { position: sticky; top: 0; left: 0; z-index: 2; background: var(--white); padding-bottom: 6px; }
 .drawing-full .drawing { border: 0; overflow: visible; }
-@media (max-width: 720px) { th.wide-col, td.wide-col { min-width: 16rem; } .home-link .logo { height: 24px; } }
+@media (max-width: 720px) { .home-link .logo { height: 24px; } }

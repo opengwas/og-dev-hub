@@ -89,11 +89,38 @@ class StoresScript(unittest.TestCase):
         self.assertNotIn("could not be drawn", text)
         for expected in ("OGS-00001", "dense-new", "62.1 GB", "AFR 1 · EUR 2 · unassigned 1",
                          "recorded from opengwasdb-stores#502's backfill", "counts come with opengwasdb#488",
-                         "pending opengwasdb-stores#507", "not computed",
+                         "not computed",
                          "not built yet (Release Status candidate)", "withdrawn",
                          "no record says how the HM3 step ended", "LD Stores are not listed yet", "og-dev-hub#10", "unknown, not 0"):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
+
+    def test_one_tile_per_store_is_drawn_and_the_table_is_gone(self) -> None:
+        text = self.drawn(build(self.addCleanup, stores_doc=None))
+        self.assertEqual(text.count("Layout "), 8)  # one tile each; the runner gives the drawn text
+        self.assertIn("Why n/a", text)
+        self.assertIn("Size on disk n/a", text)
+        self.assertNotIn("Inventory", text)
+        self.assertIn("LD Stores are not listed yet", text)
+
+    def test_each_tile_is_a_details_whose_summary_holds_the_facts_and_escape_closes_it(self) -> None:
+        out = build(self.addCleanup, stores_doc=None)
+        done = subprocess.run(["node", str(RUNNER), str(out)], capture_output=True, text=True, check=True, timeout=60)
+        drawn = json.loads(done.stdout)
+        self.assertEqual(len(drawn["_tiles"]), 8)
+        for tile in drawn["_tiles"]:
+            with self.subTest(tile=tile["id"]):
+                self.assertTrue(tile["summary"])
+                for label in ("Layout", "Size on disk", "Top hits", "Rho"):
+                    self.assertIn(label, tile["summaryText"])
+                self.assertFalse(tile["linkInSummary"])
+                self.assertTrue(tile["linkInBody"])
+        tags = {t["id"]: t["tagClass"] for t in drawn["_tiles"]}
+        self.assertEqual(tags["store-OGS-00001"], "tag tag-ok")        # validated
+        self.assertEqual(tags["store-OGS-00005"], "tag")               # candidate
+        self.assertEqual(tags["store-OGS-00007"], "tag tag-muted")     # withdrawn
+        self.assertEqual(drawn["_escape"], {"before": 2, "after": 0})  # every open tile, focus or none
+        self.assertTrue(drawn["_otherKey"])                            # another key closes nothing
 
     def test_the_benchmarking_tab_is_drawn_with_its_line_and_the_runs(self) -> None:
         self.out_page = build(self.addCleanup, stores_doc=None)
