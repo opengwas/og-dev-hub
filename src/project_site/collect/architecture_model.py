@@ -12,6 +12,7 @@ They take plain data (a model, a list of tracked paths) and read no repository.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Callable, Collection, Iterable, Mapping, Sequence
 
 import yaml
@@ -140,6 +141,21 @@ def load_system(text: str) -> dict[str, Any]:
             raise ValueError(f"system.yaml: repository {entry['name']!r} is listed twice")
         names.add(entry["name"])
     return doc
+
+
+def read_system(path: Path | None = None) -> dict[str, Any]:
+    """The one reader of og-dev-hub's `system.yaml`: `path`, or this checkout's (`paths.system_file`), checked by `load_system`.
+
+    A file that cannot be read, or that fails `load_system`, is a `ValueError` naming it.
+    """
+    from project_site import paths
+
+    path = Path(path) if path is not None else paths.system_file()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise ValueError(f"{paths.SYSTEM_FILE} cannot be read: {error}") from error
+    return load_system(text)
 
 
 def describe_system_gaps(

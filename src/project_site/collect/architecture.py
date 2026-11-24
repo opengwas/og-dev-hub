@@ -36,9 +36,6 @@ from project_site.collect.common import CollectError
 
 MODEL_PATH = "docs/architecture/components.yaml"
 DEFAULT_REF = "main"
-# The hub's own system model (#8): read from its working tree, which is the published state
-# because publishing renders a clean checkout of the hub.
-SYSTEM_FILE = "system.yaml"
 
 
 def collect(
@@ -52,11 +49,7 @@ def collect(
     each repository's clone at `main`, unfetched); `system_file` the hub's
     `system.yaml` (by default the one in this checkout's working tree).
     """
-    system_file = system_file or paths.repo_root() / SYSTEM_FILE
-    try:
-        system = model_rules.load_system(system_file.read_text(encoding="utf-8"))
-    except OSError as error:
-        raise CollectError(f"{SYSTEM_FILE} cannot be read: {error}") from error
+    system = model_rules.read_system(system_file)
     repositories = repositories or staging.Repositories()
     container_ids = {str(c["id"]) for c in system["containers"]}
 

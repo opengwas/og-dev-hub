@@ -378,7 +378,8 @@ The model files. Each has `repo` and `components`: `id`, `name`, `container`,
 it may hold `stages` (the pipeline's stages stay with opengwasdb-stores). The
 system itself (`system`, `people`, `external`, `containers`,
 `container_relations`, `repos`) is og-dev-hub's `system.yaml` (#8), read from
-this checkout's working tree: publishing renders a clean checkout, so the tree
+this checkout's working tree by its one reader (`architecture_model.read_system`, at
+`paths.system_file`, or the file `--system` names): publishing renders a clean checkout, so the tree
 is the published state. `collect/architecture_model.py`'s `load_system` checks
 the keys and their shapes, that each person, external system and container has
 an `id` and a `name` of text (the same check, with the same rule, as a model's

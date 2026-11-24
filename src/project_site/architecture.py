@@ -127,8 +127,9 @@ def check(args: argparse.Namespace, out: TextIO) -> int:
     document = _architecture(args)
     failed = unknown = False
     repos, gaps = document.get("repos") or {}, document.get("gaps") or {}
+    # Whether `--repo` is listed was asked once, in `main`; a collection read with --data may still lack it.
     if args.repo and args.repo not in repos:
-        raise Unavailable(f"{args.repo} is not a repository system.yaml lists")
+        raise Unavailable(f"{args.repo} is not in this collection")
     names = [args.repo] if args.repo else list(repos)
     for failure in _fetch_failures(None, document, names):
         print(f"cannot check: the fetch failed for {failure}, so what was read may be out of date", file=out)
@@ -323,7 +324,7 @@ def _candidate(
             f"{b['repo']}:{b['name']}: {b['item']} of {b['owner']}, {len(b['files'])} files on "
             f"{len(b['components'])} components"), unclaimed_code(b["repo"], b["files"]), []
     if args.repo not in (architecture_doc.get("repos") or {}):
-        raise Unavailable(f"{args.repo} is not a repository system.yaml lists")
+        raise Unavailable(f"{args.repo} is not in this collection")
     if reason := unmeasured.get(args.repo):
         raise Unavailable(f"work on {args.repo} was not measured: {reason}")
     mine = claims.get(args.repo) or []
@@ -341,11 +342,10 @@ def _candidate(
 
 def _listed(args: argparse.Namespace) -> list[str]:
     """The repository names `system.yaml` lists, from the file the command reads."""
-    system = args.system or site_paths.repo_root() / architecture.SYSTEM_FILE
     try:
-        loaded = architecture_model.load_system(Path(system).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        raise Unavailable(f"{architecture.SYSTEM_FILE} cannot be read: {error}") from error
+        loaded = architecture_model.read_system(args.system)
+    except ValueError as error:
+        raise Unavailable(str(error)) from error
     return [entry["name"] for entry in loaded.get("repos") or []]
 
 
