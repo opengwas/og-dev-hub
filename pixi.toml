@@ -33,7 +33,7 @@ og-dev-hub = { path = ".", editable = true }
 # registry checkout is. The pin is opengwasdb-stores' epic branch
 # (`orch/14-what-is-built`), where the bundle helpers and the schema live; move it to
 # `main` when that merges.
-ogstores = { git = "https://github.com/opengwas/opengwasdb-stores", rev = "71574093e5a52350bf1578d851517f0c9015f185" }
+ogstores = { git = "https://github.com/opengwas/opengwasdb-stores", rev = "04b71902792b50abdeec7435b407727628d94fbd" }
 # The engine, which `ogstores` reads every `analyses.tsv` through (`bundle.manifest_summary`,
 # og-dev-hub#16): no lighter owner of that read exists. The real cost is the engine's own
 # dependencies (numpy, zarr, pandas, scipy, scikit-learn, pysam, ...): about 40 wheels and 1.1 GB
