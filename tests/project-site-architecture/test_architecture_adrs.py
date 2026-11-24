@@ -57,11 +57,14 @@ class AdrPlacementTests(unittest.TestCase):
         self.assertEqual(unplaced, [(fx.REGISTRY, "0004"), (fx.ENGINE, "0003"), (fx.ENGINE, "0004")])
 
     def test_an_adr_carries_its_title_status_and_link(self) -> None:
-        by_key = {(a["repo"], a["number"]): a for a in collect(self)["adrs"]}
+        result = collect(self)
+        by_key = {(a["repo"], a["number"]): a for a in result["adrs"]}
         cites = by_key[(fx.ENGINE, "0002")]
         self.assertEqual(cites["title"], "0002. Layers")
         self.assertEqual(cites["status"], "superseded")
-        self.assertEqual(cites["url"], "https://github.com/opengwas/opengwasdb/blob/main/docs/adr/0002-cites.md")
+        # At the commit read, from the one GitHub root (og-dev-hub#6), never `main`, which moves.
+        commit = result["repos"][fx.ENGINE]["commit"]
+        self.assertEqual(cites["url"], f"https://github.com/opengwas/opengwasdb/blob/{commit}/docs/adr/0002-cites.md")
         self.assertEqual(by_key[(fx.REGISTRY, "0001")]["status"], "current")
 
 

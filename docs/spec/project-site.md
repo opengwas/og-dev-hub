@@ -404,7 +404,7 @@ hand: edges, counts and ADR placement are measured.
 | `baseline` | `path`, `from` (`opengwasdb-stores`), `entries` (how many imports its committed baseline lists; `null` with a `note` when it is not there at the commit read, never 0) and `measured` (the engine imports its code makes; `null` without its model) |
 | `edges` | `from`, `to`, `imports`, `scope` and `upward`: `scope` is `within` (with `repo`) or `across` (with `from_repo` and `to_repo`) |
 | `upward_imports` | each import within a repository that goes up its layers (#419), sorted by `file` then `name`: `file` (the importing file), `name` (the absolute imported name, a relative import resolved), `from`, `to` (component ids), `from_layer`, `to_layer`. The layering baseline of the repository that declares the layers lists the same pairs. `null` when no model read declares layers (the layering cannot be measured); never `[]` |
-| `adrs` | every `docs/adr/NNNN-*.md` of every repository read: `repo`, `number`, `path`, `title`, `status`, `url`, `components`, `cites` (`[{repo, number}]`, below) |
+| `adrs` | every `docs/adr/NNNN-*.md` of every repository read: `repo`, `number`, `path`, `title`, `status`, `url` (the file on GitHub at the commit read, from `paths.clone_url`), `components`, `cites` (`[{repo, number}]`, below) |
 | `summary` | `edges` (the edges measured), `upward_edges`, `upward_imports`, `registry_to_engine_edges`, `registry_to_engine_imports`, `adrs_total`, `adrs_placed`; what cannot be measured is `null` (see below) |
 
 A code file that cannot be read, or a Python file that does not parse, makes the
