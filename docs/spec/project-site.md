@@ -9,8 +9,11 @@ The code is og-dev-hub's `src/project_site/`; it moved here from
 opengwasdb-stores with its history in og-dev-hub#7, where "this repository"
 below meant opengwasdb-stores, the **registry**. From opengwasdb-stores, which
 the environment installs as the `ogstores` distribution, it imports
-`ogstores.bundle` and `yardstick.result`, and nothing else; every call names the
-registry root it reads, because an installed package knows no checkout.
+`ogstores.bundle` and `yardstick.result`, and nothing else of it; every call names the
+registry root it reads, because an installed package knows no checkout. Of the engine,
+`opengwasdb`, it imports `opengwasdb.model.analyses.read_analyses` alone, the one
+reader of a Release Manifest (`ogstores.bundle.partition_membership` takes its table). The environment
+pins both at a revision (`ogstores` at opengwasdb-stores' epic branch until it merges to `main`).
 
 **Where each repository is read from** (og-dev-hub#9). Every repository
 og-dev-hub's `system.yaml` lists in `repos` is read from `main` of the site's
@@ -53,23 +56,26 @@ no other source.
 ## The site
 
 The site (og-dev-hub#15, `docs/site.md`) is one static page of built state, with
-three views: Architecture, Decisions and Context (Stores is og-dev-hub#16's).
+four views: Architecture, Decisions, Context and Stores.
 `pixi run site` collects from **public git only**, through
 `collect.__main__.run(public_only=True)`: the architecture collector with
 `read_private=False`, so a `private` repository is listed (its `note` says
 "private: drawn as its container only, never read") and never asked for, so
-never cloned; the board, the Stores, the work and the other collectors do not
+never cloned; and the Stores collector, over the registry's extracted `stores/`
+and `docs/_yardstick/` (public git). The board, the work and the other collectors do not
 run. It needs no token, no `/data` and no network access to a private
 repository.
 
 `project_site.site.build(data_dir, out)` reads the collected `architecture.json`
-(a file that is missing or unreadable is `available: false` with why), passes it
-through `public_view`, and writes from that alone:
+and `stores.json` (a file that is missing or unreadable is `available: false` with why),
+passes the architecture through `public_view` and the Stores through `stores_view`, and writes
+from those alone:
 
 | File | Content |
 |---|---|
 | `data/architecture.json` | the envelope; `repos` (a list, in `system.yaml`'s order: `name`, `label`, `url`, `state`, `visibility`, `status`, `ref`, `commit`, `committed`, `why` (the error of an `unreadable` one, the note of a `no_model` one, else `null`) and `refresh_error` (`null` unless the refresh failed)); `containers` (with `state`: `public`, `private`, `planned` or `data`); `diagrams` (`id`, `title`, `caption`, `svg`); `stages` (with the `components` serving each); `components` (with `anchor`, `container_name`, `size`, `paths` as `{path, url}` on GitHub at the commit read, and `adrs` placed on it with `via`); `component_repos` (the repositories with a component, for the view's filter); `counts` (`components`, `repos_with_model`); `gaps` (each public repository not planned: `state`, which follows the repository's: `unreadable` or `no_model` (with its `why` as `unreadable` or `no_model`), else `gaps` (an unclaimed file, a stale claim or a system gap), `complete`, or `unknown` when its claims were not measured (no gap record, or `unclaimed` or `stale` unknown), never `complete`; `unclaimed` and `stale` are lists only for `gaps` and `complete`, else `null`; `system`); `layering` (`null` when no model declares layers, else each layered repository's `edges`, `imports` against the layering and its `upward` imports); `seam` (`imports`, `pairs`, `baseline`); `across` (imports per pair of repositories); `summary` |
 | `data/decisions.json` | the envelope; `repos` (those with an ADR, in order); `adrs` in `system.yaml`'s order then by number: `repo`, `number`, `title`, `status`, `url`, `components` (`{id, name, via}`) and `cites` (`{repo, number, text, url}`, `url` `null` when the cited ADR was not collected or is a private repository's) |
+| `data/stores.json` | the Stores view (see [The Stores view](#the-stores-view)): the envelope; `registry` (`name`, `url`, `commit`, `stores_url`); `inventory`; `yardstick` |
 | `data/context.json` | `html` (the hub's `CONTEXT.md`, rendered by `project_site.markdown`: headings, paragraphs, lists, bold, italics, code spans and links, every character escaped first, a relative link resolved against og-dev-hub's `main` on GitHub, and a link to any other scheme than `http(s)` dropped); `source`; `glossaries`: each public listed repository but og-dev-hub, not planned, with `url` (its `CONTEXT.md` at the commit read) or `null` and a `note` (`no CONTEXT.md at the commit read`, `could not be read`) |
 
 A repository's `state` is decided once, by `site.repo_state`: `planned`,
@@ -212,6 +218,9 @@ not. Each bundle is read with `ogstores.bundle.load`, which never opens a Store.
 | `description`, `notes` | release.yaml's text as written. `notes` is where Release Errata live |
 | `problems` | what the bundle could not state: a `trial` that is not a boolean, a coverage outside the vocabulary, a malformed YAML file. Empty when there is nothing |
 
+Beside `stores`, the file holds `commit` (the registry commit read, `null` for `--registry`),
+`inventory` (one row per Store, below) and `yardstick` (the committed results, below).
+
 A fact the bundle does not hold is `null`: a Store with no Validation Record
 has `validated_at: null`, never a date borrowed from elsewhere, and a
 `n_associations` the record left `null` stays `null` (it is not
@@ -220,8 +229,69 @@ has `validated_at: null`, never a date borrowed from elsewhere, and a
 
 **LD Stores.** `stores.json` holds GWAS Stores only: the LD Store Registry is
 not yet in opengwasdb-stores (opengwasdb-stores#496), so LD Stores are not
-listed and their number is unknown, never 0. The Stores view (og-dev-hub#16)
-draws both.
+listed and their number is unknown, never 0. The Stores view does not draw them.
+
+**`inventory[]`** (`collect.inventory`, og-dev-hub#16), one row per Release Bundle: `store_id`,
+`label`, `description`, and a *cell* (`{value, gap}`, never both set) for each of `layout`,
+`completion_state`, `coverage`, `status`, `store_bytes`, `n_variants`, `top_hits`, `has_hm3`,
+`has_rho`, `n_clumped`, `n_analyses`, `median_sample_size` and `ancestry`. Each reading rule is
+the registry's, called and not re-derived: the bundle through `ogstores.bundle.load` (`layout`,
+`completion_state`, `association_coverage`, `status`); the flags and the top-hit encoding through
+`bundle.observed_flag` and `bundle.top_hit_counts_text`; the Release Manifest through
+`opengwasdb.model.analyses.read_analyses` and `bundle.partition_membership`, **built rows only**:
+an `exclude_from_build` audit row is in no count, ancestry or median.
+
+| Cell | Value | Gap, with what fills it |
+|---|---|---|
+| `store_bytes` | `observed.store_bytes` | absent or `null`: "recorded from opengwasdb-stores#502's backfill" |
+| `n_variants` | `observed.n_variants` | absent: the backfill; `null`: "counts come with opengwasdb#488" |
+| `top_hits` | the count at each threshold | the recipe's `post.top_hits` is false: "not computed"; `n_top_hits` absent: the backfill; `null`: "counts come with opengwasdb#488" |
+| `has_hm3`, `has_rho` | `true` or `false` | absent: the backfill; `has_rho` `null`: "not recorded: a Rho Matrix built outside the recipe is not" |
+| `n_clumped` | `observed.n_clumped` | absent or `null`: "pending opengwasdb-stores#507" |
+| `n_analyses` | the built rows (and how many `excluded` rows were left out) | `analyses.tsv` missing or unreadable, naming which |
+| `median_sample_size` | the median of `sample_size` over the built rows that have a number, with `with_sample_size` of `of` | no built row has one |
+| `ancestry` | a count per `assigned_ancestry`, `unassigned` for an empty one | no `assigned_ancestry` column |
+
+A value the owner refuses (`observed_flag` on `"yes"`) is a gap carrying its message. **`yardstick`**
+(`collect.yardstick_runs`): `available` (`false` with a `reason` when the registry has no
+`docs/_yardstick/` at the commit read), `runs` (every valid result, oldest first, reduced to what
+the view draws: `file`, `workload_id`, `engine_version`, `started_utc`, `cpu_count`,
+`load_average`, `veeam_window`, and per Store its `layout`, `coverage`, `status`, `reason` and
+`measures`) and `invalid` (`{file, error}`). Each file is validated by `yardstick.result.validate`;
+one it refuses is not read but listed in `invalid` with the validator's message, and never stops the others.
+
+### The Stores view
+
+`data/stores.json` (`project_site.stores_view`, og-dev-hub#16) is decided at build time from
+the collected `stores.json`; `static/js/stores.js` only renders it. It holds only the fields
+named in `stores_view`, and every text a collector wrote has its host paths cut to the last
+name (`architecture_public.reason`), so no `/data/...` path reaches the file, including in an
+error.
+
+- **`inventory[]`**: the row above, each cell `{text, gap, detail}`: `text` the figure as
+  drawn (`62.1 GB`, `11,191,070`, `AFR 1 · EUR 2 · unassigned 1`, top hits
+  `p < 5e-08: 10`), or `gap` the cause. `url` links the Store's bundle on GitHub at the
+  commit read.
+- **`yardstick`**: `stores` (the latest run per Store), `trends`, `unmeasured`, `invalid`,
+  `runs`, `workloads`, `load_rule`, `veeam_rule`. Raw runs are not listed.
+  - *The latest run per Store* is the latest run that measured it (a Store `pending` in every run
+    says so, with its `reason`). It gives `engine_version`, `date`, `workload_id`, `flags`,
+    `peak_memory` and `size_on_disk` (each a figure, or its state with why), and `measures`: the
+    median and p95 of every timed measure the run holds, in `yardstick.result.TIMED`'s order. A
+    run of the old workload (`yardstick-3`) has fewer measures and shows exactly those; a
+    measure the run does not hold is absent, not zero, and appears once a run carries it.
+    `state` is `measured`, `not_applicable` (drawn "not applicable" with its `reason`) or
+    `unavailable` (drawn "unavailable" with its `error`); the two are never drawn alike.
+  - *A flagged run* is marked. A run is flagged when `veeam_window` is true, or when any load
+    average it recorded (1, 5 or 15 minutes, before or after) is **over a quarter of
+    `host.cpu_count`**: 224 CPUs flag a load average over 56. A load exactly a quarter is not flagged.
+  - *Trends*: one per measure (the median of a timed measure, `peak_mb` for `peak_rss`, `bytes`
+    for `bytes_on_disk`), inline SVG drawn by `stores_view.trend`; no charting library. One line per
+    Store, **one point per engine version** (a version run more than once shows that Store's
+    latest run of it), versions in the order they were first run, not by number. A flagged run's
+    point is ringed (`flag-ring`) and its tooltip says why; the tooltip also names the workload,
+    because a trend across a workload change compares different measures.
+  - *`unmeasured`*: registry Stores no committed run lists: "not measured by yardstick".
 
 ### Architecture (`architecture.json`)
 

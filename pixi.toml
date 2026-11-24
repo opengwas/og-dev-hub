@@ -30,8 +30,13 @@ og-dev-hub = { path = ".", editable = true }
 # collector reads the registry through. Its `dependencies` are empty,
 # so this brings in no second copy of anything here. Every call passes the
 # registry root it reads: an installed `ogstores` does not know where a
-# registry checkout is.
-ogstores = { git = "https://github.com/opengwas/opengwasdb-stores", rev = "5cab2625f33f2345a153cfb20c473a011935830d" }
+# registry checkout is. The pin is opengwasdb-stores' epic branch
+# (`orch/14-what-is-built`), where the bundle helpers and the schema live; move it to
+# `main` when that merges.
+ogstores = { git = "https://github.com/opengwas/opengwasdb-stores", rev = "e60806f8e1b4e5812d3339fd5e1e84ae385ae9f1" }
+# The engine's one reader of a Release Manifest, `opengwasdb.model.analyses.read_analyses`,
+# which `ogstores.bundle.partition_membership` takes its table from (og-dev-hub#16).
+opengwasdb = { git = "https://github.com/opengwas/opengwasdb", rev = "cfc20726e11c7e492677054ed96fe9e0f3308f4b" }
 
 [tasks]
 # The suites: every tests/**/test_*.py, each run as a script, one at a time.

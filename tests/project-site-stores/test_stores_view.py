@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""The Stores view: the inventory and yardstick's results, from a fixture registry (og-dev-hub#16).
+
+Run from the repository root:
+    python3 tests/project-site-stores/test_stores_view.py
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+
+import stores_fixtures as fx
+
+from project_site import stores_view
+from project_site.collect import common, stores
+
+HOST_PATH = re.compile(r"(?<![\w.:/~-])/data/")
+
+
+def collected(registry: Path) -> dict:
+    return common.envelope("stores", available=True, error=None, **stores.collect(registry, commit="c" * 40))
+
+
+class Fixture(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.root = Path(tempfile.mkdtemp(prefix="stores-view-"))
+        cls.addClassCleanup(shutil.rmtree, cls.root, True)
+        cls.registry = fx.make_registry(cls.root)
+        cls.doc = collected(cls.registry)
+        cls.view = stores_view.stores_view(cls.doc)
+        cls.rows = {r["store_id"]: r for r in cls.doc["inventory"]}
+        cls.shown = {r["store_id"]: r for r in cls.view["inventory"]}
+
+
+class InventoryTests(Fixture):
+    """Seam 1: each inventory field, from a Store of each layout, checked against literals."""
+
+    def test_every_store_has_a_row_and_nothing_else_does(self) -> None:
+        self.assertEqual(list(self.rows), ["OGS-00001", "OGS-00002", "OGS-00003"])
+        self.assertEqual([r["store_id"] for r in self.view["inventory"]], list(self.rows))
+
+    def test_the_dense_store_with_every_field(self) -> None:
+        row = self.shown["OGS-00001"]
+        self.assertEqual({k: row[k]["text"] for k in row if isinstance(row[k], dict)}, {
+            "layout": "dense", "completion_state": "reference_completed", "coverage": "gwas", "status": "validated",
+            "store_bytes": "62.1 GB", "n_variants": "11,191,070",
+            "top_hits": "p < 5e-04: 34,567 · p < 5e-06: 1,200 · p < 5e-08: 10",
+            "has_hm3": "yes", "has_rho": "no", "n_clumped": None,
+            "n_analyses": "4", "median_sample_size": "200", "ancestry": "AFR 1 · EUR 2 · unassigned 1",
+        })
+        self.assertEqual(row["label"], "dense-new")
+
+    def test_the_other_layouts_read_from_their_own_bundles(self) -> None:
+        self.assertEqual((self.shown["OGS-00002"]["layout"]["text"], self.shown["OGS-00003"]["layout"]["text"]), ("hybrid", "ragged"))
+        self.assertEqual(self.shown["OGS-00003"]["coverage"]["text"], "cis")
+        self.assertEqual(self.shown["OGS-00002"]["median_sample_size"]["text"], "60")
+        self.assertEqual(self.shown["OGS-00003"]["n_variants"]["text"], "8,927,061")
+
+    def test_n_clumped_is_pending_until_opengwasdb_stores_507(self) -> None:
+        for row in self.shown.values():
+            self.assertEqual(row["n_clumped"], {"text": None, "gap": "pending opengwasdb-stores#507", "detail": None})
+
+    def test_the_row_holds_the_ticket_fields_and_no_others(self) -> None:
+        self.assertEqual(sorted(self.shown["OGS-00001"]), sorted([
+            "store_id", "url", "label", "description", "layout", "completion_state", "coverage", "status", "store_bytes",
+            "n_variants", "top_hits", "has_hm3", "has_rho", "n_clumped", "n_analyses", "median_sample_size", "ancestry"]))
+
+
+class GapTests(Fixture):
+    """Seam 2: a Validation Record without #502's fields shows each as a gap naming its source, never as zero."""
+
+    BACKFILL = "recorded from opengwasdb-stores#502's backfill"
+
+    def test_each_missing_field_is_a_gap_naming_what_fills_it(self) -> None:
+        old = self.shown["OGS-00003"]
+        for field in ("store_bytes", "has_hm3", "has_rho", "top_hits"):
+            with self.subTest(field=field):
+                self.assertEqual((old[field]["text"], old[field]["gap"]), (None, self.BACKFILL))
+
+    def test_a_count_the_record_left_null_waits_for_the_engine(self) -> None:
+        self.assertEqual(self.shown["OGS-00002"]["n_variants"]["gap"], "counts come with opengwasdb#488")
+
+    def test_a_store_without_a_top_hit_index_says_not_computed(self) -> None:
+        gap = self.shown["OGS-00002"]["top_hits"]["gap"]
+        self.assertTrue(gap.startswith("not computed"), gap)
+        self.assertIn("post.top_hits", gap)
+
+    def test_a_null_top_hit_count_on_an_indexed_store_waits_for_the_engine(self) -> None:
+        stores_dir = self.registry
+        yaml_path = stores_dir / "OGS-00003" / "validation.yaml"
+        original = yaml_path.read_text()
+        self.addCleanup(yaml_path.write_text, original)
+        yaml_path.write_text(original.replace("observed:", "observed:\n  n_top_hits: null\n  has_hm3: null"))
+        row = stores_view.stores_view(collected(stores_dir))["inventory"][2]
+        self.assertEqual(row["top_hits"]["gap"], "counts come with opengwasdb#488")
+        self.assertEqual(row["has_hm3"]["gap"], self.BACKFILL)
+
+    def test_no_gap_is_ever_drawn_as_zero(self) -> None:
+        for row in self.shown.values():
+            for key, cell in row.items():
+                if isinstance(cell, dict) and cell["gap"]:
+                    with self.subTest(store=row["store_id"], field=key):
+                        self.assertIsNone(cell["text"])
+        for row in self.rows.values():  # and the collected value of a gap is null, not 0
+            for key, cell in row.items():
+                if isinstance(cell, dict) and cell.get("gap"):
+                    self.assertIsNone(cell["value"], (row["store_id"], key))
+
+    def test_a_manifest_without_an_ancestry_column_is_a_gap(self) -> None:
+        self.assertEqual(self.shown["OGS-00003"]["ancestry"]["gap"], "analyses.tsv has no assigned_ancestry column")
+
+    def test_a_missing_manifest_is_a_gap_for_what_it_holds_and_stops_nothing(self) -> None:
+        (self.registry / "OGS-00003" / "analyses.tsv").rename(self.registry / "OGS-00003" / "gone.tsv")
+        self.addCleanup((self.registry / "OGS-00003" / "gone.tsv").rename, self.registry / "OGS-00003" / "analyses.tsv")
+        row = stores_view.stores_view(collected(self.registry))["inventory"][2]
+        for field in ("n_analyses", "median_sample_size", "ancestry"):
+            self.assertEqual(row[field]["gap"], "analyses.tsv is not in the bundle")
+        self.assertEqual(row["layout"]["text"], "ragged")
+
+
+class BuiltRowsTests(Fixture):
+    """Seam 3: counts, ancestry and the median skip the `exclude_from_build` audit rows."""
+
+    def test_the_excluded_row_is_not_counted(self) -> None:
+        row = self.shown["OGS-00001"]
+        self.assertEqual(row["n_analyses"]["text"], "4")
+        self.assertEqual(self.rows["OGS-00001"]["n_analyses"]["excluded"], 1)
+
+    def test_the_excluded_sample_size_does_not_move_the_median(self) -> None:
+        self.assertEqual(self.rows["OGS-00001"]["median_sample_size"]["value"], 200)  # 250 if the excluded row counted
+
+    def test_the_median_says_how_many_built_rows_had_a_sample_size(self) -> None:
+        self.assertEqual(self.shown["OGS-00001"]["median_sample_size"]["detail"], "over the 3 of 4 built rows that have one")
+
+    def test_the_excluded_ancestry_is_not_counted(self) -> None:
+        self.assertEqual(self.rows["OGS-00001"]["ancestry"]["value"], {"AFR": 1, "EUR": 2, "unassigned": 1})
+
+
+class YardstickTests(Fixture):
+    """Seam 4: old and new workloads both render; the states are distinct; an invalid file is a gap."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        cls.y = cls.view["yardstick"]
+        cls.latest = {s["store_id"]: s for s in cls.y["stores"]}
+
+    def test_every_valid_run_shows_and_the_invalid_one_is_a_gap_naming_its_file(self) -> None:
+        self.assertEqual(self.y["runs"], 3)
+        self.assertEqual(self.y["workloads"], ["yardstick-3", "yardstick-4"])
+        self.assertEqual([i["file"] for i in self.y["invalid"]], ["20261118T000000Z-broken.json"])
+        self.assertIn("schema", self.y["invalid"][0]["error"])
+
+    def test_the_latest_run_per_store_gives_its_facts(self) -> None:
+        dense = self.latest["OGS-00001"]
+        self.assertEqual((dense["engine_version"], dense["date"], dense["workload_id"]), ("0.10.0", "2026-11-17", "yardstick-4"))
+        self.assertEqual(dense["peak_memory"]["text"], "950 MB")
+        self.assertEqual(dense["size_on_disk"]["text"], "62.1 GB")
+        by_name = {m["name"]: m for m in dense["measures"]}
+        self.assertEqual((by_name["phewas_rsid"]["median"], by_name["phewas_rsid"]["p95"]), ("90.0 ms", "108.0 ms"))
+
+    def test_an_old_workload_result_renders_without_the_new_measures(self) -> None:
+        old_only = {"runs": [r for r in self.doc["yardstick"]["runs"] if r["workload_id"] == "yardstick-3"],
+                    "invalid": [], "available": True, "reason": None}
+        view = stores_view.yardstick_view(old_only, {}, ["OGS-00001"])
+        dense = view["stores"][0]
+        self.assertEqual([m["name"] for m in dense["measures"]], ["open", "phewas_rsid"])
+        self.assertEqual(dense["engine_version"], "0.3.3")
+
+    def test_the_new_measures_appear_once_a_run_carries_them(self) -> None:
+        names = [m["name"] for m in self.latest["OGS-00001"]["measures"]]
+        for name in ("lookup_100x100", "range_by_analysis", "top_hits", "rho"):
+            self.assertIn(name, names)
+
+    def test_not_applicable_and_unavailable_are_drawn_distinctly(self) -> None:
+        by_name = {m["name"]: m for m in self.latest["OGS-00001"]["measures"]}
+        self.assertEqual((by_name["range_by_analysis"]["state"], by_name["range_by_analysis"]["note"]),
+                         ("not_applicable", "the cis query is Ragged only"))
+        self.assertEqual(by_name["rho"]["state"], "not_applicable")
+        self.assertEqual(by_name["top_hits"]["state"], "unavailable")
+        self.assertIn("top_hits failed reading", by_name["top_hits"]["note"])
+        self.assertNotEqual(by_name["rho"]["state"], by_name["top_hits"]["state"])
+        for state in (by_name["rho"], by_name["top_hits"]):
+            self.assertIsNone(state["median"])
+
+    def test_a_store_yardstick_does_not_measure_says_so(self) -> None:
+        self.assertEqual(self.y["unmeasured"], [{"store_id": "OGS-00003", "label": "ragged-old"}])
+
+    def test_raw_runs_are_not_listed(self) -> None:
+        self.assertNotIn("runs_list", self.y)
+        self.assertNotIn("20261105T060000Z-0.3.3.json", json.dumps(self.view))
+
+    def test_a_directory_without_results_says_so(self) -> None:
+        view = stores_view.yardstick_view({"available": False, "reason": "no results"}, {}, [])
+        self.assertEqual(view, {"available": False, "reason": "no results"})
+
+
+class FlagTests(Fixture):
+    def test_the_veeam_window_and_a_load_over_a_quarter_of_the_cpus_mark_a_run(self) -> None:
+        runs = {r["file"]: r for r in self.doc["yardstick"]["runs"]}
+        self.assertEqual(stores_view.run_flags(runs["20261101T120000Z-0.3.2.json"]), [])
+        self.assertEqual(stores_view.run_flags(runs["20261105T060000Z-0.3.3.json"]), ["taken in the Veeam window"])
+        (loaded,) = stores_view.run_flags(runs["20261117T113000Z-0.10.0.json"])  # 70 on 224 CPUs is over 56
+        self.assertIn("load average 70 over 56", loaded)
+
+    def test_a_load_at_a_quarter_exactly_is_not_marked(self) -> None:
+        run = {"cpu_count": 16, "load_average": {"before": [4, 1, 1], "after": [1, 1, 1]}, "veeam_window": False}
+        self.assertEqual(stores_view.run_flags(run), [])
+        run["load_average"]["after"] = [4.01, 1, 1]
+        self.assertEqual(len(stores_view.run_flags(run)), 1)
+
+
+class TrendTests(Fixture):
+    """Seam 5: one point per engine version, and a flagged run is marked."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        cls.trends = {t["measure"]: t for t in cls.view["yardstick"]["trends"]}
+
+    @staticmethod
+    def points(svg: str) -> list[str]:
+        return re.findall(r'<circle class="pt[^"]*"', svg)
+
+    def test_one_point_per_engine_version_per_store(self) -> None:
+        trend = self.trends["phewas_rsid"]
+        self.assertEqual(trend["versions"], ["0.3.2", "0.3.3", "0.10.0"])
+        self.assertEqual(len(self.points(trend["svg"])), 6)  # two Stores, three versions
+        self.assertEqual([s["points"] for s in trend["series"]], [3, 3])
+
+    def test_a_measure_only_the_newest_run_carries_has_one_point(self) -> None:
+        trend = self.trends["lookup_100x100"]
+        self.assertEqual(trend["versions"], ["0.10.0"])
+        self.assertEqual(len(self.points(trend["svg"])), 2)
+
+    def test_a_flagged_run_is_marked_and_the_others_are_not(self) -> None:
+        trend = self.trends["phewas_rsid"]
+        self.assertEqual(trend["flagged"], 4)  # the Veeam run and the loaded run, for both Stores
+        self.assertEqual(trend["svg"].count('class="flag-ring"'), 4)
+        self.assertEqual(len(re.findall(r'<circle class="pt[^"]*flagged"', trend["svg"])), 4)
+
+    def test_a_version_run_twice_shows_one_point(self) -> None:
+        doc = json.loads(json.dumps(self.doc["yardstick"]))
+        again = json.loads(json.dumps(doc["runs"][1]))
+        again["started_utc"], again["file"] = "2026-11-06T06:00:00Z", "again.json"
+        doc["runs"].insert(2, again)
+        trend = next(t for t in stores_view.yardstick_view(doc, {}, [])["trends"] if t["measure"] == "phewas_rsid")
+        self.assertEqual(trend["versions"], ["0.3.2", "0.3.3", "0.10.0"])
+        self.assertEqual(len(self.points(trend["svg"])), 6)
+
+    def test_peak_memory_and_size_have_their_own_trends(self) -> None:
+        self.assertEqual((self.trends["peak_rss"]["unit"], self.trends["bytes_on_disk"]["unit"]), ("MB", "bytes"))
+
+    def test_the_svg_is_self_contained(self) -> None:
+        svg = self.trends["phewas_rsid"]["svg"]
+        self.assertTrue(svg.startswith("<svg ") and svg.endswith("</svg>"))
+        self.assertNotRegex(svg, r"<script|href=|src=|http")
+
+
+class HostPathTests(Fixture):
+    def test_no_host_path_is_in_the_view(self) -> None:
+        text = json.dumps(self.view)
+        self.assertNotRegex(text, HOST_PATH)
+        self.assertNotIn(str(self.root), text)
+        self.assertIn("…/ukb-b", self.shown["OGS-00001"]["description"])
+
+    def test_no_host_path_is_in_an_error(self) -> None:
+        by_name = {m["name"]: m for m in next(s for s in self.view["yardstick"]["stores"] if s["store_id"] == "OGS-00001")["measures"]}
+        self.assertNotRegex(by_name["top_hits"]["note"], HOST_PATH)
+
+    def test_the_collected_registry_path_is_not_published(self) -> None:
+        # The published `registry` is the repository's name, URL and commit, not where this run read it.
+        self.assertEqual(sorted(self.view["registry"]), ["commit", "name", "stores_url", "url"])
+
+
+class UnavailableTests(unittest.TestCase):
+    def test_a_source_that_was_not_collected_says_why(self) -> None:
+        view = stores_view.stores_view({"source": "stores", "available": False, "collected_at": None,
+                                        "error": "CollectError: registry /data/x/stores is not a directory"})
+        self.assertFalse(view["available"])
+        self.assertNotRegex(view["error"], HOST_PATH)
+        self.assertNotIn("inventory", view)
+
+
+if __name__ == "__main__":
+    unittest.main()

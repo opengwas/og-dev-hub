@@ -16,6 +16,7 @@ from typing import Any, Callable
 from ogstores import bundle as release_bundle
 from ogstores import paths
 
+from project_site.collect import inventory, yardstick_runs
 from project_site.collect.common import CollectError
 
 
@@ -27,7 +28,8 @@ def _mapping(document: Any) -> dict[str, Any]:
     return document if isinstance(document, dict) else {}
 
 
-def _store(registry: Path, store_id: str) -> dict[str, Any]:
+def _store(registry: Path, store_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The Store's record and its inventory row (`inventory.row`), from one load of its bundle."""
     bundle = release_bundle.load(store_id, registry_root=registry)
     release, build = _mapping(bundle.release), _mapping(bundle.build)
     validation = _mapping(bundle.validation)
@@ -45,7 +47,7 @@ def _store(registry: Path, store_id: str) -> dict[str, Any]:
             if key in document:
                 problems.append(f"{name}: {document[key]}")
     observed = validation.get("observed")
-    return {
+    record = {
         "store_id": store_id,
         "label": release.get("label"),
         "status": release.get("status"),
@@ -65,11 +67,22 @@ def _store(registry: Path, store_id: str) -> dict[str, Any]:
         "notes": release.get("notes"),
         "problems": problems,
     }
+    return record, inventory.row(bundle)
 
 
-def collect(registry: Path) -> dict[str, Any]:
-    """The Release Bundles under `registry`: the run's `stores/`, from its own handle of opengwasdb-stores."""
+def collect(registry: Path, *, yardstick: Path | None = None, commit: str | None = None) -> dict[str, Any]:
+    """The Release Bundles under `registry` (the run's `stores/`), their inventory rows and yardstick's results.
+
+    `yardstick` is the registry's `docs/_yardstick/` (by default beside `stores/`), `commit` the
+    registry commit read. `registry` is a host path and is never published (`stores_view`).
+    """
     registry = Path(registry)
     if not registry.is_dir():
         raise CollectError(f"registry {registry} is not a directory")
-    return {"registry": str(registry), "stores": [_store(registry, i) for i in registered_store_ids(registry)]}
+    read = [_store(registry, i) for i in registered_store_ids(registry)]
+    return {
+        "registry": str(registry), "commit": commit,
+        "stores": [record for record, _ in read],
+        "inventory": [row for _, row in read],
+        "yardstick": yardstick_runs.collect(yardstick or registry.parent / "docs" / "_yardstick"),
+    }
