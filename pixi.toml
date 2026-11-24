@@ -10,7 +10,6 @@ version = "0.1.0"
 
 [dependencies]
 python = "3.12.*"
-pip = "*"
 pyyaml = "*"
 # The render (`site`, `site-preview`, `site-publish`). Pinned to the version
 # opengwasdb-stores' lock rendered the site with when it moved here, with its Sass
