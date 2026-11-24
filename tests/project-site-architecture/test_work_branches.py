@@ -114,21 +114,32 @@ class BranchTests(unittest.TestCase):
         by_name = {b["name"]: b for b in fixture.collect()["branches"]}
         self.assertEqual((by_name["scratch"]["epic"], by_name["scratch"]["ticket"]), (None, None))
 
+    def mirror(self, fixture: "Fixture", origin: Path) -> Path:
+        """A bare clone of the fixture, as the site keeps one, fetching from `origin`."""
+        mirror = fixture.root / "mirror.git"
+        fx.git(fixture.root, "clone", "-q", "--bare", str(fixture.repo), str(mirror))
+        fx.git(mirror, "remote", "set-url", "origin", str(origin))
+        return mirror
+
+    def read(self, mirror: Path) -> dict:
+        """The branches as a run reads them: through the repository's handle, which fetched it once (og-dev-hub#6)."""
+        repositories = staging.Repositories(refresh=True, git_dirs={"opengwasdb-stores": mirror})
+        (found,) = work.read_branches(repositories, ["opengwasdb-stores"], now=NOW)
+        return found
+
     def test_a_failed_fetch_is_recorded_and_the_branches_already_there_are_read(self) -> None:
         fixture = Fixture(self)
-        result = fixture.collect(fetch="+refs/heads/*:refs/heads/*", remote=str(fixture.root / "no-such-origin"))
+        result = self.read(self.mirror(fixture, fixture.root / "no-such-origin"))
         self.assertFalse(result["fetch"]["ok"])
         self.assertIn("no-such-origin", result["fetch"]["error"])
         self.assertEqual(len(result["branches"]), 3)
 
     def test_a_fetch_that_works_brings_a_pushed_branch(self) -> None:
         fixture = Fixture(self)
-        mirror = fixture.root / "mirror.git"
-        fx.git(fixture.root, "clone", "-q", "--bare", str(fixture.repo), str(mirror))
+        mirror = self.mirror(fixture, fixture.repo)
         for name in ("orch/416/419", "stale-work", "caught-up", "fix/issue-345", "orch/302-integration"):
             fx.git(mirror, "branch", "-D", name)
-        result = branches.collect(mirror, "opengwasdb-stores", main_ref="main", prefixes=("refs/heads/",), now=NOW,
-                                  fetch="+refs/heads/*:refs/heads/*", remote=str(fixture.repo))
+        result = self.read(mirror)
         self.assertEqual(result["fetch"], {"ok": True, "error": None})
         self.assertEqual([b["name"] for b in result["branches"]], ["fix/issue-345", "orch/302-integration", "orch/416/419"])
 

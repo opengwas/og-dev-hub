@@ -99,6 +99,13 @@ class OwnershipTests(unittest.TestCase):
             self.assertIn(reason, str(caught.exception))
         self.assertEqual(len(model.load_model("components:\n  - {id: a, name: A, paths: [src/], layer: 2}\n")["components"]), 1)
 
+    def test_the_claims_map_lists_the_modelled_repositories_in_order_then_any_other_a_component_names(self) -> None:
+        components = [{"id": "a", "repo": "zeta", "paths": ["src/a/"]}, {"id": "b", "repo": "beta", "paths": ["b/"]},
+                      {"id": "c", "repo": "alpha"}]
+        repos = {"beta": {"model": True}, "gamma": {"model": True}, "delta": {"model": False}}
+        self.assertEqual(model.claims_by_repository(components, repos),
+                         {"beta": [("b/", "b")], "gamma": [], "alpha": [], "zeta": [("src/a/", "a")]})
+
     def test_a_nul_separated_list_returns_a_path_with_a_tab_or_newline_whole(self) -> None:
         listing = "src/a\tb.py\0src/c\nd.py\0src/e.py\0"
         self.assertEqual(model.split_nul(listing), ["src/a\tb.py", "src/c\nd.py", "src/e.py"])

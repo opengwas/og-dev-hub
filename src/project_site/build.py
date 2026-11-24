@@ -295,7 +295,7 @@ def _engine_clone(revision: str, repositories: staging.Repositories) -> Path:
     `CollectError`, which `main` and `publish.main` turn into exit status 2.
     """
     handle = repositories.get(paths.ENGINE, revision=revision)
-    if not staging.has_revision(handle.git_dir, revision):
+    if staging.resolve_ref(handle.git_dir, revision)[0] is None:
         fetched = handle.fetch
         why = f": {fetched['error']}" if fetched and not fetched["ok"] else f": {handle.error}" if handle.error else ""
         raise collect_common.CollectError(
@@ -310,11 +310,10 @@ def rewrite(stage: Stage) -> LinkReport:
         registry=stage.registry.git_dir,
         commit=stage.registry_commit,
         registry_url=paths.REGISTRY_URL,
-        engine=stage.engine_clone,
-        engine_commit=stage.engine_commit,
-        engine_url=paths.ENGINE_URL,
-        engine_prefix=f"{ENGINE_SECTION}/",
-        sections=[(f"{HUB_SECTION}/", stage.hub, stage.hub_commit, paths.HUB_URL)],
+        sections=[
+            (f"{ENGINE_SECTION}/", stage.engine_clone, stage.engine_commit, paths.ENGINE_URL),
+            (f"{HUB_SECTION}/", stage.hub, stage.hub_commit, paths.HUB_URL),
+        ],
     )
 
 

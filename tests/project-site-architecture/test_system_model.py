@@ -10,6 +10,7 @@ Run from the repository root:
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 import yaml
 
@@ -79,6 +80,15 @@ class LoadSystemTests(unittest.TestCase):
             model.load_system(broken(system={"name": "S"}))
         with self.assertRaisesRegex(ValueError, "`system`.*`name` and a `summary`"):
             model.load_system(broken(system={"summary": "The system."}))
+
+    def test_one_reader_reads_this_checkouts_file_or_names_one_it_cannot_read(self) -> None:
+        # og-dev-hub#6: the collector, the command line and the public view read system.yaml through it.
+        from project_site import paths
+
+        self.assertEqual(paths.system_file(), paths.repo_root() / "system.yaml")
+        self.assertEqual(model.read_system()["system"]["name"], "OpenGWAS")
+        with self.assertRaisesRegex(ValueError, "system.yaml cannot be read: .*no-such-dir"):
+            model.read_system(Path("/no-such-dir/system.yaml"))
 
     def test_an_id_that_is_not_text_is_refused_as_a_models_is(self) -> None:
         # og-dev-hub#9: one entity check for system.yaml and the components files, with one rule.

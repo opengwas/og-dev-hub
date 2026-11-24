@@ -2,10 +2,9 @@
 
     check      [--repo NAME] [--registry P] [--data DIR] [--system FILE] [--refresh]
     conflicts  (--branch B [--repo NAME] | --files PATH... --repo NAME [--ticket repo#n])
-               [--local GIT_DIR...] [--data DIR] [--refresh] [--days N]
+               [--local GIT_DIR...] [--registry P] [--system FILE] [--data DIR] [--refresh] [--days N]
 
-`NAME` is a repository `system.yaml` lists. `engine` and `registry` are accepted
-for `opengwasdb` and `opengwasdb-stores` for this release only.
+`NAME` is a repository `system.yaml` lists.
 
 `check` reports the code files no component claims and the claims that match no
 file, in each repository with a model (or the one `--repo` names), and compares
@@ -52,14 +51,6 @@ from project_site.collect import architecture, architecture_graph, architecture_
 BASELINE_PATH = "docs/architecture/layering-baseline.yaml"
 LIVE = ("building", "active")
 UNDECIDED = 2
-# The names `--repo` took before og-dev-hub#9, accepted for this release only: the orchestrate
-# preflight still passes them until agent-skills moves to repository names.
-REPO_ALIASES = {"engine": site_paths.ENGINE, "registry": site_paths.REGISTRY}
-
-
-def repo_name(value: str) -> str:
-    """A repository name as `--repo` gives it, with this release's aliases resolved."""
-    return REPO_ALIASES.get(value, value)
 
 
 def possessive(name: str) -> str:
@@ -136,8 +127,9 @@ def check(args: argparse.Namespace, out: TextIO) -> int:
     document = _architecture(args)
     failed = unknown = False
     repos, gaps = document.get("repos") or {}, document.get("gaps") or {}
+    # Whether `--repo` is listed was asked once, in `main`; a collection read with --data may still lack it.
     if args.repo and args.repo not in repos:
-        raise Unavailable(f"{args.repo} is not a repository system.yaml lists")
+        raise Unavailable(f"{args.repo} is not in this collection")
     names = [args.repo] if args.repo else list(repos)
     for failure in _fetch_failures(None, document, names):
         print(f"cannot check: the fetch failed for {failure}, so what was read may be out of date", file=out)
@@ -180,8 +172,7 @@ def _baseline(args: argparse.Namespace, document: Mapping[str, Any], name: str, 
     """Print how repository `name`'s layering baseline compares with its measured upward imports; True when it does not match."""
     repo = document["repos"][name]
     try:
-        handle = args.repositories.get(name).require()
-        text = architecture.Tree(handle.git_dir, repo["commit"]).read([BASELINE_PATH]).get(BASELINE_PATH)
+        text = args.repositories.get(name).require().read([BASELINE_PATH], at=repo["commit"]).get(BASELINE_PATH)
     except (common.CollectError, OSError) as error:
         # An unreadable repository is not an absent baseline: never certify the check.
         raise Unavailable(f"{name} layering baseline: not read ({error})") from error
@@ -308,10 +299,7 @@ def _candidate(
     """
     ticket = args.ticket
     unmeasured = document.get("unmeasured") or {}
-    claims: dict[str, list[tuple[str, str]]] = {}
-    for c in architecture_doc["components"]:
-        if c.get("paths"):
-            claims.setdefault(c["repo"], []).extend(architecture_model.claims_of([c]))
+    claims = architecture_model.claims_by_repository(architecture_doc["components"], architecture_doc.get("repos"))
 
     def is_code(repo: str) -> Any:
         return architecture_model.code_rule(claims.get(repo) or [])
@@ -336,7 +324,7 @@ def _candidate(
             f"{b['repo']}:{b['name']}: {b['item']} of {b['owner']}, {len(b['files'])} files on "
             f"{len(b['components'])} components"), unclaimed_code(b["repo"], b["files"]), []
     if args.repo not in (architecture_doc.get("repos") or {}):
-        raise Unavailable(f"{args.repo} is not a repository system.yaml lists")
+        raise Unavailable(f"{args.repo} is not in this collection")
     if reason := unmeasured.get(args.repo):
         raise Unavailable(f"work on {args.repo} was not measured: {reason}")
     mine = claims.get(args.repo) or []
@@ -354,11 +342,10 @@ def _candidate(
 
 def _listed(args: argparse.Namespace) -> list[str]:
     """The repository names `system.yaml` lists, from the file the command reads."""
-    system = args.system or site_paths.repo_root() / architecture.SYSTEM_FILE
     try:
-        loaded = architecture_model.load_system(Path(system).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        raise Unavailable(f"{architecture.SYSTEM_FILE} cannot be read: {error}") from error
+        loaded = architecture_model.read_system(args.system)
+    except ValueError as error:
+        raise Unavailable(str(error)) from error
     return [entry["name"] for entry in loaded.get("repos") or []]
 
 
@@ -366,8 +353,6 @@ def main(argv: Sequence[str] | None = None, *, stdout: TextIO | None = None) -> 
     out = stdout or sys.stdout
     parser = argparse.ArgumentParser(prog="project_site.architecture", description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    repo_help = ("a repository system.yaml lists; `engine` and `registry` are accepted for opengwasdb and "
-                 "opengwasdb-stores for this release only")
     for name in ("check", "conflicts"):
         p = sub.add_parser(name)
         p.add_argument("--data", type=Path, default=None, help="read this collection (docs/_data) instead of collecting now")
@@ -375,7 +360,7 @@ def main(argv: Sequence[str] | None = None, *, stdout: TextIO | None = None) -> 
                        help="an opengwasdb-stores checkout or git directory (default: the site's clone of it, at main)")
         p.add_argument("--system", type=Path, default=None, help="the system.yaml to read (default: this checkout's)")
         p.add_argument("--refresh", action="store_true", help="fetch every listed repository once first")
-        p.add_argument("--repo", type=repo_name, help=repo_help)
+        p.add_argument("--repo", help="a repository system.yaml lists")
     conflict = sub.choices["conflicts"]
     what = conflict.add_mutually_exclusive_group(required=True)
     what.add_argument("--branch")

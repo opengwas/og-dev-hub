@@ -36,7 +36,7 @@ from pathlib import Path
 
 import architecture_fixtures as fx
 
-from project_site import architecture_pages
+from project_site import architecture_pages, staging
 from project_site.collect import architecture
 from project_site.collect import architecture_graph as graph
 from project_site.collect import architecture_model as model
@@ -87,11 +87,11 @@ def measure(
     root = Path(tempfile.mkdtemp(prefix="baseline-"))
     test.addCleanup(shutil.rmtree, root, True)
     fx.make_repo(root / "registry", registry_files)
-    trees: dict[str, object] = {fx.REGISTRY: architecture.Tree(root / "registry", "HEAD")}
+    trees: dict[str, object] = {fx.REGISTRY: staging.Tree(root / "registry", "HEAD")}
     claims = {fx.REGISTRY: model.claims_of(model.load_model(registry_files["docs/architecture/components.yaml"])["components"])}
     if engine_files is not None:
         fx.make_repo(root / "engine", engine_files)
-        trees[fx.ENGINE] = architecture.Tree(root / "engine", "main")
+        trees[fx.ENGINE] = staging.Tree(root / "engine", "main")
         engine_model = model.load_model(engine_files["docs/architecture/components.yaml"])
         claims[fx.ENGINE] = model.claims_of(engine_model["components"])
     return graph.engine_imports(graph.imports_of(trees, claims))

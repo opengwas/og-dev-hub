@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Sequence
 
-from project_site import paths
+from project_site import paths, staging
 from project_site.build import SiteCheckFailed, render_checkout
 from project_site.collect.common import CollectError
 from project_site.render import DEFAULT_JOBS, RenderFailed
@@ -78,7 +78,10 @@ def _remote_commit(repo: Path, remote: str, ref: str) -> str:
     ).stdout.strip()
     if not listed:
         raise PublishRefused(f"{ref} is not on {remote}")
-    return _git(repo, "rev-parse", f"{ref}^{{commit}}")
+    commit, why = staging.resolve_ref(repo, ref)
+    if commit is None:
+        raise PublishRefused(f"{ref} cannot be read here: {why}")
+    return commit
 
 
 def _worktrees(repo: Path) -> list[tuple[Path, str]]:
@@ -152,13 +155,7 @@ def _fill_worktree(worktree: Path, rendered: Path) -> None:
 
 
 def _has_gh_pages_branch(repo: Path) -> bool:
-    return (
-        subprocess.run(
-            ["git", "-C", str(repo), "rev-parse", "--verify", "--quiet", "refs/heads/gh-pages"],
-            capture_output=True,
-        ).returncode
-        == 0
-    )
+    return staging.resolve_ref(repo, "refs/heads/gh-pages")[0] is not None
 
 
 def publish(

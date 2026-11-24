@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 from yardstick import result as yardstick_result
 
-from project_site import records, staging
+from project_site import records
 
 Validator = Callable[[dict[str, Any]], list[str]]
 
@@ -34,14 +34,6 @@ def yardstick_errors(document: dict[str, Any]) -> list[str]:
     except Exception as exc:  # noqa: BLE001 - one file never makes the source unavailable
         return [f"{type(exc).__name__}: {exc}"]
     return []
-
-
-def default_epics_dir() -> Path:
-    return staging.registry_files() / "docs" / "_epics"
-
-
-def default_yardstick_dir() -> Path:
-    return staging.registry_files() / "docs" / "_yardstick"
 
 
 def _json_ready(value: Any) -> Any:
@@ -83,12 +75,11 @@ def _yardstick(directory: Path, validator: Validator | None) -> dict[str, Any]:
     return {"results": results, "invalid": invalid}
 
 
-def collect(
-    epics_dir: Path | None = None, yardstick_dir: Path | None = None, yardstick_validator: Validator | None = None
-) -> dict[str, Any]:
-    valid, invalid = records.load_epics(default_epics_dir() if epics_dir is None else Path(epics_dir))
+def collect(epics_dir: Path, yardstick_dir: Path, yardstick_validator: Validator | None = None) -> dict[str, Any]:
+    """The epic records and yardstick results: the run's, from its own handle of opengwasdb-stores."""
+    valid, invalid = records.load_epics(Path(epics_dir))
     return {
         "epics": _json_ready(valid),
         "invalid": invalid,
-        "yardstick": _yardstick(default_yardstick_dir() if yardstick_dir is None else Path(yardstick_dir), yardstick_validator),
+        "yardstick": _yardstick(Path(yardstick_dir), yardstick_validator),
     }

@@ -72,7 +72,7 @@ class ConflictsTests(unittest.TestCase):
         return str(directory)
 
     def test_files_that_meet_uncoordinated_work_exit_1_and_name_it(self) -> None:
-        code, text = run("conflicts", "--data", self.data(blocked=False), "--repo", "engine", "--files", "opengwasdb/encoding/new.py")
+        code, text = run("conflicts", "--data", self.data(blocked=False), "--repo", "opengwasdb", "--files", "opengwasdb/encoding/new.py")
         self.assertEqual(code, 1)
         self.assertIn("Store Encoding", text)
         for named in ("opengwasdb#350", "opengwasdb#58", "opengwasdb/encoding/se_range.py", "orch/347/338", "opengwasdb#338",
@@ -96,7 +96,7 @@ class ConflictsTests(unittest.TestCase):
 
     def test_a_ticket_given_with_files_is_judged_by_its_edges(self) -> None:
         code, _ = run("conflicts", "--data", self.data(blocked=True), "--ticket", "opengwasdb#338",
-                      "--repo", "engine", "--files", "opengwasdb/encoding/dense.py")
+                      "--repo", "opengwasdb", "--files", "opengwasdb/encoding/dense.py")
         self.assertEqual(code, 0)
 
     def test_files_without_a_repo_exit_2_with_a_one_line_reason(self) -> None:
@@ -106,7 +106,7 @@ class ConflictsTests(unittest.TestCase):
                                        "a bare path can mean a file of any repository")
 
     def test_files_that_meet_nothing_exit_0(self) -> None:
-        code, text = run("conflicts", "--data", self.data(blocked=False), "--repo", "engine", "--files", "opengwasdb/store/x.py", "README.md")
+        code, text = run("conflicts", "--data", self.data(blocked=False), "--repo", "opengwasdb", "--files", "opengwasdb/store/x.py", "README.md")
         self.assertEqual(code, 0)
         self.assertIn("meets no other work", text)
 
@@ -129,14 +129,14 @@ class UnmeasuredAndUnlinkableTests(unittest.TestCase):
             board(epic("opengwasdb#10", "Active", [ticket("opengwasdb#11", cited=["opengwasdb/encoding/a.py"])])),
             architecture=NO_ENGINE_MODEL,
         )
-        code, text = run("conflicts", "--data", self.collection(result, NO_ENGINE_MODEL), "--repo", "engine", "--files", "opengwasdb/encoding/a.py")
+        code, text = run("conflicts", "--data", self.collection(result, NO_ENGINE_MODEL), "--repo", "opengwasdb", "--files", "opengwasdb/encoding/a.py")
         self.assertEqual(code, 2)
         self.assertIn("cannot decide: work on opengwasdb was not measured", text)
         self.assertNotIn("meets no other work", text)
 
     def test_registry_files_are_still_decided_without_the_engines_model(self) -> None:
         result = compute(board(), architecture=NO_ENGINE_MODEL)
-        code, text = run("conflicts", "--data", self.collection(result, NO_ENGINE_MODEL), "--repo", "registry", "--files", "src/project_site/x.py")
+        code, text = run("conflicts", "--data", self.collection(result, NO_ENGINE_MODEL), "--repo", "opengwasdb-stores", "--files", "src/project_site/x.py")
         self.assertEqual((code, "meets no other work" in text), (0, True))
 
     def test_an_engine_branch_without_the_engines_model_cannot_be_decided(self) -> None:
@@ -178,26 +178,26 @@ class UnplacedAndUnrefreshedTests(unittest.TestCase):
 
     def test_engine_code_no_component_claims_cannot_be_decided(self) -> None:
         # The engine's CLI is a package, opengwasdb/cli/; a mistyped or brand-new path is on no component.
-        code, text = run("conflicts", "--data", self.cited(), "--repo", "engine", "--files", "opengwasdb/cli.py")
+        code, text = run("conflicts", "--data", self.cited(), "--repo", "opengwasdb", "--files", "opengwasdb/cli.py")
         self.assertEqual(code, 2, text)
         self.assertIn("cannot decide: no component claims opengwasdb/cli.py", text)
         self.assertNotIn("meets no other work", text)
 
     def test_registry_code_no_component_claims_cannot_be_decided(self) -> None:
         # Code is what lies under the roots the claims name (og-dev-hub#9): `src/` here.
-        code, text = run("conflicts", "--data", self.cited(), "--repo", "registry", "--files", "src/newpkg/new.py")
+        code, text = run("conflicts", "--data", self.cited(), "--repo", "opengwasdb-stores", "--files", "src/newpkg/new.py")
         self.assertEqual(code, 2, text)
         self.assertIn("no component claims src/newpkg/new.py", text)
 
     def test_a_meet_still_exits_1_beside_an_unplaced_file_and_names_it(self) -> None:
-        code, text = run("conflicts", "--data", self.cited(), "--repo", "engine",
+        code, text = run("conflicts", "--data", self.cited(), "--repo", "opengwasdb",
                          "--files", "opengwasdb/encoding/new.py", "opengwasdb/nowhere/new.py")
         self.assertEqual(code, 1, text)
         self.assertIn("UNCOORDINATED", text)
         self.assertIn("also: no component claims opengwasdb/nowhere/new.py", text)
 
     def test_files_outside_the_map_are_named_and_do_not_block(self) -> None:
-        code, text = run("conflicts", "--data", self.cited(), "--repo", "engine",
+        code, text = run("conflicts", "--data", self.cited(), "--repo", "opengwasdb",
                          "--files", "opengwasdb/store/x.py", "tests/test_x.py", "docs/spec/x.md")
         self.assertEqual(code, 0, text)
         self.assertIn("outside the map (not code a component claims): tests/test_x.py, docs/spec/x.md", text)
@@ -217,7 +217,7 @@ class UnplacedAndUnrefreshedTests(unittest.TestCase):
     def test_a_failed_branch_fetch_cannot_be_decided(self) -> None:
         failed = {"ok": False, "error": "fatal: unable to access 'https://github.com/opengwas/opengwasdb/':\n"
                                         "Could not resolve host: github.com"}
-        code, text = run("conflicts", "--data", self.cited(branch_set(fetch=failed)), "--repo", "engine",
+        code, text = run("conflicts", "--data", self.cited(branch_set(fetch=failed)), "--repo", "opengwasdb",
                          "--files", "opengwasdb/store/x.py")
         self.assertEqual(code, 2, text)
         self.assertIn("cannot decide: the fetch failed", text)
@@ -230,7 +230,7 @@ class UnplacedAndUnrefreshedTests(unittest.TestCase):
         stale = {**ARCHITECTURE, "repos": {**repos, "opengwasdb": {
             **repos["opengwasdb"], "refresh": {"ok": False, "error": "fatal: could not read from remote repository."}}}}
         result = compute(board(), architecture=stale)
-        code, text = run("conflicts", "--data", self.collection(result, stale), "--repo", "registry",
+        code, text = run("conflicts", "--data", self.collection(result, stale), "--repo", "opengwasdb-stores",
                          "--files", "src/project_site/x.py")
         self.assertEqual(code, 2, text)
         self.assertIn("could not read from remote repository", text)
@@ -241,7 +241,7 @@ class UnplacedAndUnrefreshedTests(unittest.TestCase):
         stale = {**ARCHITECTURE, "repos": {**repos, "opengwasdb-stores": {
             **repos["opengwasdb-stores"], "refresh": {"ok": False, "error": "fatal: could not read opengwasdb-stores."}}}}
         result = compute(board(), architecture=stale)
-        code, text = run("conflicts", "--data", self.collection(result, stale), "--repo", "registry",
+        code, text = run("conflicts", "--data", self.collection(result, stale), "--repo", "opengwasdb-stores",
                          "--files", "src/project_site/x.py")
         self.assertEqual(code, 2, text)
         self.assertIn("cannot decide: the fetch failed for opengwasdb-stores' HEAD", text)
@@ -249,14 +249,14 @@ class UnplacedAndUnrefreshedTests(unittest.TestCase):
 
     def test_a_meet_found_in_data_a_fetch_could_not_refresh_still_exits_1(self) -> None:
         code, text = run("conflicts", "--data", self.cited(branch_set(fetch={"ok": False, "error": "boom"})),
-                         "--repo", "engine", "--files", "opengwasdb/encoding/new.py")
+                         "--repo", "opengwasdb", "--files", "opengwasdb/encoding/new.py")
         self.assertEqual(code, 1, text)
         self.assertIn("UNCOORDINATED", text)
         self.assertIn("also: the fetch failed", text)
 
 
 class RepositoryNameTests(unittest.TestCase):
-    """`--repo` takes a repository name; `engine` and `registry` are aliases for this release only (og-dev-hub#9)."""
+    """`--repo` takes a repository name `system.yaml` lists, and nothing else (og-dev-hub#6: the aliases are gone)."""
 
     def collection(self) -> str:
         result = compute(board(epic("opengwasdb-stores#9", "Active", [ticket("opengwasdb-stores#10",
@@ -267,24 +267,27 @@ class RepositoryNameTests(unittest.TestCase):
         common.write_source(directory, ARCHITECTURE)
         return str(directory)
 
-    def test_a_repository_name_and_its_alias_give_the_same_answer(self) -> None:
-        data = self.collection()
-        named = run("conflicts", "--data", data, "--repo", "opengwasdb-stores", "--files", "src/project_site/new.py")
-        alias = run("conflicts", "--data", data, "--repo", "registry", "--files", "src/project_site/new.py")
-        self.assertEqual(named, alias)
-        self.assertEqual(named[0], 1, named[1])
-        self.assertIn("opengwasdb-stores#10", named[1])
+    def test_a_repository_name_is_answered(self) -> None:
+        code, text = run("conflicts", "--data", self.collection(), "--repo", "opengwasdb-stores", "--files", "src/project_site/new.py")
+        self.assertEqual(code, 1, text)
+        self.assertIn("opengwasdb-stores#10", text)
+
+    def test_the_old_role_names_are_no_repositorys(self) -> None:
+        for old in ("engine", "registry"):
+            code, text = run("conflicts", "--data", self.collection(), "--repo", old, "--files", "src/project_site/new.py")
+            self.assertEqual(code, 2)
+            self.assertIn(f"{old} is not a repository system.yaml lists", text)
 
     def test_a_repository_system_yaml_does_not_list_cannot_be_decided(self) -> None:
         code, text = run("conflicts", "--data", self.collection(), "--repo", "nowhere", "--files", "a.py")
         self.assertEqual(code, 2)
         self.assertIn("nowhere is not a repository system.yaml lists", text)
 
-    def test_the_help_says_the_aliases_are_for_this_release_only(self) -> None:
+    def test_the_help_names_no_alias(self) -> None:
         out = io.StringIO()
         with mock.patch("sys.stdout", out), self.assertRaises(SystemExit):
             cli.main(["conflicts", "--help"])
-        self.assertIn("for this release only", " ".join(out.getvalue().split()))
+        self.assertNotIn("this release", " ".join(out.getvalue().split()))
 
 
 class OffBoardEpicBranchTests(unittest.TestCase):
@@ -323,7 +326,7 @@ class GitFailureTests(unittest.TestCase):
         for patch in work_root_patches(cls.work, cls.root):
             cls.enterClassContext(patch)
         cls.args = ["--data", str(cls.data), "--registry", str(cls.root / "registry"), "--system", str(cls.system),
-                    "--repo", "registry", "--files", "src/gen/x.py"]
+                    "--repo", "opengwasdb-stores", "--files", "src/gen/x.py"]
 
     def test_an_inaccessible_local_directory_exits_2_with_a_reason(self) -> None:
         code, text = run("conflicts", *self.args, "--local", str(self.root / "no-such-clone"))
@@ -353,7 +356,7 @@ class GitFailureTests(unittest.TestCase):
     def test_collecting_on_the_spot_with_no_usable_work_root_exits_2_naming_the_path_and_the_variable(self) -> None:
         root = self.unusable_work_root()
         code, text = run("conflicts", "--registry", str(self.root / "registry"),
-                         "--system", str(self.system), "--repo", "registry", "--files", "src/gen/x.py")
+                         "--system", str(self.system), "--repo", "opengwasdb-stores", "--files", "src/gen/x.py")
         self.assertEqual(code, 2)
         self.assertEqual(len(text.strip().splitlines()), 1)
         self.assertIn(str(root), text)
@@ -392,7 +395,7 @@ class OfflineTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {cli.site_paths.WORK_ROOT_ENV: str(root / "work")}), \
                 mock.patch.object(cli.site_paths, "GITHUB", str(root / "no-network")), \
                 mock.patch.object(common, "gh_runner", lambda *a, **k: "{}"):
-            code, text = run("conflicts", "--refresh", "--repo", "registry", "--files", "src/gen/x.py")
+            code, text = run("conflicts", "--refresh", "--repo", "opengwasdb-stores", "--files", "src/gen/x.py")
         self.assertEqual(code, 2)
         self.assertTrue(text.startswith("cannot decide: "), text)
         self.assertIn("opengwasdb-stores", text)

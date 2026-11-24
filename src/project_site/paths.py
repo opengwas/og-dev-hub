@@ -47,6 +47,15 @@ CLONE_ENVS = {ENGINE: CLONE_ENV, REGISTRY: "OPENGWASDB_SITE_REGISTRY_CLONE"}
 DEFAULT_PUBLISH_REF = "origin/main"
 
 
+# og-dev-hub's system model (#8), read from this checkout's working tree.
+SYSTEM_FILE = "system.yaml"
+
+
+def system_file() -> Path:
+    """This checkout's `system.yaml`: the one path the hub's system model is read from by default."""
+    return repo_root() / SYSTEM_FILE
+
+
 def repo_root() -> Path:
     """The og-dev-hub checkout being rendered: the one this package is installed from.
 

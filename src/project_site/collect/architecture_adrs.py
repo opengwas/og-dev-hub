@@ -26,6 +26,7 @@ from __future__ import annotations
 import re
 from typing import Any, Mapping, Sequence
 
+from project_site import paths as site_paths
 from project_site.collect import architecture_graph, architecture_model as model_rules, citations
 
 ADR_PATH = re.compile(r"docs/adr/(\d{4})-.*\.md$")
@@ -34,7 +35,6 @@ PATH_CITE = re.compile(r"(?<![\w./:-])((?:[\w.-]+/)+[\w.-]+\.(?:py|smk|sh|toml))
 URL_CITE = re.compile(
     r"github\.com/opengwas/([\w.-]+)/(?:blob|tree)/[^/\s]+/([^\s#)?\]>`'\"]+)"
 )
-GITHUB = "https://github.com/opengwas"
 
 
 def adr_citations(text: str, repos: Sequence[str]) -> list[dict[str, str]]:
@@ -97,7 +97,8 @@ def place(
                     "path": path,
                     "title": title,
                     "status": _status(text),
-                    "url": f"{GITHUB}/{repo}/blob/main/{path}",
+                    # From the one GitHub root, at the commit read: `main` moves, and the page names that commit.
+                    "url": f"{site_paths.clone_url(repo)}/blob/{tree.commit}/{path}",
                     "components": dict(sorted(placed.items())),
                     "cites": adr_citations(text, repos),
                 }

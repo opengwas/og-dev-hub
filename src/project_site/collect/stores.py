@@ -1,6 +1,6 @@
 """The Stores collector: each registered Store Release's facts, through `ogstores.bundle` (#389).
 
-The registry is the one being rendered (`stores/` of `staging.registry_files`), not `/data`. A
+The registry is the one being rendered (`stores/` of the run's `staging.registry_files`), not `/data`. A
 Release Bundle is read as `ogstores.bundle.load` reads it and no Store is
 opened. A fact the bundle cannot state exactly (a `trial` that is not a
 boolean, a coverage outside the vocabulary) is `null` with the reason in
@@ -16,12 +16,7 @@ from typing import Any, Callable
 from ogstores import bundle as release_bundle
 from ogstores import paths
 
-from project_site import staging
 from project_site.collect.common import CollectError
-
-
-def default_registry() -> Path:
-    return staging.registry_files() / "stores"
 
 
 def registered_store_ids(registry: Path) -> list[str]:
@@ -72,8 +67,9 @@ def _store(registry: Path, store_id: str) -> dict[str, Any]:
     }
 
 
-def collect(registry: Path | None = None) -> dict[str, Any]:
-    registry = default_registry() if registry is None else Path(registry)
+def collect(registry: Path) -> dict[str, Any]:
+    """The Release Bundles under `registry`: the run's `stores/`, from its own handle of opengwasdb-stores."""
+    registry = Path(registry)
     if not registry.is_dir():
         raise CollectError(f"registry {registry} is not a directory")
     return {"registry": str(registry), "stores": [_store(registry, i) for i in registered_store_ids(registry)]}

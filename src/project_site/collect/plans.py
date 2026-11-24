@@ -217,9 +217,8 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
     components = [c for c in architecture.get("components") or [] if isinstance(c, Mapping)]
     by_id = {c["id"]: c for c in components}
     repos = {name: r for name, r in (architecture.get("repos") or {}).items() if isinstance(r, Mapping)}
-    names = [name for name, r in repos.items() if r.get("model")]
-    names += sorted({c["repo"] for c in components} - set(names))
-    claims = {repo: rules.claims_of(c for c in components if c["repo"] == repo and c.get("paths")) for repo in names}
+    claims = rules.claims_by_repository(components, repos)
+    names = list(claims)
     roots = {repo: rules.code_roots(claims[repo]) for repo in names}
     layers = (architecture.get("model") or {}).get("layers")
     layered = {repo: roots[repo] for repo in (layers if isinstance(layers, Mapping) else {}) if repo in roots}

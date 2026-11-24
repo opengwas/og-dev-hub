@@ -180,7 +180,8 @@ class EveryListedRepositoryTests(unittest.TestCase):
         self.assertEqual(repos, ["ogld", "opengwasdb", "opengwasdb-stores", "opengwaspy"])
         secret = next(a for a in self.result["adrs"] if a["repo"] == "ogld")
         self.assertEqual(secret["components"], {"ld_panels": "code"})
-        self.assertEqual(secret["url"], "https://github.com/opengwas/ogld/blob/main/docs/adr/0001-secret-panel-layout.md")
+        commit = self.result["repos"]["ogld"]["commit"]
+        self.assertEqual(secret["url"], f"https://github.com/opengwas/ogld/blob/{commit}/docs/adr/0001-secret-panel-layout.md")
 
     def test_one_fetch_is_attempted_per_repository_per_run(self) -> None:
         # The handles are the run's: asking again is the same handle, never a second read.

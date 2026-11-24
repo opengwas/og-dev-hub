@@ -12,6 +12,7 @@ They take plain data (a model, a list of tracked paths) and read no repository.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Callable, Collection, Iterable, Mapping, Sequence
 
 import yaml
@@ -142,6 +143,21 @@ def load_system(text: str) -> dict[str, Any]:
     return doc
 
 
+def read_system(path: Path | None = None) -> dict[str, Any]:
+    """The one reader of og-dev-hub's `system.yaml`: `path`, or this checkout's (`paths.system_file`), checked by `load_system`.
+
+    A file that cannot be read, or that fails `load_system`, is a `ValueError` naming it.
+    """
+    from project_site import paths
+
+    path = Path(path) if path is not None else paths.system_file()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise ValueError(f"{paths.SYSTEM_FILE} cannot be read: {error}") from error
+    return load_system(text)
+
+
 def describe_system_gaps(
     found: Mapping[str, Any], code: Callable[[Any], str] = str
 ) -> list[str]:
@@ -166,6 +182,20 @@ def describe_system_gaps(
 def claims_of(components: Iterable[Mapping[str, Any]]) -> Claims:
     """Every `(claimed path, component id)` of `components`, in file order."""
     return [(path, str(component["id"])) for component in components for path in component.get("paths") or []]
+
+
+def claims_by_repository(
+    components: Iterable[Mapping[str, Any]], repos: Mapping[str, Any] | None = None,
+) -> dict[str, Claims]:
+    """Each repository's claims, by name: the one way the claims map is built (og-dev-hub#6).
+
+    The repositories are those `repos` (`architecture.json`'s, in `system.yaml`'s
+    order) records with a model, then any other a component names, sorted.
+    """
+    components = [c for c in components if isinstance(c, Mapping)]
+    names = [str(name) for name, r in (repos or {}).items() if isinstance(r, Mapping) and r.get("model")]
+    names += sorted({str(c["repo"]) for c in components} - set(names))
+    return {repo: claims_of(c for c in components if c.get("repo") == repo) for repo in names}
 
 
 def matches(claimed: str, path: str) -> bool:

@@ -10,7 +10,8 @@ build host see different things: the engine's bare clone holds pushed branches
 as `refs/heads/*` after a fetch of `+refs/heads/*:refs/heads/*`; this
 repository's checkout holds them as `refs/remotes/origin/*` after
 `git fetch origin`; a developer's clone also has local ones in `refs/heads/*`.
-A fetch that fails is recorded, never raised, and the refs already there are read.
+This reader never fetches: the repository's read handle fetched it, once per run
+(`staging.Repositories`), and the refs already there are read.
 
 A branch with no merge base with `main` (an orphan, such as the CLA check's
 `cla-signatures`) is no work against `main`: it has nothing to diff from. It is
@@ -71,21 +72,19 @@ def collect(
     prefixes: Sequence[str] = ("refs/heads/",),
     days: int = WINDOW_DAYS,
     now: dt.datetime | None = None,
-    fetch: str | None = None,
-    remote: str = "origin",
     local: bool = False,
 ) -> dict[str, Any]:
-    """`{"repo", "git_dir", "main", "days", "fetch", "branches", "skipped"}` for one repository.
+    """`{"repo", "git_dir", "main", "days", "branches", "skipped"}` for one repository, as its git holds it now.
 
-    `fetch` is a refspec to fetch from `remote` first (`None` reads what is there);
     `local` marks the branches as read from a developer's own clone rather than
     pushed ones.
     """
     git_dir = Path(git_dir)
     now = now or dt.datetime.now(dt.timezone.utc)
     cutoff = now - dt.timedelta(days=days)
-    fetched = staging.ensure_clone(git_dir, refspec=fetch, remote=remote) if fetch else None
-    main_commit = _git(git_dir, "rev-parse", "--verify", f"{main_ref}^{{commit}}").strip()
+    main_commit, why = staging.resolve_ref(git_dir, main_ref)
+    if main_commit is None:
+        raise CollectError(f"{git_dir} has no {main_ref}: {why}")
     listing = _git(
         git_dir, "for-each-ref", "--format=%(refname)%09%(committerdate:iso-strict)%00", *prefixes
     )
@@ -119,7 +118,7 @@ def collect(
                       "epic": epic, "ticket": ticket, "local": local})
     found.sort(key=lambda b: b["name"])
     skipped.sort(key=lambda s: s["name"])
-    return {"repo": repo, "git_dir": str(git_dir), "main": main_ref, "days": days, "fetch": fetched, "branches": found,
+    return {"repo": repo, "git_dir": str(git_dir), "main": main_ref, "days": days, "branches": found,
             "skipped": skipped}
 
 

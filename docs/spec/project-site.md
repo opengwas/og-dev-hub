@@ -24,10 +24,17 @@ run**. One read handle per repository per run is the one
 owner of this (`project_site.staging.Repositories`: given a name, the handle's
 clone, ref, commit and fetch record), so the architecture, the work and the
 render's engine docs read the same commit of each. A repository with
-`visibility: null` is planned, and never cloned. Only opengwasdb-stores also has
-its files extracted (`stores/`, `docs/`, `CONTEXT.md`, `pixi.lock`,
-`ogstores.yaml`, by `git archive` at that commit), because only its readers need
-files. `--registry PATH` reads that checkout instead, at its `HEAD`.
+`visibility: null` is planned, and never cloned. A repository's files are read
+one way, through its handle (`Repository.read(paths, at=...)`, or `tree()` for
+all of them, both by object id through git, at the commit read unless another is
+named). Only opengwasdb-stores also has its files extracted (`stores/`, `docs/`,
+`CONTEXT.md`, `pixi.lock`, `ogstores.yaml`, by `git archive` at that commit),
+because only its readers need files on disk: the Stores, Records and Catalog
+collectors are given paths under the run's own extraction
+(`staging.registry_files(repositories)`), never one of their own. `--registry
+PATH` reads that checkout instead, at its `HEAD`. Whether a ref resolves, and to
+which commit, is asked of one owner, `staging.resolve_ref`: by the handle, the
+branch reader, the work's choice of `main` and the publish.
 
 Every clone and fetch of the site's clones under the work root, and of the git
 directories the collectors read, goes through one owner,
@@ -371,7 +378,8 @@ The model files. Each has `repo` and `components`: `id`, `name`, `container`,
 it may hold `stages` (the pipeline's stages stay with opengwasdb-stores). The
 system itself (`system`, `people`, `external`, `containers`,
 `container_relations`, `repos`) is og-dev-hub's `system.yaml` (#8), read from
-this checkout's working tree: publishing renders a clean checkout, so the tree
+this checkout's working tree by its one reader (`architecture_model.read_system`, at
+`paths.system_file`, or the file `--system` names): publishing renders a clean checkout, so the tree
 is the published state. `collect/architecture_model.py`'s `load_system` checks
 the keys and their shapes, that each person, external system and container has
 an `id` and a `name` of text (the same check, with the same rule, as a model's
@@ -396,7 +404,7 @@ hand: edges, counts and ADR placement are measured.
 | `baseline` | `path`, `from` (`opengwasdb-stores`), `entries` (how many imports its committed baseline lists; `null` with a `note` when it is not there at the commit read, never 0) and `measured` (the engine imports its code makes; `null` without its model) |
 | `edges` | `from`, `to`, `imports`, `scope` and `upward`: `scope` is `within` (with `repo`) or `across` (with `from_repo` and `to_repo`) |
 | `upward_imports` | each import within a repository that goes up its layers (#419), sorted by `file` then `name`: `file` (the importing file), `name` (the absolute imported name, a relative import resolved), `from`, `to` (component ids), `from_layer`, `to_layer`. The layering baseline of the repository that declares the layers lists the same pairs. `null` when no model read declares layers (the layering cannot be measured); never `[]` |
-| `adrs` | every `docs/adr/NNNN-*.md` of every repository read: `repo`, `number`, `path`, `title`, `status`, `url`, `components`, `cites` (`[{repo, number}]`, below) |
+| `adrs` | every `docs/adr/NNNN-*.md` of every repository read: `repo`, `number`, `path`, `title`, `status`, `url` (the file on GitHub at the commit read, from `paths.clone_url`), `components`, `cites` (`[{repo, number}]`, below) |
 | `summary` | `edges` (the edges measured), `upward_edges`, `upward_imports`, `registry_to_engine_edges`, `registry_to_engine_imports`, `adrs_total`, `adrs_placed`; what cannot be measured is `null` (see below) |
 
 A code file that cannot be read, or a Python file that does not parse, makes the
@@ -637,10 +645,9 @@ pixi run architecture conflicts (--branch B [--repo NAME] | --files PATH... --re
                                 [--local GIT_DIR...] [--registry PATH] [--system FILE] [--refresh] [--days N] [--data DIR]
 ```
 
-`--repo NAME` takes a repository `system.yaml` lists; `engine` and
-`registry` are accepted for `opengwasdb` and `opengwasdb-stores` **for this
-release only** (og-dev-hub#9), because the orchestrate preflight still passes
-them. `--system FILE` reads another `system.yaml` than this checkout's: its
+`--repo NAME` takes a repository `system.yaml` lists, and nothing else (the
+`engine` and `registry` aliases og-dev-hub#9 kept for one release are gone).
+`--system FILE` reads another `system.yaml` than this checkout's: its
 `repos` are the repositories collected and the names `--repo` accepts, so a
 test, or a question about a few repositories, reads only those. `--registry PATH`
 reads that opengwasdb-stores checkout instead of its clone, and `--refresh`
