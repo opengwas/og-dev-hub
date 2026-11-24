@@ -98,13 +98,28 @@ def _envelope(doc: Document) -> dict[str, Any]:
     return {k: doc.get(k) for k in architecture_public.ENVELOPE}
 
 
-def _github(repo: str, commit: Any, path: str) -> str:
-    """A file (`blob`) or a directory (`tree`, a path ending in `/`) on GitHub, at `commit`."""
-    return f"{paths.clone_url(repo)}/{'tree' if path.endswith('/') else 'blob'}/{commit}/{path}"
+def repo_state(repo: Mapping[str, Any]) -> str:
+    """The one place a repository's state is decided, from the public view's record of it.
+
+    `planned` (not created yet), `private` (drawn as its container only),
+    `unreadable` (no commit could be read), `no_model` (read, with no usable
+    model), or `read`. Every view and diagram reads this, and none decides it again.
+    """
+    if repo.get("planned"):
+        return "planned"
+    if repo.get("private"):
+        return "private"
+    if repo.get("error") or not repo.get("commit"):
+        return "unreadable"
+    return "read" if repo.get("model") else "no_model"
 
 
-def _repos(doc: Document) -> dict[str, Mapping[str, Any]]:
-    return {str(n): r for n, r in (doc.get("repos") or {}).items() if isinstance(r, Mapping)}
+def container_state(container: Mapping[str, Any], states: Mapping[str, str]) -> str:
+    """`data` (no repository), else its repository's `planned` or `private`, else `public`."""
+    if container.get("repo") is None:
+        return "data"
+    state = states.get(str(container.get("repo")))
+    return state if state in ("planned", "private") else "public"
 
 
 # ---------------------------------------------------------------------------
@@ -113,34 +128,32 @@ def _repos(doc: Document) -> dict[str, Mapping[str, Any]]:
 
 
 def architecture_view(doc: Document) -> dict[str, Any]:
-    """`data/architecture.json`: repositories, containers, diagrams, components, gaps, layering and the seam."""
+    """`data/architecture.json`: repositories, containers, diagrams, components, gaps, layering and the seam.
+
+    Every state and figure the view shows is written here; the script only renders it.
+    """
     out = _envelope(doc)
     if not doc.get("available"):
         return out
-    model = doc.get("model") or {}
-    repos = _repos(doc)
-    components = [c for c in doc.get("components") or [] if isinstance(c, Mapping)]
-    edges = [e for e in doc.get("edges") or [] if isinstance(e, Mapping)]
-    adrs = [a for a in doc.get("adrs") or [] if isinstance(a, Mapping)]
+    parts = architecture_public.parts(doc)
+    model, components, edges = parts.model, parts.components, parts.edges
     summary = doc.get("summary") or {}
     containers = {str(c.get("id")): c for c in model.get("containers") or []}
-    commits = {name: r.get("commit") for name, r in repos.items()}
+    states = {name: repo_state(r) for name, r in parts.repos.items()}
 
-    out["repos"] = [
-        {"name": name, "label": diagrams.repo_label(model, name), "url": paths.clone_url(name),
-         "private": bool(r.get("private")), "planned": bool(r.get("planned"))}
-        | {k: r.get(k) for k in ("visibility", "status", "ref", "commit", "committed", "model", "note", "error", "refresh")}
-        for name, r in repos.items()
-    ]
-    out["containers"] = [
-        {k: c.get(k) for k in ("id", "name", "repo", "tech", "summary")}
-        | {"state": "data" if c.get("repo") is None else
-           "planned" if (repos.get(str(c.get("repo"))) or {}).get("planned") else
-           "private" if (repos.get(str(c.get("repo"))) or {}).get("private") else "public"}
-        for c in containers.values()
-    ]
+    repos = {
+        name: {"name": name, "label": diagrams.repo_label(model, name), "url": paths.clone_url(name), "state": states[name]}
+        | {k: r.get(k) for k in ("visibility", "status", "ref", "commit", "committed")}
+        | {"why": r.get("error") if states[name] == "unreadable" else r.get("note") if states[name] == "no_model" else None,
+           "refresh_error": (r.get("refresh") or {}).get("error") if (r.get("refresh") or {}).get("ok") is False else None}
+        for name, r in parts.repos.items()
+    }
+    boxes = [{k: c.get(k) for k in ("id", "name", "repo", "tech", "summary")} | {"state": container_state(c, states)}
+             for c in containers.values()]
+    out["repos"] = list(repos.values())
+    out["containers"] = boxes
     out["diagrams"] = [{k: d[k] for k in ("id", "title", "caption")} | {"svg": diagrams.render_svg(d["dot"])}
-                       for d in diagrams.architecture(doc)]
+                       for d in diagrams.architecture(parts, repos, boxes)]
     out["stages"] = [
         {k: st.get(k) for k in ("id", "name", "summary", "repo")}
         | {"components": [c["id"] for c in components if st.get("id") in (c.get("stages") or [])]}
@@ -152,12 +165,14 @@ def architecture_view(doc: Document) -> dict[str, Any]:
             "anchor": c["id"] if diagrams.linkable(c["id"]) else None,
             "container_name": (containers.get(str(c.get("container"))) or {}).get("name", c.get("container")),
             "size": diagrams.size(c),
-            "paths": [{"path": p, "url": _github(c["repo"], commits.get(c["repo"]), p)} for p in c.get("paths") or []],
+            "paths": [{"path": p, "url": paths.github_url(c["repo"], repos[c["repo"]]["commit"], p)} for p in c.get("paths") or []],
             "adrs": [{k: a.get(k) for k in ("repo", "number", "title", "status", "url")} | {"via": a["components"][c["id"]]}
-                     for a in adrs if c["id"] in (a.get("components") or {})],
+                     for a in parts.adrs if c["id"] in (a.get("components") or {})],
         }
         for c in components
     ]
+    out["component_repos"] = list(dict.fromkeys(str(c["repo"]) for c in components))
+    out["counts"] = {"components": len(components), "repos_with_model": sum(1 for st in states.values() if st == "read")}
     out["gaps"] = _gaps(doc, model, repos)
     out["layering"] = _layering(model, components, edges)
     out["seam"] = {
@@ -175,20 +190,25 @@ def architecture_view(doc: Document) -> dict[str, Any]:
 
 
 def _gaps(doc: Document, model: Mapping[str, Any], repos: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Each public repository's gaps, in `system.yaml`'s order; unknown (`None`) is never an empty list."""
+    """Each public repository's gaps, in `system.yaml`'s order, with its `state`; unknown (`None`) is never an empty list.
+
+    `state` is `unreadable`, `no_model`, `gaps` (an unclaimed file, a stale claim or a system gap) or `complete`.
+    """
     gaps = doc.get("gaps") or {}
     out = []
     for name, repo in repos.items():
-        if repo.get("planned") or repo.get("private"):
+        if repo["state"] in ("planned", "private"):
             continue
         found = gaps.get(name) or {}
+        unreadable = found.get("unreadable") or (repo["why"] if repo["state"] == "unreadable" else None)
+        no_model = found.get("no_model") or (repo["why"] if repo["state"] == "no_model" else None)
+        system = architecture_model.describe_system_gaps(found)
+        found_any = bool(found.get("unclaimed") or found.get("stale") or system)
         out.append({
-            "repo": name, "label": diagrams.repo_label(model, name),
-            "unreadable": found.get("unreadable") or repo.get("error"),
-            "no_model": found.get("no_model") or (repo.get("note") if repo.get("model") is False else None),
-            "unclaimed": found.get("unclaimed"),
-            "stale": found.get("stale"),
-            "system": architecture_model.describe_system_gaps(found),
+            "repo": name, "label": repo["label"],
+            "state": "unreadable" if unreadable else "no_model" if no_model else "gaps" if found_any else "complete",
+            "unreadable": unreadable, "no_model": no_model,
+            "unclaimed": found.get("unclaimed"), "stale": found.get("stale"), "system": system,
         })
     return out
 
@@ -206,6 +226,7 @@ def _layering(model: Mapping[str, Any], components: list, edges: list) -> list[d
                         key=lambda e: (-int(e.get("imports") or 0), e["from"], e["to"]))
         out.append({
             "repo": name, "label": diagrams.repo_label(model, name), "edges": len(mine),
+            "imports": sum(int(e.get("imports") or 0) for e in upward),
             "upward": [{"from": e["from"], "from_name": by_id[e["from"]]["name"], "from_layer": by_id[e["from"]].get("layer"),
                         "to": e["to"], "to_name": by_id[e["to"]]["name"], "to_layer": by_id[e["to"]].get("layer"),
                         "imports": e.get("imports")} for e in upward],
@@ -223,9 +244,10 @@ def decisions_view(doc: Document) -> dict[str, Any]:
     out = _envelope(doc)
     if not doc.get("available"):
         return out
-    order = {name: i for i, name in enumerate(_repos(doc))}
-    names = {c["id"]: c["name"] for c in doc.get("components") or [] if isinstance(c, Mapping)}
-    adrs = sorted((a for a in doc.get("adrs") or [] if isinstance(a, Mapping)),
+    parts = architecture_public.parts(doc)
+    order = {name: i for i, name in enumerate(parts.repos)}
+    names = {c["id"]: c["name"] for c in parts.components}
+    adrs = sorted(parts.adrs,
                   key=lambda a: (order.get(str(a.get("repo")), len(order)), str(a.get("number"))))
     urls = {(str(a.get("repo")), str(a.get("number"))): a.get("url") for a in adrs}
     out["repos"] = list(dict.fromkeys(str(a.get("repo")) for a in adrs))
@@ -256,13 +278,14 @@ def context_view(text: str, doc: Document) -> dict[str, Any]:
         "error": doc.get("error"),
         "glossaries": [],
     }
-    for name, repo in _repos(doc).items():
-        if repo.get("planned") or repo.get("private") or name == paths.HUB:
+    for name, repo in architecture_public.parts(doc).repos.items():
+        state = repo_state(repo)
+        if state in ("planned", "private") or name == paths.HUB:
             continue
-        if repo.get("commit") is None:
+        if state == "unreadable":
             url, note = None, "could not be read"
         elif repo.get("glossary"):
-            url, note = _github(name, repo["commit"], "CONTEXT.md"), None
+            url, note = paths.github_url(name, repo["commit"], "CONTEXT.md"), None
         else:
             url, note = None, "no CONTEXT.md at the commit read"
         out["glossaries"].append({"repo": name, "url": url, "note": note})

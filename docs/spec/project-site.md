@@ -67,9 +67,18 @@ through `public_view`, and writes from that alone:
 
 | File | Content |
 |---|---|
-| `data/architecture.json` | the envelope; `repos` (a list, in `system.yaml`'s order: `name`, `label`, `url`, `private`, `planned`, `visibility`, `status`, `ref`, `commit`, `committed`, `model`, `note`, `error`, `refresh`); `containers` (with `state`: `public`, `private`, `planned` or `data`); `diagrams` (`id`, `title`, `caption`, `svg`); `stages` (with the `components` serving each); `components` (with `anchor`, `container_name`, `size`, `paths` as `{path, url}` on GitHub at the commit read, and `adrs` placed on it with `via`); `gaps` (each public repository not planned: `unreadable`, `no_model`, `unclaimed`, `stale`, `system`); `layering` (`null` when no model declares layers, else each layered repository's `edges` and `upward` imports); `seam` (`imports`, `pairs`, `baseline`); `across` (imports per pair of repositories); `summary` |
+| `data/architecture.json` | the envelope; `repos` (a list, in `system.yaml`'s order: `name`, `label`, `url`, `state`, `visibility`, `status`, `ref`, `commit`, `committed`, `why` (the error of an `unreadable` one, the note of a `no_model` one, else `null`) and `refresh_error` (`null` unless the refresh failed)); `containers` (with `state`: `public`, `private`, `planned` or `data`); `diagrams` (`id`, `title`, `caption`, `svg`); `stages` (with the `components` serving each); `components` (with `anchor`, `container_name`, `size`, `paths` as `{path, url}` on GitHub at the commit read, and `adrs` placed on it with `via`); `component_repos` (the repositories with a component, for the view's filter); `counts` (`components`, `repos_with_model`); `gaps` (each public repository not planned: `state` (`unreadable`, `no_model`, `gaps` or `complete`), `unreadable`, `no_model`, `unclaimed`, `stale`, `system`); `layering` (`null` when no model declares layers, else each layered repository's `edges`, `imports` against the layering and its `upward` imports); `seam` (`imports`, `pairs`, `baseline`); `across` (imports per pair of repositories); `summary` |
 | `data/decisions.json` | the envelope; `repos` (those with an ADR, in order); `adrs` in `system.yaml`'s order then by number: `repo`, `number`, `title`, `status`, `url`, `components` (`{id, name, via}`) and `cites` (`{repo, number, text, url}`, `url` `null` when the cited ADR was not collected or is a private repository's) |
 | `data/context.json` | `html` (the hub's `CONTEXT.md`, rendered by `project_site.markdown`: headings, paragraphs, lists, bold, italics, code spans and links, every character escaped first, a relative link resolved against og-dev-hub's `main` on GitHub, and a link to any other scheme than `http(s)` dropped); `source`; `glossaries`: each public listed repository but og-dev-hub, not planned, with `url` (its `CONTEXT.md` at the commit read) or `null` and a `note` (`no CONTEXT.md at the commit read`, `could not be read`) |
+
+A repository's `state` is decided once, by `site.repo_state`: `planned`,
+`private`, `unreadable` (no commit read), `no_model` or `read`; a container's
+follows its repository's (`site.container_state`). The diagrams and the view
+scripts read these states and never decide them again; every figure a view shows
+is written by the build, and a script only renders it. Both the build and the
+diagrams read the public `architecture.json` through one reader,
+`architecture_public.parts`, and every link to a file or directory on GitHub is
+`paths.github_url`.
 
 Unknown is `null` in every file, never 0 or an empty list. The view scripts read
 nothing else.

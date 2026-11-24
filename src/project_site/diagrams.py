@@ -101,27 +101,23 @@ def repo_label(model: Mapping[str, Any], name: str) -> str:
     return name
 
 
-def containers(model: Mapping[str, Any], repos: Mapping[str, Mapping[str, Any]] | None = None) -> str:
-    """The containers of `system.yaml`: a planned repository's dashed, a private one's grey, data a cylinder."""
+def containers(model: Mapping[str, Any], boxes: list[Mapping[str, Any]]) -> str:
+    """The containers, each drawn as its `state` says (the build decides it): `planned` dashed, `private` grey, `data` a cylinder."""
     system = model.get("system") or {}
-    repos = repos or {}
     lines = ["digraph containers {", HEAD, "rankdir=TB; compound=true;"]
     for p in model.get("people") or []:
         lines.append(f'"{_dq(p["id"])}" [label={_label(p["name"], "Person", None)} fillcolor="#dbe9f7"];')
     lines.append(f'subgraph cluster_system {{ label="{_dq(system.get("name", "System"))}"; fontname="Helvetica"; '
                  f'fontsize=11; margin=16; color="{GREY}";')
-    for c in model.get("containers") or []:
-        repo = repos.get(str(c.get("repo"))) or {}
-        tech = c.get("tech")
-        if c.get("repo") is None:
-            style = ' shape=cylinder style="filled" fillcolor="#c5dcf2"'
-        elif repo.get("planned"):
-            style, tech = ' style="rounded,filled,dashed" fillcolor="#ffffff"', f"planned; {tech}" if tech else "planned"
-        elif repo.get("private"):
-            style, tech = ' fillcolor="#e5e5e5"', f"private; {tech}" if tech else "private"
-        else:
-            style = ' fillcolor="#c5dcf2"'
-        lines.append(f'"{_dq(c["id"])}" [{style.strip()} label={_label(c["name"], tech, c.get("summary"), 28)}];')
+    styles = {"data": ' shape=cylinder style="filled" fillcolor="#c5dcf2"',
+              "planned": ' style="rounded,filled,dashed" fillcolor="#ffffff"',
+              "private": ' fillcolor="#e5e5e5"', "public": ' fillcolor="#c5dcf2"'}
+    for c in boxes:
+        state, tech = c.get("state"), c.get("tech")
+        if state in ("planned", "private"):
+            tech = f"{state}; {tech}" if tech else state
+        lines.append(f'"{_dq(c["id"])}" [{styles.get(str(state), styles["public"]).strip()} '
+                     f'label={_label(c["name"], tech, c.get("summary"), 28)}];')
     lines.append("}")
     for x in model.get("external") or []:
         lines.append(f'"{_dq(x["id"])}" [label={_label(x["name"], "External", None)} fillcolor="#eeeeee"];')
@@ -155,7 +151,7 @@ def _across(name: str, components: list, edges: list, mine: Mapping[str, Any], m
         theirs = [c for c in components if c.get("repo") == target]
         reached = {e["to"] for e in edges
                    if e.get("scope") == "across" and e.get("from_repo") == name and e.get("to_repo") == target}
-        summary = (f"{len(reached)} of {len(theirs)} components" if (repos.get(target) or {}).get("model")
+        summary = (f"{len(reached)} of {len(theirs)} components" if (repos.get(target) or {}).get("state") == "read"
                    else "no architecture model yet")
         node = f"repo:{target}"
         lines.append(f'"{_dq(node)}" [fillcolor="#eeeeee" label='
@@ -228,26 +224,25 @@ def by_container(name: str, components: list, edges: list, model: Mapping[str, A
     return "\n".join(lines)
 
 
-def architecture(data: Mapping[str, Any]) -> list[dict[str, str]]:
-    """Every diagram of the Architecture view, from the public view of `architecture.json`: `{id, title, caption, dot}`.
+def architecture(parts: Any, repos: Mapping[str, Mapping[str, Any]], boxes: list[Mapping[str, Any]]) -> list[dict[str, str]]:
+    """Every diagram of the Architecture view: `{id, title, caption, dot}`.
 
-    The containers first; then the repositories whose model declares layers, then
-    the other repositories with a model, each in `system.yaml`'s order.
+    `parts` is `architecture_public.parts` of the public view; `repos` (name to
+    record) and `boxes` (the containers) carry the `state` the build decided. The
+    containers first; then each repository read whose model declares layers, then
+    the other repositories read, each in `system.yaml`'s order.
     """
-    model = data.get("model") or {}
-    repos = {str(n): r for n, r in (data.get("repos") or {}).items() if isinstance(r, Mapping)}
-    components = [c for c in data.get("components") or [] if isinstance(c, Mapping)]
-    edges = [e for e in data.get("edges") or [] if isinstance(e, Mapping)]
+    model, components, edges = parts.model, parts.components, parts.edges
     layers = model.get("layers") if isinstance(model.get("layers"), Mapping) else {}
     out = [{
         "id": "containers",
         "title": "Containers",
         "caption": "The containers of system.yaml and how they relate. A dashed box is a planned repository's; "
                    "a grey one is a private repository's, drawn as its container only; a cylinder is data.",
-        "dot": containers(model, repos),
+        "dot": containers(model, boxes),
     }]
     for name, repo in sorted(repos.items(), key=lambda item: not layers.get(item[0])):
-        if not repo.get("model") or not any(c.get("repo") == name for c in components):
+        if repo.get("state") != "read" or not any(c.get("repo") == name for c in components):
             continue
         label = repo_label(model, name)
         if layers.get(name):

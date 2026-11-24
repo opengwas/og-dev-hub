@@ -82,7 +82,8 @@ a diagram links to its row in the Components table (`#component-<id>`).
    no view names never reaches the site).
 3. Write `data/<view>.json` in `site.build`, from the public view alone.
 4. Add a tab and a section to `static/index.html`, and `static/js/<view>.js`,
-   which calls `DevHub.register("<view>", render)`. Set every fact as text
-   (`DevHub.h`), never as markup.
+   which calls `DevHub.register("<view>", render)`. Decide every state and figure
+   in the build and write it to the JSON; the script only renders what it is given.
+   Set every fact as text (`DevHub.el`), never as markup.
 5. Test it in `tests/project-site-architecture/test_site.py`: the data file, and
    that nothing of the private fixture repository reaches any file of `_site/`.

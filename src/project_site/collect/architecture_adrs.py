@@ -98,7 +98,7 @@ def place(
                     "title": title,
                     "status": _status(text),
                     # From the one GitHub root, at the commit read: `main` moves, and the site names that commit.
-                    "url": f"{site_paths.clone_url(repo)}/blob/{tree.commit}/{path}",
+                    "url": site_paths.github_url(repo, tree.commit, path),
                     "components": dict(sorted(placed.items())),
                     "cites": adr_citations(text, repos),
                 }

@@ -22,6 +22,7 @@ checkout.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping
 
 Document = Mapping[str, Any]
@@ -70,6 +71,25 @@ def _maps(values: Any) -> list[Mapping[str, Any]]:
 
 def _texts(values: Any) -> list[str]:
     return [str(v) for v in values] if isinstance(values, list) else []
+
+
+@dataclass(frozen=True)
+class Parts:
+    """The parts of a public `architecture.json` the site's views and diagrams read, each in `system.yaml`'s order."""
+
+    model: Mapping[str, Any]
+    repos: dict[str, Mapping[str, Any]]
+    components: list[Mapping[str, Any]]
+    edges: list[Mapping[str, Any]]
+    adrs: list[Mapping[str, Any]]
+
+
+def parts(doc: Document) -> Parts:
+    """The one reader of a public `architecture.json`'s parts: what is not a mapping is left out, never guessed."""
+    repos = doc.get("repos") if isinstance(doc.get("repos"), Mapping) else {}
+    model = doc.get("model") if isinstance(doc.get("model"), Mapping) else {}
+    return Parts(model=model, repos={str(n): r for n, r in repos.items() if isinstance(r, Mapping)},
+                 components=_maps(doc.get("components")), edges=_maps(doc.get("edges")), adrs=_maps(doc.get("adrs")))
 
 
 def visibility(listed: Mapping[str, Any]) -> Callable[[Any], bool]:

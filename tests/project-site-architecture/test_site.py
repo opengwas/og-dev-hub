@@ -118,8 +118,8 @@ class PageTests(BuiltSite):
         for view in ("architecture", "decisions", "context", "stores"):
             with self.subTest(view=view):
                 self.assertIn(f'href="#{view}"', page)
-                self.assertIn(f'id="view-{view}"', page)
-        stores = page[page.index('id="view-stores"'):]
+                self.assertIn(f'id="pane-{view}"', page)
+        stores = page[page.index('id="pane-stores"'):]
         self.assertIn("coming", stores[:stores.index("</section>")])
 
     def test_every_script_stylesheet_and_data_path_is_relative(self) -> None:
@@ -157,8 +157,27 @@ class ArchitectureViewTests(BuiltSite):
         self.assertEqual([r["name"] for r in self.data["repos"]], [
             "opengwasdb-stores", "opengwasdb", "ogquery", "ogld", "opengwaspy", "opengwas-gateway", "ogdb-api"])
         ogld = next(r for r in self.data["repos"] if r["name"] == "ogld")
-        self.assertEqual((ogld["private"], ogld["model"], ogld["commit"]), (True, None, None))
-        self.assertTrue(next(r for r in self.data["repos"] if r["name"] == "ogdb-api")["planned"])
+        self.assertEqual((ogld["state"], ogld["commit"], ogld["why"]), ("private", None, None))
+
+    def test_each_repositorys_state_is_decided_once_by_the_build(self) -> None:
+        self.assertEqual({r["name"]: r["state"] for r in self.data["repos"]}, {
+            "opengwasdb-stores": "read", "opengwasdb": "read", "ogquery": "read", "ogld": "private",
+            "opengwaspy": "no_model", "opengwas-gateway": "unreadable", "ogdb-api": "planned"})
+        why = {r["name"]: r["why"] for r in self.data["repos"]}
+        self.assertTrue(why["opengwas-gateway"].startswith("opengwas-gateway cannot be read"))
+        self.assertTrue(why["opengwaspy"].startswith("docs/architecture/components.yaml is not in opengwaspy"))
+        self.assertIsNone(why["opengwasdb"])
+        self.assertEqual({r["refresh_error"] for r in self.data["repos"]}, {None})
+        states = {c["id"]: c["state"] for c in self.data["containers"]}
+        self.assertEqual((states["ld_lib"], states["engine"]), ("private", "public"))
+
+    def test_the_build_writes_the_figures_the_view_shows(self) -> None:
+        self.assertEqual(self.data["counts"], {"components": 9, "repos_with_model": 3})
+        self.assertEqual(self.data["component_repos"], ["opengwasdb-stores", "opengwasdb", "ogquery"])
+        self.assertEqual([(l["repo"], l["imports"]) for l in self.data["layering"]], [("opengwasdb", 3)])
+        self.assertEqual({g["repo"]: g["state"] for g in self.data["gaps"]}, {
+            "opengwasdb-stores": "complete", "opengwasdb": "complete", "ogquery": "complete",
+            "opengwaspy": "no_model", "opengwas-gateway": "unreadable"})
 
     def test_the_components_of_every_public_repository_with_a_model_are_listed(self) -> None:
         by_repo: dict[str, set[str]] = {}
@@ -273,6 +292,25 @@ class ContextViewTests(BuiltSite):
         self.assertEqual(glossaries["opengwasdb"]["note"], "no CONTEXT.md at the commit read")
         self.assertIsNone(glossaries["opengwas-gateway"]["url"])
         self.assertEqual(glossaries["opengwas-gateway"]["note"], "could not be read")
+
+
+class OwnerTests(unittest.TestCase):
+    def test_a_link_to_github_is_a_tree_for_a_directory_and_a_blob_for_a_file(self) -> None:
+        from project_site import paths
+
+        self.assertEqual(paths.github_url("ogquery", "abc", "src/ogquery/"), "https://github.com/opengwas/ogquery/tree/abc/src/ogquery/")
+        self.assertEqual(paths.github_url("ogquery", "abc", "CONTEXT.md"), "https://github.com/opengwas/ogquery/blob/abc/CONTEXT.md")
+
+    def test_the_containers_diagram_draws_the_state_it_is_given(self) -> None:
+        from project_site import diagrams
+
+        dot = diagrams.containers({"system": {"name": "S"}}, [
+            {"id": "x", "name": "X", "repo": "r", "tech": "T", "summary": "", "state": "private"},
+            {"id": "y", "name": "Y", "repo": "q", "tech": "T", "summary": "", "state": "planned"}])
+        self.assertIn('"x" [fillcolor="#e5e5e5" label=<', dot)
+        self.assertIn("private; T", dot)
+        self.assertIn("dashed", dot)
+        self.assertIn("planned; T", dot)
 
 
 class MarkdownTests(unittest.TestCase):

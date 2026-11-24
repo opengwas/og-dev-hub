@@ -9,49 +9,49 @@
   <script src="js/app.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="#architecture">
-      <span class="brand-mark" aria-hidden="true">DH</span>
-      <span class="brand-text">
-        <span class="brand-title">OpenGWAS Dev Hub</span>
-        <span class="brand-sub">What is built</span>
+  <header class="masthead">
+    <a class="home-link" href="#architecture">
+      <span class="monogram" aria-hidden="true">DH</span>
+      <span class="home-words">
+        <span class="home-name">OpenGWAS Dev Hub</span>
+        <span class="home-tagline">What is built</span>
       </span>
     </a>
-    <nav class="tabs" aria-label="Views">
-      <a class="tab" href="#architecture" data-view="architecture">Architecture</a>
-      <a class="tab" href="#decisions" data-view="decisions">Decisions</a>
-      <a class="tab" href="#context" data-view="context">Context</a>
-      <a class="tab" href="#stores" data-view="stores">Stores</a>
+    <nav class="views-nav" aria-label="Views">
+      <a class="views-link" href="#architecture" data-view="architecture">Architecture</a>
+      <a class="views-link" href="#decisions" data-view="decisions">Decisions</a>
+      <a class="views-link" href="#context" data-view="context">Context</a>
+      <a class="views-link" href="#stores" data-view="stores">Stores</a>
     </nav>
-    <button class="btn btn-ghost" id="theme-toggle" type="button">Dark mode</button>
+    <button class="button button-plain" id="theme-switch" type="button">Dark mode</button>
   </header>
 
   <main id="main">
-    <section class="view" id="view-architecture" hidden aria-labelledby="t-architecture">
-      <h1 class="view-title" id="t-architecture">Architecture</h1>
-      <p class="view-sub">Every repository's containers and components, the imports within and between them, the gaps in their claims, and the decisions that govern each component.</p>
-      <div class="view-body" id="architecture-body"><p class="loading">Loading…</p></div>
+    <section class="pane" id="pane-architecture" hidden aria-labelledby="h-architecture">
+      <h1 class="pane-heading" id="h-architecture">Architecture</h1>
+      <p class="pane-lede">Every repository's containers and components, the imports within and between them, the gaps in their claims, and the decisions that govern each component.</p>
+      <div class="pane-content" id="architecture-content"><p class="waiting">Loading…</p></div>
     </section>
 
-    <section class="view" id="view-decisions" hidden aria-labelledby="t-decisions">
-      <h1 class="view-title" id="t-decisions">Decisions</h1>
-      <p class="view-sub">Every architecture decision record (ADR) of every public repository, the components it governs and the decisions it cites.</p>
-      <div class="view-body" id="decisions-body"><p class="loading">Loading…</p></div>
+    <section class="pane" id="pane-decisions" hidden aria-labelledby="h-decisions">
+      <h1 class="pane-heading" id="h-decisions">Decisions</h1>
+      <p class="pane-lede">Every architecture decision record (ADR) of every public repository, the components it governs and the decisions it cites.</p>
+      <div class="pane-content" id="decisions-content"><p class="waiting">Loading…</p></div>
     </section>
 
-    <section class="view" id="view-context" hidden aria-labelledby="t-context">
-      <h1 class="view-title" id="t-context">Context</h1>
-      <p class="view-sub">The terms that cross repositories, and where each repository keeps its own.</p>
-      <div class="view-body" id="context-body"><p class="loading">Loading…</p></div>
+    <section class="pane" id="pane-context" hidden aria-labelledby="h-context">
+      <h1 class="pane-heading" id="h-context">Context</h1>
+      <p class="pane-lede">The terms that cross repositories, and where each repository keeps its own.</p>
+      <div class="pane-content" id="context-content"><p class="waiting">Loading…</p></div>
     </section>
 
-    <section class="view" id="view-stores" hidden aria-labelledby="t-stores">
-      <h1 class="view-title" id="t-stores">Stores</h1>
-      <div class="card notice">The Stores view is coming.</div>
+    <section class="pane" id="pane-stores" hidden aria-labelledby="h-stores">
+      <h1 class="pane-heading" id="h-stores">Stores</h1>
+      <div class="panel alert">The Stores view is coming.</div>
     </section>
   </main>
 
-  <footer class="footer">
+  <footer class="colophon">
     <span>The Dev Hub shows built state only, collected from public git. Planned state is the
       <a href="https://github.com/orgs/opengwas/projects/1">project board</a>'s; running state is the operations dashboard's.</span>
     <a href="https://github.com/opengwas/og-dev-hub">Source</a>
