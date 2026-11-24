@@ -212,6 +212,25 @@ class StructureTests(unittest.TestCase):
         self.assertIn("layers", by_hand)
         self.assertIn("imports", measured)
 
+    def test_the_containers_diagram_draws_system_yamls_containers(self) -> None:
+        doc = architecture()
+        doc["model"]["containers"].append(
+            {"id": "ld_registry", "name": "LD Store Registry", "repo": "opengwasdb-stores", "tech": "in git", "summary": "Records LD Stores."})
+        doc["model"]["system"] = {"name": "OpenGWAS", "summary": "The system."}
+        containers = dot_cells(render(pages.render_structure, doc))[1]
+        self.assertIn('"ld_registry" [', containers)
+        self.assertIn('subgraph cluster_system { label="OpenGWAS"', containers)
+
+    def test_system_gaps_are_listed_in_health_and_do_not_stop_the_page(self) -> None:
+        doc = architecture()
+        doc["gaps"]["registry"] |= {"system_sections": ["containers", "people"],
+                                    "containers": [{"component": "yardstick", "container": "site"}]}
+        page = render(pages.render_structure, doc)
+        self.assertIn("- System sections ignored: `containers`, `people` "
+                      "(system sections belong in og-dev-hub's `system.yaml`)", page)
+        self.assertIn("- `yardstick` names container `site`, which `system.yaml` does not have", page)
+        self.assertNotIn("System sections ignored", render(pages.render_structure, architecture()))
+
     def test_engine_gaps_are_listed_and_do_not_stop_the_page(self) -> None:
         self.assertIn("`opengwasdb/orphan.py`", self.page)
         self.assertIn("`opengwasdb/gone/` (claimed by `model`)", self.page)

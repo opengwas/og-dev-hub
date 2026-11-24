@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from project_site import staging
-from project_site.collect import architecture, board, catalog, common, records, releases, stores, work
+from project_site.collect import architecture, architecture_model, board, catalog, common, records, releases, stores, work
 
 
 def describe(result: dict[str, Any]) -> str:
@@ -59,9 +59,12 @@ def _describe_architecture(result: dict[str, Any]) -> str:
     def gap(found: dict[str, Any] | None) -> str:
         return "unknown" if found is None else f"{len(found['unclaimed'])}/{len(found['stale'])}"
 
+    system = [f"{repo} {sentence}" for repo, found in gaps.items() if found
+              for sentence in architecture_model.describe_system_gaps(found)]
+    note = f", SYSTEM GAPS: {'; '.join(system)}" if system else ""
     return (
         f"architecture: {counts['registry']} registry + {counts['engine']} engine components ({model}), "
-        f"gaps registry {gap(gaps['registry'])} engine {gap(gaps['engine'])} (unclaimed/stale), "
+        f"gaps registry {gap(gaps['registry'])} engine {gap(gaps['engine'])} (unclaimed/stale){note}, "
         f"{upward}, "
         f"{summary['registry_to_engine_imports']} registry->engine imports, "
         f"{summary['adrs_placed']} of {summary['adrs_total']} ADRs placed"

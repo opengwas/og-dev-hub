@@ -319,7 +319,7 @@ takes another validator as an argument, for tests.
 
 ### Architecture (`architecture.json`)
 
-The architecture of both repositories (#418, epic #416), from the two
+The architecture of both repositories (#418, epic #416), from og-dev-hub's `system.yaml`, the two
 hand-written model files `docs/architecture/components.yaml` and the code they
 claim. It reads **git, not checkouts**: the registry at the commit its clone's `main` names, or `HEAD` of the checkout `--registry` names (tracked files
 only) and the engine at its `main` through the bare clone the site build already
@@ -330,8 +330,18 @@ engine revision `pixi.lock` pins; the map shows current work, so it does not.
 
 The model files. Each has `repo` and `components`: `id`, `name`, `container`,
 `stages`, `summary`, `paths`. The engine's has `layers` (top to bottom, `layer`
-and `name`) and a `layer` on every component. This repository's has `system`,
-`people`, `external`, `containers`, `container_relations` and `stages`. A path
+and `name`) and a `layer` on every component. The registry's also has `stages`
+(the pipeline's stages stay with opengwasdb-stores). The system itself (`system`,
+`people`, `external`, `containers`, `container_relations`) is og-dev-hub's
+`system.yaml` (#8), read from this checkout's working tree: publishing renders a clean
+checkout, so the tree is the published state. `collect/architecture_model.py`'s
+`load_system` checks the five keys and their shapes, that ids are unique across
+`people`, `external` and `containers`, and that every relation names one of them; a
+`system.yaml` that fails makes the source unavailable with the error naming the
+problem, and the tests read the real file through it. Its `repos` list is loaded and not
+drawn. A components file that still holds a system section has it **ignored and reported
+as a gap**, never a failed build; a component whose `container` is no container of
+`system.yaml` is a gap naming both. A path
 ending in `/` claims a directory; any other path claims one file; the longest
 claimed prefix wins. Nothing else is written by hand: edges, counts and ADR
 placement are measured.
@@ -339,10 +349,10 @@ placement are measured.
 | Key | Content |
 |---|---|
 | `registry`, `engine` | `repo`, `ref`, `commit` read, `committed` (that commit's date), `refresh`, `model` (`true`, or `false` when the ref has no model file) and `note`. Each `refresh` is `null` when no fetch was asked for, else `{ok, error}` with git's own message (the registry's is its clone's refresh; a named checkout is never fetched); the pages show the commit and its date, and a visible line when the refresh failed |
-| `model` | `system`, `people`, `external`, `containers`, `container_relations`, `stages` (this repository's), `layers` (the engine's; `[]` without its model) |
+| `model` | `system`, `people`, `external`, `containers`, `container_relations` (all `system.yaml`'s), `stages` (the registry's), `layers` (the engine's; `[]` without its model) |
 | `components` | this repository's, then the engine's: the model's keys plus `repo` (`registry` or `engine`), `files` and `lines` (claimed code files), `tracked` (every tracked file claimed) |
 | `files` | `{registry: [...], engine: [...]}` (#422): every tracked code file of each tree at the ref read (the files the ownership rule counts as code), sorted, read NUL-safely. A planned `adds` is told to exist from it. Added to the file; no other field changed |
-| `gaps.<repo>` | `unclaimed` (code files no component claims, by path) and `stale` (`{path, component}` claims matching no tracked file); `gaps.engine` is `null` (unknown, not `0`/`0`) when the engine has no model at the ref |
+| `gaps.<repo>` | `unclaimed` (code files no component claims, by path) and `stale` (`{path, component}` claims matching no tracked file), `system_sections` (system keys the model file still holds, ignored) and `containers` (`{component, container}` for a container `system.yaml` lacks); `gaps.engine` is `null` (unknown, not `0`/`0`) when the engine has no model at the ref |
 | `baseline` | `path`, `entries` (how many imports the committed baseline lists; `null` with a `note` when it is not in this repository at the commit read, never 0) and `measured` (the engine imports the code makes) |
 | `edges` | `from`, `to`, `imports`, `scope` (`engine`, `registry`, `registry_to_engine`), `upward` |
 | `upward_imports` | each engine import that goes up a layer (#419), sorted by `file` then `name`: `file` (the importing file), `name` (the absolute imported name, a relative import resolved), `from`, `to` (component ids), `from_layer`, `to_layer`. The engine's layering baseline lists the same pairs. `null` when the engine has no model at the ref (the layering cannot be measured), like `summary.upward_imports`; never `[]` |
@@ -639,7 +649,7 @@ shown as "no plans"; with `plans` empty the page says no ticket carries a block.
 ### The command's output and exit status
 
 One line per source, in this order (the architecture line is longer: components,
-gaps, upward imports, the seam and ADRs placed; `work` runs last, because it reads the
+gaps (with `, SYSTEM GAPS: …` after the counts when a model file still holds a system section or a component names a container `system.yaml` lacks), upward imports, the seam and ADRs placed; `work` runs last, because it reads the
 board and architecture files just written, and adds `BRANCH FETCH FAILED` for a failed fetch), then the files are all written:
 
 ```text
