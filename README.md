@@ -17,6 +17,12 @@ repository writes by hand only what no single repository owns:
 | [`CONTEXT-MAP.md`](CONTEXT-MAP.md) | Where each repository's own glossary lives |
 | [`docs/adr/`](docs/adr/) | Decisions that bind more than one repository and that no single repository owns |
 
+The site that draws all of this is here too: its code (`src/project_site/`), its
+Quarto project (`site/`) and how it is built and published
+([`docs/site.md`](docs/site.md), [`docs/spec/project-site.md`](docs/spec/project-site.md)).
+It is published at <https://blog.opengwas.io/og-dev-hub/>; `pixi run site`
+renders it and `pixi run test` runs its suites.
+
 ## The three kinds of state
 
 | State | One home |
@@ -38,6 +44,12 @@ repository adds them when its next epic starts.
 
 **Draft.** The repositories are named here as they are today. ogld is being
 merged into opengwasdb ([ADR 0005](docs/adr/0005-opengwasdb-is-the-data-layer.md),
-[the consolidation plan](docs/consolidation-plan.md)). The site itself (the
-collector and the pages, now in opengwasdb-stores' `project_site`) moves here
-afterwards.
+[the consolidation plan](docs/consolidation-plan.md)). The site moved here from
+opengwasdb-stores, unchanged and with its history (og-dev-hub#7), and reads every
+repository `system.yaml` lists (og-dev-hub#9): a planned one is drawn as planned, a
+private one as its container only, and one without a model as a gap.
+
+## Licence
+
+og-dev-hub is released under GPL-3.0-only ([LICENSE](LICENSE)), and the
+University of Bristol holds the copyright.

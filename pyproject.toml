@@ -1,0 +1,24 @@
+# Package metadata so the Dev Hub's site code (`project_site`) installs editable
+# into the pixi environment and imports without sys.path insertions.
+#
+# Pixi owns the environment and every dependency (pixi.toml); this file only
+# says what to install. Its `dependencies` stay empty so pip never resolves a
+# second copy of what conda already provides, as in opengwasdb-stores.
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "og-dev-hub"
+version = "0.1.0"
+description = "The Dev Hub: the site that draws OpenGWAS's built state, the board's plan over it, the epics and the Store inventories"
+requires-python = ">=3.12"
+license = "GPL-3.0-only"
+dependencies = []
+
+[tool.setuptools]
+# `project_site` keeps the name it had in opengwasdb-stores (og-dev-hub#7): it is
+# run with `python3 -m`, and opengwasdb-stores' own architecture checks import it.
+package-dir = { "project_site" = "src/project_site", "project_site.collect" = "src/project_site/collect" }
+packages = ["project_site", "project_site.collect"]

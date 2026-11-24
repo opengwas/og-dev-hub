@@ -1,0 +1,75 @@
+[workspace]
+name = "og-dev-hub"
+description = "The Dev Hub: the site that draws OpenGWAS's built state"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+version = "0.1.0"
+
+# The sole user-facing execution interface is `pixi run <task>`, as in
+# opengwasdb-stores, which the site came from (og-dev-hub#7).
+
+[dependencies]
+python = "3.12.*"
+pyyaml = "*"
+# The render (`site`, `site-preview`, `site-publish`). Pinned to the version
+# opengwasdb-stores' lock rendered the site with when it moved here, with its Sass
+# (og-dev-hub#7), so the move changes nothing the site renders: a newer Quarto
+# writes different `site_libs/` and a different search index. Moving it is a
+# change of its own.
+quarto = "==1.9.38"
+# Quarto compiles the theme with it, and another version writes the same colours
+# in other numbers, so it is pinned with Quarto.
+dart-sass = "==1.102.0"
+# The board and Releases collectors call `gh`; staging, the collectors and the
+# publish call `git`.
+gh = "*"
+git = "*"
+
+[pypi-dependencies]
+# The site's own code, installed editable so it imports without sys.path
+# insertions.
+og-dev-hub = { path = ".", editable = true }
+# opengwasdb-stores' Store Registry contract (`ogstores.bundle`, `ogstores.paths`,
+# `ogstores.engine`) and the yardstick's result schema (`yardstick.result`),
+# which the collectors read the registry through. Its `dependencies` are empty,
+# so this brings in no second copy of anything here. Every call passes the
+# registry root it reads: an installed `ogstores` does not know where a
+# registry checkout is.
+ogstores = { git = "https://github.com/opengwas/opengwasdb-stores", rev = "a2cb07692df49991059fe75edff6b42ea32d5d3f" }
+
+[tasks]
+# The suites: every tests/**/test_*.py, each run as a script, one at a time.
+test = { cmd = "bash tests/run_all_tests.sh" }
+
+# The site's data (#389, docs/spec/project-site.md): run every collector (the
+# board, the catalog's versions, both repos' Releases, the Release Bundles, the
+# epic records, the architecture and the work) and write one JSON file each.
+# It reads the catalog read-only, writes nothing under the artifact root, and
+# needs `gh`; a source it cannot read is written as `available: false` and
+# printed as UNAVAILABLE, with exit status 0 unless `--strict`. It reads every
+# repository system.yaml lists from the site's bare clones under the work root,
+# fetched once first with `--refresh`, and opengwasdb-stores from the checkout
+# `--registry PATH` names instead.
+#
+#   pixi run site-data [--data-dir PATH] [--catalog-root PATH] [--registry PATH] [--refresh] [--strict]
+site-data = { cmd = "python3 -m project_site.collect" }
+
+# The architecture map's command line (#419): `check` and `conflicts`.
+#
+#   pixi run architecture conflicts --refresh --registry ~/repo/opengwasdb-stores --branch B
+architecture = { cmd = "python3 -m project_site.architecture" }
+
+# The site (#388): one Quarto website over opengwasdb-stores' docs/, this
+# repository's site/ and docs/, and the engine's docs.
+#
+#   pixi run site                     # render; the served-path check fails a drop
+#   pixi run site --jobs 8            # render over 8 Quarto processes (default 24; 1 is Quarto alone)
+#   pixi run site --registry PATH     # read that opengwasdb-stores checkout instead of the clone
+#   pixi run site-preview             # stage, then Quarto's live-reloading preview
+#   pixi run site-publish --dry-run   # render origin/main and commit gh-pages, no push
+#
+# The output is `/data/opengwasdb/work/site/<checkout>/_site`, never under /home
+# or /tmp (src/project_site/paths.py).
+site = { cmd = "python3 -m project_site.build" }
+site-preview = { cmd = "python3 -m project_site.build --preview" }
+site-publish = { cmd = "python3 -m project_site.publish" }
