@@ -116,16 +116,23 @@ def run(
     """
     repositories = repositories or staging.Repositories(refresh=refresh, checkouts={paths.REGISTRY: checkout})
 
-    def files(*parts: str) -> Path:
-        return staging.registry_files(repositories).joinpath(*parts)
-
     collectors: list[tuple[str, Callable[[], dict[str, Any]]]]
+    def read_stores() -> dict[str, Any]:
+        if registry is not None:
+            return stores.collect(registry)
+        root = staging.registry_files(repositories)
+        return stores.collect(root / "stores", yardstick=root / "docs" / "_yardstick",
+                              commit=repositories.get(paths.REGISTRY).commit)
+
     if public_only:
-        collectors = [("architecture", lambda: architecture.collect(repositories, system_file=system_file, read_private=False))]
+        collectors = [
+            ("architecture", lambda: architecture.collect(repositories, system_file=system_file, read_private=False)),
+            ("stores", read_stores),
+        ]
     else:
         collectors = [
             ("board", lambda: board.collect(gh)),
-            ("stores", lambda: stores.collect(registry or files("stores"))),
+            ("stores", read_stores),
             ("architecture", lambda: architecture.collect(repositories, system_file=system_file)),
             # After board and architecture: it reads the files those two just wrote to `data_dir`.
             ("work", lambda: work.collect(data_dir, repositories)),
