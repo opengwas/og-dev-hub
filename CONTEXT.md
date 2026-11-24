@@ -24,9 +24,11 @@ until OpenGWAS replaces it.
 _Avoid_: bare "OpenGWAS" for the production service; "the old API".
 
 **Dev Hub**:
-The developers' view of OpenGWAS: its built state with the planned state drawn
-over it, the epics, and the inventories of GWAS Stores and LD Stores. It
-collects all of these from the repositories that own them and owns none.
+The developers' view of OpenGWAS's built state: the GWAS Stores and LD Stores,
+the architecture, and the decisions and terms that shape them. It collects all
+of these from the repositories that own them and owns none. It shows no planned
+state, which is the project board's, and no running state, which is the
+operations dashboard's.
 _Avoid_: project site, architecture site.
 
 ## Data
