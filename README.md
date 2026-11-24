@@ -45,9 +45,9 @@ repository adds them when its next epic starts.
 **Draft.** The repositories are named here as they are today. ogld is being
 merged into opengwasdb ([ADR 0005](docs/adr/0005-opengwasdb-is-the-data-layer.md),
 [the consolidation plan](docs/consolidation-plan.md)). The site moved here from
-opengwasdb-stores, unchanged and with its history (og-dev-hub#7); it still draws
-opengwasdb and opengwasdb-stores only, until it reads every repository in
-`system.yaml`.
+opengwasdb-stores, unchanged and with its history (og-dev-hub#7), and reads every
+repository `system.yaml` lists (og-dev-hub#9): a planned one is drawn as planned, a
+private one as its container only, and one without a model as a gap.
 
 ## Licence
 

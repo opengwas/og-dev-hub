@@ -115,7 +115,7 @@ Changelog, with one page per epic and one per registered Store beside them
 ([`src/project_site/pages.py`](../src/project_site/pages.py), #391).
 
 Three more, under **Architecture** in the navbar, draw how OpenGWASDB fits together
-from both repositories' `docs/architecture/components.yaml` and their code
+from every listed repository's `docs/architecture/components.yaml` and its code
 ([`src/project_site/architecture_pages.py`](../src/project_site/architecture_pages.py),
 #418): Pipeline (the stages, their components and ADRs) and
 Structure and health (context, containers and
