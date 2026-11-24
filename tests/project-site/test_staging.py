@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Stage the engine's docs at the pinned revision, and read that revision from the lock (#388).
-
-The engine section of the site is opengwasdb's own documentation at the
-revision `pixi.lock` pins, so it describes the runtime the registry actually
-imports. Only its Markdown and its self-contained HTML are documentation: its
-`docs/` also holds 26 logs, 89 JSON and 8 JSONL files, and 21 `.qmd` sources
-whose reports are published beside them as HTML, so those are not staged.
+"""Where every repository is read from: the clones, the read handles and the registry's files (og-dev-hub#7, og-dev-hub#9).
 
 Run from the repository root:
     python3 tests/project-site/test_staging.py
@@ -22,254 +16,14 @@ from pathlib import Path
 
 from unittest import mock
 
-from project_site import build, paths, staging
+from project_site import paths, staging
 from project_site.collect.common import CollectError
-from project_site.staging import stage_docs
-
-REGISTRY_LOCK = Path(__file__).resolve().parent / "fixtures" / "registry-pixi.lock"
 
 
 def git(repo: Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), *args], capture_output=True, text=True, check=True
     ).stdout.strip()
-
-
-class StageDocsTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory(prefix="project-site-staging-")
-        self.addCleanup(self._tmp.cleanup)
-        self.root = Path(self._tmp.name)
-        self.repo = self.root / "engine"
-        self.repo.mkdir()
-        git(self.repo, "init", "-q", "-b", "dev")
-        git(self.repo, "config", "user.email", "test@example.org")
-        git(self.repo, "config", "user.name", "Test")
-        docs = self.repo / "docs"
-        (docs / "spec").mkdir(parents=True)
-        (docs / "a.md").write_text("# A\n", encoding="utf-8")
-        (docs / "b.html").write_text("<html><body>B</body></html>\n", encoding="utf-8")
-        (docs / "spec" / "c.md").write_text("# C\n", encoding="utf-8")
-        # Not documentation, and not staged: a log, a data file, a qmd source.
-        (docs / "run.log").write_text("log\n", encoding="utf-8")
-        (docs / "stats.json").write_text("{}\n", encoding="utf-8")
-        (docs / "report.qmd").write_text("# qmd\n", encoding="utf-8")
-        (self.repo / "README.md").write_text("# engine\n", encoding="utf-8")
-        git(self.repo, "add", "-A")
-        git(self.repo, "commit", "-q", "-m", "first")
-        self.first = git(self.repo, "rev-parse", "HEAD")
-
-        (docs / "later.md").write_text("# Later\n", encoding="utf-8")
-        git(self.repo, "add", "-A")
-        git(self.repo, "commit", "-q", "-m", "second")
-
-    def test_staging_a_revision_yields_exactly_that_revision_s_docs(self) -> None:
-        dest = self.root / "staged"
-        staged = stage_docs(self.repo, self.first, dest)
-
-        self.assertEqual(staged, ["a.md", "b.html", "spec/c.md"])
-        self.assertEqual(
-            sorted(str(path.relative_to(dest)) for path in dest.rglob("*") if path.is_file()),
-            ["a.md", "b.html", "spec/c.md"],
-        )
-
-    def test_staging_the_newer_revision_adds_its_file(self) -> None:
-        dest = self.root / "staged-newer"
-        staged = stage_docs(self.repo, "HEAD", dest)
-
-        self.assertEqual(staged, ["a.md", "b.html", "later.md", "spec/c.md"])
-        self.assertEqual((dest / "later.md").read_text(encoding="utf-8"), "# Later\n")
-
-
-class StageIntoTheMirrorTest(unittest.TestCase):
-    """A render stages into the mirror, never into the checkout (#388 review).
-
-    The registry is a checkout named as `--registry` names one, and the hub has
-    nothing of its own to stage, so the mirror is the registry's docs, the
-    engine's and the glossary, exactly as it was in opengwasdb-stores.
-    """
-
-    def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory(prefix="project-site-stage-")
-        self.addCleanup(self._tmp.cleanup)
-        self.root = Path(self._tmp.name)
-        self.repo = self.root / "registry"
-        self.repo.mkdir()
-        git(self.repo, "init", "-q", "-b", "dev")
-        git(self.repo, "config", "user.email", "test@example.org")
-        git(self.repo, "config", "user.name", "Test")
-        (self.repo / "docs" / "adr").mkdir(parents=True)
-        (self.repo / "docs" / "a.md").write_text("# A\n", encoding="utf-8")
-        (self.repo / "docs" / "adr" / "x.md").write_text("# X\n", encoding="utf-8")
-        (self.repo / "CONTEXT.md").write_text("# Glossary\n", encoding="utf-8")
-        git(self.repo, "add", "-A")
-        git(self.repo, "commit", "-q", "-m", "docs")
-        self.commit = git(self.repo, "rev-parse", "HEAD")
-
-        self.engine = self.root / "engine"
-        self.engine.mkdir()
-        git(self.engine, "init", "-q", "-b", "dev")
-        git(self.engine, "config", "user.email", "test@example.org")
-        git(self.engine, "config", "user.name", "Test")
-        (self.engine / "docs").mkdir()
-        (self.engine / "docs" / "guide.md").write_text("# Guide\n", encoding="utf-8")
-        git(self.engine, "add", "-A")
-        git(self.engine, "commit", "-q", "-m", "docs")
-        self.engine_commit = git(self.engine, "rev-parse", "HEAD")
-
-        self.hub = self.root / "og-dev-hub"
-        self.hub.mkdir()
-        git(self.hub, "init", "-q", "-b", "main")
-        git(self.hub, "-c", "user.email=t@e.org", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "hub")
-        self.repositories = staging.Repositories(checkouts={"opengwasdb-stores": self.repo})
-
-        self.work = self.root / "work"
-        self.environ = mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": str(self.work)})
-        self.environ.start()
-        self.addCleanup(self.environ.stop)
-
-    def stage(self) -> build.Stage:
-        return build.stage_everything(self.hub, repositories=self.repositories, clone=self.engine, revision=self.engine_commit)
-
-    def status_of_checkout(self) -> str:
-        """Every file git knows about or would ignore: the checkout's whole shape."""
-        return git(self.repo, "status", "--porcelain", "--ignored")
-
-    def test_staging_leaves_the_checkout_untouched(self) -> None:
-        before = self.status_of_checkout()
-
-        stage = self.stage()
-
-        self.assertEqual(self.status_of_checkout(), before)
-        self.assertFalse((self.repo / "docs" / "opengwasdb").exists())
-        self.assertFalse((self.repo / "docs" / "glossary.md").exists())
-        self.assertEqual(
-            sorted(path.relative_to(stage.mirror).as_posix() for path in stage.mirror.rglob("*") if path.is_file()),
-            ["a.md", "adr/x.md", "glossary.md", "opengwasdb/guide.md", "opengwasdb/index.qmd"],
-        )
-        # The records the render reports still name the commits it documented.
-        self.assertEqual(stage.registry_commit, self.commit)
-        self.assertEqual(stage.engine_commit, self.engine_commit)
-
-    def test_two_work_roots_stage_independently(self) -> None:
-        first = self.stage()
-        other = self.root / "other-work"
-        with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": str(other)}):
-            second = self.stage()
-
-        self.assertNotEqual(first.mirror, second.mirror)
-        self.assertEqual((first.mirror / "a.md").read_text(encoding="utf-8"), "# A\n")
-        self.assertEqual((second.mirror / "a.md").read_text(encoding="utf-8"), "# A\n")
-
-    def test_the_hubs_site_goes_over_the_registrys_docs_and_its_docs_under_dev_hub(self) -> None:
-        # og-dev-hub#7: the registry's docs, then the hub's site/ over them, then
-        # the engine's docs, then the hub's own docs/ under dev-hub/.
-        for relative, text in {
-            "site/_quarto.yml": "project:\n  type: website\n",
-            "site/a.md": "# A, from the hub\n",
-            "site/index.qmd": "# Overview\n",
-            "docs/adr/0001-x.md": "# Hub ADR\n",
-            "docs/site.md": "# The site\n",
-        }.items():
-            (self.hub / relative).parent.mkdir(parents=True, exist_ok=True)
-            (self.hub / relative).write_text(text, encoding="utf-8")
-        (self.hub / "site" / "pre-render.sh").write_text("#!/bin/sh\n", encoding="utf-8")
-        (self.hub / "site" / "pre-render.sh").chmod(0o755)
-        git(self.hub, "add", "-A")
-        git(self.hub, "-c", "user.email=t@e.org", "-c", "user.name=T", "commit", "-q", "-m", "site")
-
-        stage = self.stage()
-
-        self.assertEqual(
-            sorted(path.relative_to(stage.mirror).as_posix() for path in stage.mirror.rglob("*") if path.is_file()),
-            ["_quarto.yml", "a.md", "adr/x.md", "dev-hub/adr/0001-x.md", "dev-hub/site.md", "glossary.md",
-             "index.qmd", "opengwasdb/guide.md", "opengwasdb/index.qmd", "pre-render.sh"],
-        )
-        self.assertEqual((stage.mirror / "a.md").read_text(encoding="utf-8"), "# A, from the hub\n")
-        self.assertEqual((stage.mirror / "adr" / "x.md").read_text(encoding="utf-8"), "# X\n")
-        self.assertTrue(os.access(stage.mirror / "pre-render.sh", os.X_OK), "the hook stays runnable")
-        self.assertEqual(stage.registry_commit, self.commit)
-        self.assertEqual(stage.hub_commit, git(self.hub, "rev-parse", "HEAD"))
-
-    def test_a_hub_page_links_out_to_the_hub_at_its_commit(self) -> None:
-        (self.hub / "docs").mkdir()
-        (self.hub / "docs" / "site.md").write_text(
-            "# The site\n\nSee [the pages](../src/project_site/pages.py) and [a sibling](adr/0001-x.md).\n",
-            encoding="utf-8",
-        )
-        (self.hub / "src" / "project_site").mkdir(parents=True)
-        (self.hub / "src" / "project_site" / "pages.py").write_text("\n", encoding="utf-8")
-        git(self.hub, "add", "-A")
-        git(self.hub, "-c", "user.email=t@e.org", "-c", "user.name=T", "commit", "-q", "-m", "docs")
-        hub_commit = git(self.hub, "rev-parse", "HEAD")
-
-        stage = self.stage()
-        report = build.rewrite(stage)
-
-        self.assertEqual(
-            (stage.mirror / "dev-hub" / "site.md").read_text(encoding="utf-8"),
-            "# The site\n\nSee [the pages]"
-            f"(https://github.com/opengwas/og-dev-hub/blob/{hub_commit}/src/project_site/pages.py)"
-            " and [a sibling](adr/0001-x.md).\n",
-        )
-        self.assertEqual(report.missing, [])
-
-
-class MermaidPageReachabilityTest(unittest.TestCase):
-    """A `.md` staged as `.qmd` for its Mermaid cell stays reachable (#388 review)."""
-
-    def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory(prefix="project-site-mermaid-")
-        self.addCleanup(self._tmp.cleanup)
-        self.root = Path(self._tmp.name)
-        self.repo = self.root / "registry"
-        self.repo.mkdir()
-        git(self.repo, "init", "-q", "-b", "dev")
-        git(self.repo, "config", "user.email", "test@example.org")
-        git(self.repo, "config", "user.name", "Test")
-        (self.repo / "docs").mkdir()
-        (self.repo / "docs" / "site.md").write_text(
-            "# The site\n\n```mermaid\ngraph TD; A-->B;\n```\n", encoding="utf-8"
-        )
-        (self.repo / "docs" / "reference.md").write_text(
-            "# Reference\n\nSee [the site page](site.md#publishing).\n", encoding="utf-8"
-        )
-        git(self.repo, "add", "-A")
-        git(self.repo, "commit", "-q", "-m", "docs")
-        self.commit = git(self.repo, "rev-parse", "HEAD")
-
-        self.engine = self.root / "engine"
-        self.engine.mkdir()
-        git(self.engine, "init", "-q", "-b", "dev")
-        git(self.engine, "config", "user.email", "test@example.org")
-        git(self.engine, "config", "user.name", "Test")
-        (self.engine / "docs").mkdir()
-        (self.engine / "docs" / "guide.md").write_text("# Guide\n", encoding="utf-8")
-        git(self.engine, "add", "-A")
-        git(self.engine, "commit", "-q", "-m", "docs")
-        self.engine_commit = git(self.engine, "rev-parse", "HEAD")
-
-    def test_a_link_to_the_mermaid_page_reaches_its_rendered_page(self) -> None:
-        mirror = self.root / "mirror"
-        staging.mirror_docs(self.repo, mirror)
-
-        report = staging.rewrite_mirror(
-            mirror,
-            registry=self.repo,
-            commit=self.commit,
-            registry_url="https://github.com/opengwas/opengwasdb-stores",
-            sections=[("opengwasdb/", self.engine, self.engine_commit, "https://github.com/opengwas/opengwasdb")],
-        )
-
-        self.assertTrue((mirror / "site.qmd").is_file())
-        self.assertFalse((mirror / "site.md").exists())
-        self.assertEqual(
-            (mirror / "reference.md").read_text(encoding="utf-8"),
-            "# Reference\n\nSee [the site page](site.html#publishing).\n",
-        )
-        self.assertEqual([page for page, _ in report.raw_pages], ["site.md"])
-        self.assertIn("```{mermaid}", report.raw_pages[0][1])
-        self.assertEqual(report.unparsed, [])
 
 
 class GithubFixture:
@@ -382,11 +136,11 @@ class CloneOwnerTest(unittest.TestCase):
         self.assertIn("opengwasdb-stores", result["error"], "git's own message, naming the origin it could not reach")
         self.assertEqual(git(self.clone, "rev-parse", "main"), self.first)
 
-    def test_the_engine_clone_can_still_be_named_by_its_variable(self) -> None:
-        named = self.hub.root / "elsewhere.git"
-        with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ENGINE_CLONE": str(named)}):
-            self.assertEqual(paths.clone_dir("opengwasdb"), named)
-        self.assertEqual(paths.clone_dir("opengwasdb"), self.hub.work / "opengwasdb.git")
+    def test_a_run_given_a_root_clones_under_it(self) -> None:
+        root = self.hub.root / "site-work"
+        handle = staging.Repositories(root=root).get("opengwasdb-stores")
+        self.assertEqual(handle.git_dir, root / "opengwasdb-stores.git")
+        self.assertEqual(handle.commit, self.first)
 
 
 class RegistryTreeTest(unittest.TestCase):
@@ -395,6 +149,7 @@ class RegistryTreeTest(unittest.TestCase):
     FILES = {
         "stores/OGS-00001/release.yaml": "store_id: OGS-00001\n",
         "docs/_epics/opengwasdb-stores-1.yaml": "repo: opengwasdb-stores\n",
+        "docs/_yardstick/2026-11-01.json": "{}\n",
         "docs/a.md": "# A\n",
         "CONTEXT.md": "# Glossary\n",
         "pixi.lock": "packages: []\n",
@@ -415,19 +170,21 @@ class RegistryTreeTest(unittest.TestCase):
 
         self.assertEqual(commit, self.commit)
         self.assertTrue((self.tree / "stores" / "OGS-00001" / "release.yaml").is_file())
-        self.assertTrue((self.tree / "docs" / "_epics" / "opengwasdb-stores-1.yaml").is_file())
-        self.assertTrue((self.tree / "CONTEXT.md").is_file())
-        self.assertTrue((self.tree / "pixi.lock").is_file())
+        self.assertTrue((self.tree / "docs" / "_yardstick" / "2026-11-01.json").is_file())
+        self.assertFalse((self.tree / "docs" / "_epics").exists(), "only the Stores' readers' files are extracted")
+        self.assertFalse((self.tree / "docs" / "a.md").exists())
+        self.assertFalse((self.tree / "CONTEXT.md").exists())
+        self.assertFalse((self.tree / "pixi.lock").exists())
 
     def test_a_second_extraction_replaces_the_first(self) -> None:
         clone = paths.clone_dir("opengwasdb-stores")
         staging.ensure_clone(clone, url=paths.clone_url("opengwasdb-stores"))
         staging.extract_tree(clone, "main", self.tree)
-        (self.tree / "docs" / "left-behind.md").write_text("# Gone\n", encoding="utf-8")
+        (self.tree / "docs" / "_yardstick" / "left-behind.json").write_text("{}\n", encoding="utf-8")
 
         staging.extract_tree(clone, "main", self.tree)
 
-        self.assertFalse((self.tree / "docs" / "left-behind.md").exists())
+        self.assertFalse((self.tree / "docs" / "_yardstick" / "left-behind.json").exists())
 
     def test_without_a_checkout_the_registry_is_its_clones_main(self) -> None:
         registry = staging.Repositories(tree=self.tree).get("opengwasdb-stores", files=True)
@@ -436,7 +193,7 @@ class RegistryTreeTest(unittest.TestCase):
         self.assertEqual(registry.git_dir, self.hub.work / "opengwasdb-stores.git")
         self.assertEqual((registry.ref, registry.commit), ("main", self.commit))
         self.assertTrue(registry.clone)
-        self.assertTrue((self.tree / "docs" / "_epics" / "opengwasdb-stores-1.yaml").is_file())
+        self.assertTrue((self.tree / "stores" / "OGS-00001" / "release.yaml").is_file())
         self.assertFalse((self.tree / "src").exists(), "only what the site reads is extracted")
 
     def test_reading_the_registry_fetches_only_when_a_refresh_is_asked_for(self) -> None:
@@ -532,7 +289,7 @@ class ReadHandleTest(unittest.TestCase):
         with mock.patch.object(staging, "ensure_clone", counted):
             run = staging.Repositories(refresh=True)
             first = run.get("ogquery")
-            again = run.get("ogquery", revision="f" * 40)  # a revision it lacks is no second fetch
+            again = run.get("ogquery")
 
         self.assertIs(first.git_dir, again.git_dir)
         self.assertEqual(calls, [("ogquery.git", True)])
@@ -556,75 +313,6 @@ class ReadHandleTest(unittest.TestCase):
         self.assertFalse(missing.readable)
         self.assertIn("no-such-repository", missing.error)
 
-
-class EngineRevisionTest(unittest.TestCase):
-    """A render stages the engine's docs at the registry's pin, fetching the engine only to get it."""
-
-    def setUp(self) -> None:
-        self.hub = GithubFixture(self)
-        self.first = self.hub.repository("opengwasdb", {"docs/guide.md": "# Guide\n"})
-        self.clone = paths.clone_dir("opengwasdb")
-
-    def test_a_pinned_revision_the_clone_lacks_is_fetched(self) -> None:
-        build._engine_clone(self.first, staging.Repositories())
-        newer = self.hub.commit("opengwasdb", {"docs/later.md": "# Later\n"})
-
-        self.assertEqual(build._engine_clone(newer, staging.Repositories()), self.clone)
-
-        self.assertEqual(staging.resolve_ref(self.clone, newer)[0], newer)
-
-    def test_the_engine_handle_a_refresh_fetched_is_not_fetched_again_for_the_pin(self) -> None:
-        # og-dev-hub#9: the build's refresh, the pinned revision and the collectors share one handle.
-        build._engine_clone(self.first, staging.Repositories())
-        newer = self.hub.commit("opengwasdb", {"docs/later.md": "# Later\n"})
-        run = staging.Repositories(refresh=True)
-        calls = []
-        real = staging.ensure_clone
-
-        def counted(git_dir, **kwargs):
-            calls.append(kwargs.get("fetch"))
-            return real(git_dir, **kwargs)
-
-        with mock.patch.object(staging, "ensure_clone", counted):
-            self.assertEqual(build._engine_clone(newer, run), self.clone)
-            self.assertEqual(run.get("opengwasdb").commit, newer)
-
-        self.assertEqual(calls, [True])
-
-    def test_a_revision_the_engine_does_not_have_stops_the_render_naming_it(self) -> None:
-        with self.assertRaises(CollectError) as caught:
-            build._engine_clone("f" * 40, staging.Repositories())
-
-        self.assertIn("f" * 40, str(caught.exception))
-
-    def test_a_pin_fetch_that_fails_stops_the_render_with_gits_message(self) -> None:
-        # There is no older engine to fall back to: without the pinned revision there
-        # are no engine docs to stage, so the render stops, saying why (exit 2).
-        build._engine_clone(self.first, staging.Repositories())
-        self.hub.offline()
-
-        with self.assertRaises(CollectError) as caught:
-            build._engine_clone("e" * 40, staging.Repositories())
-
-        self.assertIn("e" * 40, str(caught.exception))
-        self.assertIn("opengwasdb", str(caught.exception))
-        self.assertIn("does not appear to be a git repository", str(caught.exception))
-
-
-class PinnedRevisionTest(unittest.TestCase):
-    """The site stages the engine docs at the commit the registry's pixi.lock resolves (#253).
-
-    How the lock is read is opengwasdb-stores' `tests/engine`'s; this is only that
-    the site asks it. The lock is a copy of the registry's pin, beside this test.
-    """
-
-    def test_the_committed_lock_pins_one_revision(self) -> None:
-        from ogstores import engine
-        from project_site.paths import pinned_opengwasdb_revision
-
-        revision = pinned_opengwasdb_revision(REGISTRY_LOCK)
-
-        self.assertEqual(revision, engine.locked_commit(REGISTRY_LOCK))
 
 if __name__ == "__main__":
     unittest.main()

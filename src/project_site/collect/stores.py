@@ -1,6 +1,6 @@
 """The Stores collector: each registered Store Release's facts, through `ogstores.bundle` (#389).
 
-The registry is the one being rendered (`stores/` of the run's `staging.registry_files`), not `/data`. A
+The registry is the one read (`stores/` of the run's `staging.registry_files`), not `/data`. A
 Release Bundle is read as `ogstores.bundle.load` reads it and no Store is
 opened. A fact the bundle cannot state exactly (a `trial` that is not a
 boolean, a coverage outside the vocabulary) is `null` with the reason in

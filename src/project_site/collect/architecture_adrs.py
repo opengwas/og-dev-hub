@@ -13,12 +13,12 @@ An ADR belongs to a component for one of two reasons, and no other:
 A component's name that appears only in the body, however often, places
 nothing: counting words rewarded long ADRs and wrongly placed ones that merely
 discuss a neighbour. An ADR placed nowhere is still listed, with no components,
-so the page can say which decisions the map cannot reach. Code is placed only
+so the Decisions view can say which decisions the map cannot reach. Code is placed only
 into a repository with a model: only its claims say which component owns a file.
 
 An ADR that names another decision across repositories (`<repo> ADR NNNN`,
 og-dev-hub ADR 0002, where `<repo>` is a listed repository) records it in
-`cites`, which the pages show as a link to that ADR.
+`cites`, which the Decisions view shows as a link to that ADR.
 """
 
 from __future__ import annotations
@@ -97,8 +97,8 @@ def place(
                     "path": path,
                     "title": title,
                     "status": _status(text),
-                    # From the one GitHub root, at the commit read: `main` moves, and the page names that commit.
-                    "url": f"{site_paths.clone_url(repo)}/blob/{tree.commit}/{path}",
+                    # From the one GitHub root, at the commit read: `main` moves, and the site names that commit.
+                    "url": site_paths.github_url(repo, tree.commit, path),
                     "components": dict(sorted(placed.items())),
                     "cites": adr_citations(text, repos),
                 }

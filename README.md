@@ -1,9 +1,10 @@
 # og-dev-hub
 
-The developers' view of OpenGWAS. It draws the platform's built state (every
-repository's components, how they depend on one another, and the decisions that
-govern them), with the board's planned state over it, the epics, and the
-inventories of GWAS Stores and LD Stores.
+The developers' view of OpenGWAS's built state: every repository's components,
+how they depend on one another, the decisions that govern them and the terms
+that cross repositories, and (og-dev-hub#16) the GWAS Stores and LD Stores. It
+shows no planned state, which is the project board's, and no running state,
+which is the operations dashboard's.
 
 **The hub collects; it owns nothing** ([ADR 0001](docs/adr/0001-dev-hub-collects-and-owns-nothing.md)).
 Each repository keeps its own components, glossary, ADRs and epic records, and
@@ -17,11 +18,14 @@ repository writes by hand only what no single repository owns:
 | [`CONTEXT-MAP.md`](CONTEXT-MAP.md) | Where each repository's own glossary lives |
 | [`docs/adr/`](docs/adr/) | Decisions that bind more than one repository and that no single repository owns |
 
-The site that draws all of this is here too: its code (`src/project_site/`), its
-Quarto project (`site/`) and how it is built and published
-([`docs/site.md`](docs/site.md), [`docs/spec/project-site.md`](docs/spec/project-site.md)).
-It is published at <https://blog.opengwas.io/og-dev-hub/>; `pixi run site`
-renders it and `pixi run test` runs its suites.
+The site that draws all of this is here too: its code (`src/project_site/`) and
+how it is built ([`docs/site.md`](docs/site.md),
+[`docs/spec/project-site.md`](docs/spec/project-site.md)). It is one static page,
+built from public git alone, and published at <https://blog.opengwas.io/og-dev-hub/>;
+`pixi run site` builds it into `_site/`, `pixi run site-preview` serves it, and
+`pixi run test` runs the suites. `pixi run architecture check|conflicts` answers
+questions about the architecture from a terminal, reading private repositories
+and the board locally; the site reads neither.
 
 ## The three kinds of state
 
@@ -45,9 +49,10 @@ repository adds them when its next epic starts.
 **Draft.** The repositories are named here as they are today. ogld is being
 merged into opengwasdb ([ADR 0005](docs/adr/0005-opengwasdb-is-the-data-layer.md),
 [the consolidation plan](docs/consolidation-plan.md)). The site moved here from
-opengwasdb-stores, unchanged and with its history (og-dev-hub#7), and reads every
-repository `system.yaml` lists (og-dev-hub#9): a planned one is drawn as planned, a
-private one as its container only, and one without a model as a gap.
+opengwasdb-stores with its history (og-dev-hub#7), and was rebuilt as a static
+page of built state (og-dev-hub#15). It draws every repository `system.yaml` lists:
+a planned one as planned, a private one as its container only (never cloned), and
+one without a model as a gap.
 
 ## Licence
 
