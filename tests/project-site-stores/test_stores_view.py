@@ -42,7 +42,7 @@ class InventoryTests(Fixture):
     """Seam 1: each inventory field, from a Store of each layout, checked against literals."""
 
     def test_every_store_has_a_row_and_nothing_else_does(self) -> None:
-        self.assertEqual(list(self.rows), ["OGS-00001", "OGS-00002", "OGS-00003"])
+        self.assertEqual(list(self.rows), [f"OGS-0000{n}" for n in range(1, 7)])
         self.assertEqual([r["store_id"] for r in self.view["inventory"]], list(self.rows))
 
     def test_the_dense_store_with_every_field(self) -> None:
@@ -63,8 +63,8 @@ class InventoryTests(Fixture):
         self.assertEqual(self.shown["OGS-00003"]["n_variants"]["text"], "8,927,061")
 
     def test_n_clumped_is_pending_until_opengwasdb_stores_507(self) -> None:
-        for row in self.shown.values():
-            self.assertEqual(row["n_clumped"], {"text": None, "gap": "pending opengwasdb-stores#507", "detail": None})
+        for store_id in ("OGS-00001", "OGS-00002", "OGS-00003", "OGS-00004"):
+            self.assertEqual(self.shown[store_id]["n_clumped"], {"text": None, "gap": "pending opengwasdb-stores#507", "detail": None})
 
     def test_the_row_holds_the_ticket_fields_and_no_others(self) -> None:
         self.assertEqual(sorted(self.shown["OGS-00001"]), sorted([
@@ -99,7 +99,7 @@ class GapTests(Fixture):
         yaml_path.write_text(original.replace("observed:", "observed:\n  n_top_hits: null\n  has_hm3: null"))
         row = stores_view.stores_view(collected(stores_dir))["inventory"][2]
         self.assertEqual(row["top_hits"]["gap"], "counts come with opengwasdb#488")
-        self.assertEqual(row["has_hm3"]["gap"], self.BACKFILL)
+        self.assertEqual(row["has_hm3"]["gap"], "no record says how the HM3 step ended")
 
     def test_no_gap_is_ever_drawn_as_zero(self) -> None:
         for row in self.shown.values():
@@ -142,6 +142,55 @@ class BuiltRowsTests(Fixture):
         self.assertEqual(self.rows["OGS-00001"]["ancestry"]["value"], {"AFR": 1, "EUR": 2, "unassigned": 1})
 
 
+class CauseTests(Fixture):
+    """Every blank names its true cause: an unbuilt Store waits for no backfill, and a built one's gap is the record's."""
+
+    OBSERVED = ("store_bytes", "n_variants", "top_hits", "has_hm3", "has_rho", "n_clumped")
+
+    def test_a_candidate_with_no_validation_record_is_not_built_yet_in_every_observed_field(self) -> None:
+        for field in self.OBSERVED:
+            with self.subTest(field=field):
+                self.assertEqual(self.shown["OGS-00005"][field]["gap"], "not built yet (Release Status candidate)")
+
+    def test_an_accepted_store_with_an_all_null_record_is_not_built_yet_either(self) -> None:
+        for field in self.OBSERVED:
+            with self.subTest(field=field):
+                self.assertEqual(self.shown["OGS-00006"][field]["gap"], "not built yet (Release Status accepted)")
+
+    def test_an_unbuilt_store_never_names_the_backfill_or_the_engine(self) -> None:
+        for store_id in ("OGS-00005", "OGS-00006"):
+            for field in self.OBSERVED:
+                gap = self.shown[store_id][field]["gap"]
+                self.assertNotRegex(gap, r"#502|#488|#507")
+
+    def test_an_unbuilt_store_still_shows_what_its_manifest_holds(self) -> None:
+        self.assertEqual(self.shown["OGS-00005"]["n_analyses"]["text"], "1")
+        self.assertEqual(self.shown["OGS-00005"]["ancestry"]["text"], "EUR 1")
+
+    def test_hm3_null_on_a_built_store_says_no_record_says_how_the_step_ended(self) -> None:
+        self.assertEqual(self.shown["OGS-00004"]["has_hm3"]["gap"], "no record says how the HM3 step ended")
+
+    def test_a_null_top_hit_count_is_a_gap_naming_the_bad_value_and_never_crashes_the_build(self) -> None:
+        gap = self.shown["OGS-00004"]["top_hits"]["gap"]
+        self.assertEqual(gap, "observed.n_top_hits[5e-08] None is not a count")
+
+    def test_a_median_gap_names_its_cause(self) -> None:
+        self.assertEqual(self.shown["OGS-00004"]["median_sample_size"]["gap"],
+                         "the Release Manifest records no sample size for any built row (1 values are not numbers)")
+
+    def test_a_median_over_values_some_of_which_are_not_numbers_says_so(self) -> None:
+        doc = json.loads(json.dumps(self.doc))
+        row = next(r for r in doc["inventory"] if r["store_id"] == "OGS-00001")
+        row["median_sample_size"] |= {"unparseable": 2}
+        shown = stores_view.stores_view(doc)["inventory"][0]
+        self.assertEqual(shown["median_sample_size"]["detail"],
+                         "over the 3 of 4 built rows that have one; 2 values are not numbers")
+
+    def test_a_withdrawn_store_shows_its_status(self) -> None:
+        self.assertEqual(self.shown["OGS-00004"]["status"]["text"], "withdrawn")
+        self.assertEqual(self.shown["OGS-00004"]["store_bytes"]["text"], "1 B")  # built once: its record reads as any built Store's
+
+
 class YardstickTests(Fixture):
     """Seam 4: old and new workloads both render; the states are distinct; an invalid file is a gap."""
 
@@ -170,12 +219,12 @@ class YardstickTests(Fixture):
                     "invalid": [], "available": True, "reason": None}
         view = stores_view.yardstick_view(old_only, {}, ["OGS-00001"])
         dense = view["stores"][0]
-        self.assertEqual([m["name"] for m in dense["measures"]], ["open", "phewas_rsid"])
+        self.assertEqual([m["name"] for m in dense["measures"]], ["open", "phewas_rsid", "top_hits"])
         self.assertEqual(dense["engine_version"], "0.3.3")
 
     def test_the_new_measures_appear_once_a_run_carries_them(self) -> None:
         names = [m["name"] for m in self.latest["OGS-00001"]["measures"]]
-        for name in ("lookup_100x100", "range_by_analysis", "top_hits", "rho"):
+        for name in ("lookup_100x100", "range_by_analysis", "top_hits", "region_100kb", "rho"):
             self.assertIn(name, names)
 
     def test_not_applicable_and_unavailable_are_drawn_distinctly(self) -> None:
@@ -183,14 +232,17 @@ class YardstickTests(Fixture):
         self.assertEqual((by_name["range_by_analysis"]["state"], by_name["range_by_analysis"]["note"]),
                          ("not_applicable", "the cis query is Ragged only"))
         self.assertEqual(by_name["rho"]["state"], "not_applicable")
-        self.assertEqual(by_name["top_hits"]["state"], "unavailable")
-        self.assertIn("top_hits failed reading", by_name["top_hits"]["note"])
-        self.assertNotEqual(by_name["rho"]["state"], by_name["top_hits"]["state"])
-        for state in (by_name["rho"], by_name["top_hits"]):
+        self.assertEqual(by_name["region_100kb"]["state"], "unavailable")
+        self.assertIn("region failed reading", by_name["region_100kb"]["note"])
+        self.assertNotEqual(by_name["rho"]["state"], by_name["region_100kb"]["state"])
+        # The build writes each state's label and tone; the script renders them.
+        self.assertEqual((by_name["rho"]["label"], by_name["rho"]["tone"]), ("not applicable", None))
+        self.assertEqual((by_name["region_100kb"]["label"], by_name["region_100kb"]["tone"]), ("unavailable", "fault"))
+        for state in (by_name["rho"], by_name["region_100kb"]):
             self.assertIsNone(state["median"])
 
     def test_a_store_yardstick_does_not_measure_says_so(self) -> None:
-        self.assertEqual(self.y["unmeasured"], [{"store_id": "OGS-00003", "label": "ragged-old"}])
+        self.assertEqual([u["store_id"] for u in self.y["unmeasured"]], ["OGS-00003", "OGS-00004", "OGS-00005", "OGS-00006"])
 
     def test_raw_runs_are_not_listed(self) -> None:
         self.assertNotIn("runs_list", self.y)
@@ -199,6 +251,53 @@ class YardstickTests(Fixture):
     def test_a_directory_without_results_says_so(self) -> None:
         view = stores_view.yardstick_view({"available": False, "reason": "no results"}, {}, [])
         self.assertEqual(view, {"available": False, "reason": "no results"})
+
+
+class LatestRunTests(Fixture):
+    def test_a_store_the_newest_run_leaves_out_says_so_above_the_older_run_shown(self) -> None:
+        doc = json.loads(json.dumps(self.doc["yardstick"]))
+        del doc["runs"][-1]["stores"]["OGS-00002"]
+        view = stores_view.yardstick_view(doc, {}, [])
+        by_store = {s["store_id"]: s for s in view["stores"]}
+        self.assertEqual(by_store["OGS-00002"]["not_in_latest"], "not in the latest run (2026-11-17)")
+        self.assertEqual(by_store["OGS-00002"]["date"], "2026-11-05")
+        self.assertIsNone(by_store["OGS-00001"]["not_in_latest"])
+
+    def test_a_store_the_newest_run_lists_as_pending_says_so_too(self) -> None:
+        doc = json.loads(json.dumps(self.doc["yardstick"]))
+        doc["runs"][-1]["stores"]["OGS-00002"] |= {"status": "pending", "reason": "rebuilding", "measures": {}}
+        by_store = {s["store_id"]: s for s in stores_view.yardstick_view(doc, {}, [])["stores"]}
+        self.assertEqual(by_store["OGS-00002"]["not_in_latest"], "not in the latest run (2026-11-17)")
+        self.assertEqual(by_store["OGS-00002"]["state"], "measured")
+
+    def test_the_states_the_build_draws_are_exactly_the_schemas(self) -> None:
+        from yardstick import result
+
+        self.assertEqual({k for k in stores_view.STATE} - {"absent"}, set(result.STATUSES))
+        self.assertEqual(stores_view.state("absent")["label"], "not in this run")
+
+
+class TopHitsPathTests(Fixture):
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        cls.y = cls.view["yardstick"]
+
+    def test_the_latest_top_hits_row_says_how_it_was_answered(self) -> None:
+        dense = next(s for s in self.y["stores"] if s["store_id"] == "OGS-00001")
+        top = next(m for m in dense["measures"] if m["name"] == "top_hits")
+        self.assertEqual(top["path"], "scan")
+        phewas = next(m for m in dense["measures"] if m["name"] == "phewas_rsid")
+        self.assertIsNone(phewas["path"])
+
+    def test_a_trend_never_joins_an_index_point_to_a_scan_point(self) -> None:
+        trend = next(t for t in self.y["trends"] if t["measure"] == "top_hits")
+        svg = trend["svg"]
+        self.assertEqual(len(re.findall(r'<circle class="pt', svg)), 3)
+        lines = re.findall(r'<polyline class="line[^"]*" points="([^"]*)"', svg)
+        self.assertEqual([len(line.split()) for line in lines], [2])  # the two index points; the scan point stands alone
+        self.assertIn("via index", svg)
+        self.assertIn("via scan", svg)
 
 
 class FlagTests(Fixture):
@@ -272,7 +371,7 @@ class HostPathTests(Fixture):
 
     def test_no_host_path_is_in_an_error(self) -> None:
         by_name = {m["name"]: m for m in next(s for s in self.view["yardstick"]["stores"] if s["store_id"] == "OGS-00001")["measures"]}
-        self.assertNotRegex(by_name["top_hits"]["note"], HOST_PATH)
+        self.assertNotRegex(by_name["region_100kb"]["note"], HOST_PATH)
 
     def test_the_collected_registry_path_is_not_published(self) -> None:
         # The published `registry` is the repository's name, URL and commit, not where this run read it.

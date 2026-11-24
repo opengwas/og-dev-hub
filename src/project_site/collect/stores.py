@@ -17,15 +17,11 @@ from ogstores import bundle as release_bundle
 from ogstores import paths
 
 from project_site.collect import inventory, yardstick_runs
-from project_site.collect.common import CollectError
+from project_site.collect.common import CollectError, mapping as _mapping
 
 
 def registered_store_ids(registry: Path) -> list[str]:
     return sorted(p.name for p in registry.iterdir() if p.is_dir() and paths.is_valid_store_id(p.name))
-
-
-def _mapping(document: Any) -> dict[str, Any]:
-    return document if isinstance(document, dict) else {}
 
 
 def _store(registry: Path, store_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -52,8 +48,8 @@ def _store(registry: Path, store_id: str) -> tuple[dict[str, Any], dict[str, Any
         "label": release.get("label"),
         "status": release.get("status"),
         "trial": exact(lambda: bundle.trial),
-        "layout": build.get("layout"),
-        "completion_state": build.get("completion_state"),
+        "layout": bundle.layout,
+        "completion_state": bundle.completion_state,
         "association_coverage": exact(lambda: bundle.association_coverage),
         "access_posture": release.get("access_posture"),
         "derived_from": release.get("derived_from"),

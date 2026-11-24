@@ -7,9 +7,6 @@
   "use strict";
   var D = window.DevHub, el = D.el;
 
-  // How a measure's state is shown: [label, tone].
-  var STATE = { not_applicable: ["not applicable"], unavailable: ["unavailable", "fault"] };
-
   /* A cell the build wrote: its text, or the gap that names what fills it. */
   function field(cell) {
     if (cell.gap) return el("span", { class: "gap" }, cell.gap);
@@ -35,12 +32,14 @@
 
   function measures(rows) {
     return D.table([
-      { label: "Measure", cell: function (m) { return el("span", { class: "code-face" }, m.name); } },
+      { label: "Measure", cell: function (m) {
+        return [el("span", { class: "code-face" }, m.name), m.path ? el("span", { class: "detail" }, "answered by its " + m.path) : null];
+      } },
       { label: "Median", count: true, cell: function (m) { return m.median || ""; } },
       { label: "p95", count: true, cell: function (m) { return m.p95 || ""; } },
       { label: "", cell: function (m) {
         if (m.state === "measured") return "";
-        return [D.tag(STATE[m.state] || [m.state]), m.note ? el("span", { class: "detail" }, m.note) : null];
+        return [D.tag([m.label, m.tone]), m.note ? el("span", { class: "detail" }, m.note) : null];
       } }
     ], rows);
   }
@@ -48,15 +47,17 @@
   function fact(label, f) {
     return el("div", { class: "fact" }, el("div", { class: "fact-label" }, label),
       f.text ? el("div", { class: "fact-value" }, f.text)
-        : el("div", { class: "fact-value gap" }, f.state === "absent" ? f.note : [D.tag(STATE[f.state] || [f.state]), " ", f.note || ""]));
+        : el("div", { class: "fact-value gap" }, [D.tag([f.label, f.tone]), " ", f.note || ""]));
   }
 
   function storePanel(s) {
     var title = [s.store_id, " ", s.label || ""];
+    var newer = s.not_in_latest ? D.alert("", el("p", {}, el("strong", {}, s.not_in_latest),
+      s.state === "measured" ? ": this is the latest run that measured it." : ".")) : null;
     if (s.state !== "measured") {
-      return D.panel(title, null, D.alert("", el("p", {}, el("strong", {}, "Pending in the latest run"), ": " + (s.reason || "no reason recorded") + ".")));
+      return D.panel(title, null, newer, D.alert("", el("p", {}, el("strong", {}, "Pending in its latest run"), ": " + (s.reason || "no reason recorded") + ".")));
     }
-    return D.panel(title, null,
+    return D.panel(title, null, newer,
       el("div", { class: "tag-row" }, D.tag(s.layout), D.tag(s.coverage),
         s.flags.map(function (f) { return D.tag([f, "caution"]); })),
       el("div", { class: "facts" },

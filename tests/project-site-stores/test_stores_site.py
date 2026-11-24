@@ -50,7 +50,7 @@ class BuiltStoresView(unittest.TestCase):
     def test_the_site_holds_data_stores_json(self) -> None:
         data = json.loads((self.out / "data" / "stores.json").read_text(encoding="utf-8"))
         self.assertTrue(data["available"])
-        self.assertEqual([r["store_id"] for r in data["inventory"]], ["OGS-00001", "OGS-00002", "OGS-00003"])
+        self.assertEqual([r["store_id"] for r in data["inventory"]], [f"OGS-0000{n}" for n in range(1, 7)])
         self.assertEqual(data["registry"]["stores_url"],
                          "https://github.com/opengwas/opengwasdb-stores/tree/" + "c" * 40 + "/stores/")
         self.assertEqual(data["inventory"][0]["url"],
@@ -91,7 +91,9 @@ class StoresScript(unittest.TestCase):
                          "recorded from opengwasdb-stores#502's backfill", "counts come with opengwasdb#488",
                          "pending opengwasdb-stores#507", "not computed",
                          "not applicable", "unavailable", "20261118T000000Z-broken.json is not a valid result",
-                         "Not measured by yardstick", "taken under load: load average 70 over 56"):
+                         "Not measured by yardstick", "taken under load: load average 70 over 56",
+                         "not built yet (Release Status candidate)", "withdrawn", "answered by its scan",
+                         "no record says how the HM3 step ended"):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
 

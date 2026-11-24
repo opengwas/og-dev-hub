@@ -238,18 +238,25 @@ listed and their number is unknown, never 0. The Stores view does not draw them.
 the registry's, called and not re-derived: the bundle through `ogstores.bundle.load` (`layout`,
 `completion_state`, `association_coverage`, `status`); the flags and the top-hit encoding through
 `bundle.observed_flag` and `bundle.top_hit_counts_text`; the Release Manifest through
-`opengwasdb.model.analyses.read_analyses` and `bundle.partition_membership`, **built rows only**:
-an `exclude_from_build` audit row is in no count, ancestry or median.
+`bundle.manifest_summary` (which reads `analyses.tsv` through the engine's `read_analyses` and splits it with
+`partition_membership`), **built rows only**: an `exclude_from_build` audit row is in no count, ancestry or median.
+A sample size the quantity rule refuses is counted as unparseable, never dropped silently.
+
+**A Store that is not built has no observed facts.** A Store whose Release Status is `candidate` or `accepted`,
+or that has no Validation Record, shows "not built yet (Release Status …)" in every observed cell
+(`store_bytes`, `n_variants`, `top_hits`, `has_hm3`, `has_rho`, `n_clumped`); it never names the backfill or
+the engine, which have nothing to fill. Its manifest cells still read. Any other status (`built`, `validated`,
+`superseded`, `withdrawn`) with a record reads the rules below, and its status is shown as written.
 
 | Cell | Value | Gap, with what fills it |
 |---|---|---|
 | `store_bytes` | `observed.store_bytes` | absent or `null`: "recorded from opengwasdb-stores#502's backfill" |
 | `n_variants` | `observed.n_variants` | absent: the backfill; `null`: "counts come with opengwasdb#488" |
-| `top_hits` | the count at each threshold | the recipe's `post.top_hits` is false: "not computed"; `n_top_hits` absent: the backfill; `null`: "counts come with opengwasdb#488" |
-| `has_hm3`, `has_rho` | `true` or `false` | absent: the backfill; `has_rho` `null`: "not recorded: a Rho Matrix built outside the recipe is not" |
+| `top_hits` | the count at each threshold | the recipe's `post.top_hits` is false: "not computed"; `n_top_hits` absent: the backfill; `null`: "counts come with opengwasdb#488"; a count that is `null` or not a non-negative integer: "observed.n_top_hits[<threshold>] <value> is not a count" |
+| `has_hm3`, `has_rho` | `true` or `false` | absent: the backfill; `has_hm3` `null`: "no record says how the HM3 step ended"; `has_rho` `null`: "not recorded: a Rho Matrix built outside the recipe is not" |
 | `n_clumped` | `observed.n_clumped` | absent or `null`: "pending opengwasdb-stores#507" |
 | `n_analyses` | the built rows (and how many `excluded` rows were left out) | `analyses.tsv` missing or unreadable, naming which |
-| `median_sample_size` | the median of `sample_size` over the built rows that have a number, with `with_sample_size` of `of` | no built row has one |
+| `median_sample_size` | the median of `sample_size` over the built rows that have a number, with `with_sample_size` of `of` and `unparseable` | "the Release Manifest records no sample size for any built row" (and how many values are not numbers) |
 | `ancestry` | a count per `assigned_ancestry`, `unassigned` for an empty one | no `assigned_ancestry` column |
 
 A value the owner refuses (`observed_flag` on `"yes"`) is a gap carrying its message. **`yardstick`**
@@ -275,13 +282,17 @@ error.
 - **`yardstick`**: `stores` (the latest run per Store), `trends`, `unmeasured`, `invalid`,
   `runs`, `workloads`, `load_rule`, `veeam_rule`. Raw runs are not listed.
   - *The latest run per Store* is the latest run that measured it (a Store `pending` in every run
-    says so, with its `reason`). It gives `engine_version`, `date`, `workload_id`, `flags`,
+    says so, with its `reason`). When the newest run leaves the Store out or lists it pending, the
+    panel says `not_in_latest`, "not in the latest run (<date>)", above the older run it shows. It gives `engine_version`, `date`, `workload_id`, `flags`,
     `peak_memory` and `size_on_disk` (each a figure, or its state with why), and `measures`: the
     median and p95 of every timed measure the run holds, in `yardstick.result.TIMED`'s order. A
     run of the old workload (`yardstick-3`) has fewer measures and shows exactly those; a
     measure the run does not hold is absent, not zero, and appears once a run carries it.
     `state` is `measured`, `not_applicable` (drawn "not applicable" with its `reason`) or
-    `unavailable` (drawn "unavailable" with its `error`); the two are never drawn alike.
+    `unavailable` (drawn "unavailable" with its `error`); the two are never drawn alike. The build writes each
+    state's `label` and `tone` (`stores_view.STATE`, which asserts it covers exactly `yardstick.result.STATUSES`,
+    plus `absent`, a run that does not hold the measure); the script renders them. A `top_hits` row carries `path`, `index`
+    or `scan`, said beside it, because the two differ in kind.
   - *A flagged run* is marked. A run is flagged when `veeam_window` is true, or when any load
     average it recorded (1, 5 or 15 minutes, before or after) is **over a quarter of
     `host.cpu_count`**: 224 CPUs flag a load average over 56. A load exactly a quarter is not flagged.
@@ -289,7 +300,8 @@ error.
     for `bytes_on_disk`), inline SVG drawn by `stores_view.trend`; no charting library. One line per
     Store, **one point per engine version** (a version run more than once shows that Store's
     latest run of it), versions in the order they were first run, not by number. A flagged run's
-    point is ringed (`flag-ring`) and its tooltip says why; the tooltip also names the workload,
+    point is ringed (`flag-ring`) and its tooltip says why; **a line never joins an index point to a scan point**
+    of `top_hits` (the line breaks, and each tooltip says `via index` or `via scan`); the tooltip also names the workload,
     because a trend across a workload change compares different measures.
   - *`unmeasured`*: registry Stores no committed run lists: "not measured by yardstick".
 

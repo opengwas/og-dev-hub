@@ -15,8 +15,8 @@ from typing import Any
 
 from yardstick import result as yardstick_result
 
-# What a measure record may carry that the view draws; every other key stays in the registry.
-RECORD_KEYS = ("status", "median_ms", "p95_ms", "reps", "reason", "error", "peak_mb", "bytes", "source")
+# What a measure record may carry that the view draws (`path` is `top_hits`': `index` or `scan`, which differ in kind); every other key stays in the registry.
+RECORD_KEYS = ("status", "median_ms", "p95_ms", "reps", "reason", "error", "peak_mb", "bytes", "source", "path")
 
 
 def _record(record: dict[str, Any]) -> dict[str, Any]:
