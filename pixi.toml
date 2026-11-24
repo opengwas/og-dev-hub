@@ -35,7 +35,7 @@ og-dev-hub = { path = ".", editable = true }
 # so this brings in no second copy of anything here. Every call passes the
 # registry root it reads: an installed `ogstores` does not know where a
 # registry checkout is.
-ogstores = { git = "https://github.com/opengwas/opengwasdb-stores", rev = "a2cb07692df49991059fe75edff6b42ea32d5d3f" }
+ogstores = { git = "https://github.com/opengwas/opengwasdb-stores", rev = "5cab2625f33f2345a153cfb20c473a011935830d" }
 
 [tasks]
 # The suites: every tests/**/test_*.py, each run as a script, one at a time.
