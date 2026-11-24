@@ -336,7 +336,7 @@ class TestStorePages(unittest.TestCase):
         self.assertIn("The LD Store Registry is not yet in opengwasdb-stores", section)
         self.assertIn("(https://github.com/opengwas/opengwasdb-stores/issues/496)", section)
         self.assertIn("so LD Stores are not listed.", section)
-        self.assertIn("Their number is unknown, not 0.", section)
+        self.assertIn("Their number is unknown, never 0.", section)
         self.assertNotRegex(section, r"\d[\d,]*\s+LD Stores")
 
     def test_the_ld_gap_is_drawn_even_when_the_stores_data_is_unavailable(self) -> None:
@@ -1261,8 +1261,12 @@ class TestOverview(unittest.TestCase):
 
     def test_the_overview_shows_ld_stores_as_unknown_never_zero(self) -> None:
         page = pages.render_overview(self.documents)
-        self.assertIn("| LD Stores | unknown | no LD Store Registry to count |", page)
-        self.assertNotIn("| LD Stores | 0 |", page)
+        self.assertIn("| LD Stores | unknown |", page)
+        self.assertIn("**9** GWAS Stores.", page)
+
+    def test_the_overview_shows_ld_stores_as_unknown_without_catalog_data(self) -> None:
+        page = pages.render_overview(documents())
+        self.assertIn("| LD Stores | unknown |", page)
 
     def test_the_latest_tag_per_repository_or_untagged(self) -> None:
         page = pages.render_overview(self.documents)
