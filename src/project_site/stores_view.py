@@ -22,6 +22,7 @@ from typing import Any, Mapping
 from yardstick import result as yardstick_result
 
 from project_site import architecture_public, paths
+from project_site.shapes import mapping
 
 Document = Mapping[str, Any]
 
@@ -54,6 +55,10 @@ _STATE = {"measured": ("measured", None), "unavailable": ("unavailable", "fault"
 if set(_STATE) != set(yardstick_result.STATUSES):  # a raise, not an assert: it must hold under `python -O`
     raise RuntimeError(f"yardstick.result.STATUSES is {yardstick_result.STATUSES}: say how each status is drawn")
 STATE = {**_STATE, "absent": ("not in this run", None)}
+
+# LD Stores have no registry yet: say so as a gap, never as a count of zero (docs/spec/project-site.md).
+LD_STORES = {"gap": "LD Stores are not listed yet: their registry is opengwasdb-stores#496 and the view waits on "
+                    "og-dev-hub#10. Their number is unknown, not 0."}
 
 CHART_COLUMNS = 6  # series classes `series-0` to `series-5`
 
@@ -105,7 +110,7 @@ def megabytes(mb: int | float) -> str:
 
 def _cell(field: Mapping[str, Any] | None, show, *, detail: str | None = None) -> dict[str, Any]:
     """`{text, gap, detail}`: the text of a value, or the gap that names what fills it; exactly one of the two."""
-    field = field if isinstance(field, Mapping) else {}
+    field = mapping(field)
     if field.get("gap") or field.get("value") is None:
         return {"text": None, "gap": text(field.get("gap") or "not collected"), "detail": None}
     return {"text": show(field["value"]), "gap": None, "detail": detail}
@@ -348,6 +353,7 @@ def stores_view(doc: Document) -> dict[str, Any]:
         "name": paths.REGISTRY, "url": paths.clone_url(paths.REGISTRY), "commit": commit,
         "stores_url": paths.github_url(paths.REGISTRY, commit, "stores/") if commit else None,
     }
+    out["ld_stores"] = LD_STORES
     out["inventory"] = [
         inventory_row(r, paths.github_url(paths.REGISTRY, commit, f"stores/{r['store_id']}/") if commit else None) for r in rows
     ]

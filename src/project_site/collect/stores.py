@@ -17,7 +17,8 @@ from ogstores import bundle as release_bundle
 from ogstores import paths
 
 from project_site.collect import inventory, yardstick_runs
-from project_site.collect.common import CollectError, mapping as _mapping
+from project_site.collect.common import CollectError
+from project_site.shapes import mapping as _mapping
 
 
 def registered_store_ids(registry: Path) -> list[str]:

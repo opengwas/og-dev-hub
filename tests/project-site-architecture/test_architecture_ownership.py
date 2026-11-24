@@ -21,14 +21,14 @@ from project_site.collect import architecture_model as model
 COMPONENTS = [
     {"id": "orchestration", "paths": ["src/ogstores/", "workflow/Snakefile"]},
     {"id": "release", "paths": ["src/ogstores/release/", "tools/release.py"]},
-    {"id": "docs", "paths": ["docs/_quarto.yml"]},
+    {"id": "docs", "paths": ["docs/spec/yardstick.md"]},
 ]
 TRACKED = [
     "src/ogstores/bundle.py",
     "src/ogstores/release/plan.py",
     "tools/release.py",
     "workflow/Snakefile",
-    "docs/_quarto.yml",
+    "docs/spec/yardstick.md",
     "README.md",
 ]
 

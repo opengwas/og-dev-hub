@@ -148,7 +148,7 @@ class RegistryTreeTest(unittest.TestCase):
 
     FILES = {
         "stores/OGS-00001/release.yaml": "store_id: OGS-00001\n",
-        "docs/_epics/opengwasdb-stores-1.yaml": "repo: opengwasdb-stores\n",
+        "docs/archive/old.yaml": "kept: elsewhere\n",
         "docs/_yardstick/2026-11-01.json": "{}\n",
         "docs/a.md": "# A\n",
         "CONTEXT.md": "# Glossary\n",
@@ -171,7 +171,7 @@ class RegistryTreeTest(unittest.TestCase):
         self.assertEqual(commit, self.commit)
         self.assertTrue((self.tree / "stores" / "OGS-00001" / "release.yaml").is_file())
         self.assertTrue((self.tree / "docs" / "_yardstick" / "2026-11-01.json").is_file())
-        self.assertFalse((self.tree / "docs" / "_epics").exists(), "only the Stores' readers' files are extracted")
+        self.assertFalse((self.tree / "docs" / "archive").exists(), "only the Stores' readers' files are extracted")
         self.assertFalse((self.tree / "docs" / "a.md").exists())
         self.assertFalse((self.tree / "CONTEXT.md").exists())
         self.assertFalse((self.tree / "pixi.lock").exists())

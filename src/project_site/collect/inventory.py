@@ -21,8 +21,9 @@ import json
 from typing import Any, Mapping
 
 from ogstores import bundle as release_bundle
+from ogstores import plan
 
-from project_site.collect.common import mapping as _mapping
+from project_site.shapes import mapping as _mapping
 
 BACKFILL = "recorded from opengwasdb-stores#502's backfill"
 HM3_UNRECORDED = "no record says how the HM3 step ended"
@@ -54,6 +55,11 @@ def _not_built(bundle: release_bundle.Bundle) -> str | None:
     return None
 
 
+def _is_count(value: Any) -> bool:
+    """The one count rule: a non-negative integer (a bool is not one)."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
 def _observed_count(observed: Mapping[str, Any], key: str, *, null_gap: str) -> dict[str, Any]:
     """A count of the Validation Record's `observed`: absent is the backfill's to fill, `null` is `null_gap`'s."""
     if key not in observed:
@@ -61,9 +67,7 @@ def _observed_count(observed: Mapping[str, Any], key: str, *, null_gap: str) -> 
     value = observed[key]
     if value is None:
         return cell(gap=null_gap)
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        return cell(gap=f"observed.{key} {value!r} is not a count")
-    return cell(value)
+    return cell(value) if _is_count(value) else cell(gap=f"observed.{key} {value!r} is not a count")
 
 
 def _flag(observed: Mapping[str, Any], key: str, *, null_gap: str) -> dict[str, Any]:
@@ -78,9 +82,12 @@ def _flag(observed: Mapping[str, Any], key: str, *, null_gap: str) -> dict[str, 
 
 def _top_hits(build: Mapping[str, Any], observed: Mapping[str, Any]) -> dict[str, Any]:
     """The count at each threshold, as `top_hit_counts_text` encodes it, or "not computed" when the recipe has no index."""
-    post = _mapping(build.get("post"))
-    if post.get("top_hits") is False:
-        return cell(gap="not computed: the Build Recipe's post.top_hits is false")
+    try:
+        declared = plan.declared_top_hits(dict(_mapping(build.get("post"))))
+    except ValueError as error:
+        return cell(gap=str(error))
+    if not declared:
+        return cell(gap="not computed: the Build Recipe's post.top_hits is not true")
     if "n_top_hits" not in observed:
         return cell(gap=BACKFILL)
     try:
@@ -91,7 +98,7 @@ def _top_hits(build: Mapping[str, Any], observed: Mapping[str, Any]) -> dict[str
         return cell(gap=COUNTS)
     counts = json.loads(text)
     for threshold, count in counts.items():
-        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        if not _is_count(count):
             return cell(gap=f"observed.n_top_hits[{threshold}] {count!r} is not a count")
     return cell([{"threshold": threshold, "count": count} for threshold, count in counts.items()])
 
@@ -127,9 +134,11 @@ def row(bundle: release_bundle.Bundle) -> dict[str, Any]:
     release, build = _mapping(bundle.release), _mapping(bundle.build)
     observed = _mapping(_mapping(bundle.validation).get("observed"))
     unbuilt = _not_built(bundle)
-    if unbuilt:
-        # Nothing was built, so nothing was observed: no backfill or engine release will fill these.
-        observed_cells = {k: cell(gap=unbuilt) for k in
+    no_block = None if unbuilt or isinstance(_mapping(bundle.validation).get("observed"), Mapping) else (
+        "the Validation Record has no observed block")  # the backfill skips such a record, so it never fills
+    if unbuilt or no_block:
+        # Nothing was built (or nothing observed): no backfill or engine release will fill these.
+        observed_cells = {k: cell(gap=unbuilt or no_block) for k in
                           ("store_bytes", "n_variants", "top_hits", "has_hm3", "has_rho", "n_clumped")}
     else:
         observed_cells = {
