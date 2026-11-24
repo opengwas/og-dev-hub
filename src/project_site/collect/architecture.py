@@ -111,7 +111,7 @@ def collect(
         del models[name]
         repos[name] |= {"model": False, "note": why}
         gaps[name] = _gap(no_model=why)
-    claims = {repo: model_rules.claims_of(c for c in components if c["repo"] == repo) for repo in models}
+    claims = model_rules.claims_by_repository(components, {repo: {"model": True} for repo in models})
     is_code = {repo: model_rules.code_rule(claims[repo]) for repo in models}
     for repo in models:
         gaps[repo] = _gap() | model_rules.check_claims(claims[repo], trees[repo].files, is_code[repo]) | _system_gaps(

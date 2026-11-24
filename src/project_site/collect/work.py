@@ -47,12 +47,7 @@ def compute(
     """The work output from the two collectors' documents and the branches read; no I/O."""
     components = [c for c in architecture.get("components") or [] if isinstance(c, Mapping)]
     repos = {name: r for name, r in (architecture.get("repos") or {}).items() if isinstance(r, Mapping)}
-    modelled = [name for name, r in repos.items() if r.get("model")]
-    modelled += sorted({c["repo"] for c in components} - set(modelled))
-    claims = {
-        repo: model_rules.claims_of(c for c in components if c["repo"] == repo and c.get("paths"))
-        for repo in modelled
-    }
+    claims = model_rules.claims_by_repository(components, repos)
     by_id = {c["id"]: c for c in components}
     # Without a repository's model no file of it belongs to any component, so its work is
     # unknown: it is said to be, never turned into "no work" or "no meets".

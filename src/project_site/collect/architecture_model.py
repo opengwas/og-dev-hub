@@ -168,6 +168,20 @@ def claims_of(components: Iterable[Mapping[str, Any]]) -> Claims:
     return [(path, str(component["id"])) for component in components for path in component.get("paths") or []]
 
 
+def claims_by_repository(
+    components: Iterable[Mapping[str, Any]], repos: Mapping[str, Any] | None = None,
+) -> dict[str, Claims]:
+    """Each repository's claims, by name: the one way the claims map is built (og-dev-hub#6).
+
+    The repositories are those `repos` (`architecture.json`'s, in `system.yaml`'s
+    order) records with a model, then any other a component names, sorted.
+    """
+    components = [c for c in components if isinstance(c, Mapping)]
+    names = [str(name) for name, r in (repos or {}).items() if isinstance(r, Mapping) and r.get("model")]
+    names += sorted({str(c["repo"]) for c in components} - set(names))
+    return {repo: claims_of(c for c in components if c.get("repo") == repo) for repo in names}
+
+
 def matches(claimed: str, path: str) -> bool:
     return path == claimed or (claimed.endswith("/") and path.startswith(claimed))
 

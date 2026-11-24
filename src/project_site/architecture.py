@@ -298,10 +298,7 @@ def _candidate(
     """
     ticket = args.ticket
     unmeasured = document.get("unmeasured") or {}
-    claims: dict[str, list[tuple[str, str]]] = {}
-    for c in architecture_doc["components"]:
-        if c.get("paths"):
-            claims.setdefault(c["repo"], []).extend(architecture_model.claims_of([c]))
+    claims = architecture_model.claims_by_repository(architecture_doc["components"], architecture_doc.get("repos"))
 
     def is_code(repo: str) -> Any:
         return architecture_model.code_rule(claims.get(repo) or [])
