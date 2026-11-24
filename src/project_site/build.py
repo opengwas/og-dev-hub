@@ -282,12 +282,17 @@ def stage_everything(
 
 
 def _engine_clone(revision: str) -> Path:
-    """The site's clone of the engine, holding `revision`: fetched only when it does not, since a pin never moves."""
+    """The site's clone of the engine, holding `revision`: fetched only when it does not, since a pin never moves.
+
+    The fetch never raises. But a clone still without the pinned revision has no
+    older engine to fall back to, so the render stops with git's message: a
+    `CollectError`, which `main` and `publish.main` turn into exit status 2.
+    """
     clone = paths.clone_dir(paths.ENGINE)
     fetched = staging.ensure_clone(clone, url=paths.clone_url(paths.ENGINE), fetch=not staging.has_revision(clone, revision))
     if not staging.has_revision(clone, revision):
         why = f": {fetched['error']}" if fetched and not fetched["ok"] else ""
-        raise SystemExit(f"the {paths.ENGINE} clone at {clone} does not have revision {revision}{why}")
+        raise collect_common.CollectError(f"the {paths.ENGINE} clone at {clone} does not have revision {revision}{why}")
     return clone
 
 

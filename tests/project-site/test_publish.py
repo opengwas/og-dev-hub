@@ -410,6 +410,14 @@ class PublishJobsTest(unittest.TestCase):
 
         self.assertIn("adr/0001.md", "".join(call.args[0] for call in stderr.write.call_args_list))
 
+    def test_a_repository_that_cannot_be_read_is_refused(self) -> None:
+        failure = collect_common.CollectError("the opengwasdb clone does not have revision ffff: fatal: offline")
+        with mock.patch.object(publish_module, "publish", side_effect=failure), \
+                mock.patch("sys.stderr") as stderr:
+            self.assertEqual(publish_module.main(["--dry-run"]), 2)
+
+        self.assertIn("fatal: offline", "".join(call.args[0] for call in stderr.write.call_args_list))
+
 
 if __name__ == "__main__":
     unittest.main()

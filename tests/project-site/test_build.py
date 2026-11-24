@@ -308,6 +308,14 @@ class RenderJobsTest(unittest.TestCase):
 
         self.assertIn("adr/0001.md", "".join(call.args[0] for call in stderr.write.call_args_list))
 
+    def test_a_repository_that_cannot_be_read_exits_2_saying_why(self) -> None:
+        failure = build.collect_common.CollectError("the opengwasdb clone does not have revision ffff: fatal: offline")
+        with mock.patch.object(build, "build_site", side_effect=failure), \
+                mock.patch("sys.stderr") as stderr:
+            self.assertEqual(build.main(["--repo", str(self.root)]), 2)
+
+        self.assertIn("fatal: offline", "".join(call.args[0] for call in stderr.write.call_args_list))
+
 
 if __name__ == "__main__":
     unittest.main()

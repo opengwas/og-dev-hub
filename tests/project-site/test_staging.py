@@ -492,30 +492,34 @@ class EngineRevisionTest(unittest.TestCase):
     def setUp(self) -> None:
         self.hub = GithubFixture(self)
         self.first = self.hub.repository("opengwasdb", {"docs/guide.md": "# Guide\n"})
-        self.hub.repository("opengwasdb-stores", {"docs/a.md": "# A\n", "CONTEXT.md": "# Glossary\n"})
-        self.hub_checkout = self.hub.root / "og-dev-hub"
-        self.hub_checkout.mkdir()
-        git(self.hub_checkout, "init", "-q", "-b", "main")
-        git(self.hub_checkout, "-c", "user.email=t@e.org", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "hub")
-
-    def stage(self, revision: str) -> build.Stage:
-        registry = staging.registry_root(tree=self.hub.root / "tree")
-        return build.stage_everything(self.hub_checkout, registry=registry, revision=revision)
+        self.clone = paths.clone_dir("opengwasdb")
 
     def test_a_pinned_revision_the_clone_lacks_is_fetched(self) -> None:
-        self.stage(self.first)
+        build._engine_clone(self.first)
         newer = self.hub.commit("opengwasdb", {"docs/later.md": "# Later\n"})
 
-        stage = self.stage(newer)
+        self.assertEqual(build._engine_clone(newer), self.clone)
 
-        self.assertEqual(stage.engine_commit, newer)
-        self.assertTrue((stage.mirror / "opengwasdb" / "later.md").is_file())
+        self.assertTrue(staging.has_revision(self.clone, newer))
 
     def test_a_revision_the_engine_does_not_have_stops_the_render_naming_it(self) -> None:
-        with self.assertRaises(SystemExit) as caught:
-            self.stage("f" * 40)
+        with self.assertRaises(CollectError) as caught:
+            build._engine_clone("f" * 40)
 
         self.assertIn("f" * 40, str(caught.exception))
+
+    def test_a_pin_fetch_that_fails_stops_the_render_with_gits_message(self) -> None:
+        # There is no older engine to fall back to: without the pinned revision there
+        # are no engine docs to stage, so the render stops, saying why (exit 2).
+        build._engine_clone(self.first)
+        self.hub.offline()
+
+        with self.assertRaises(CollectError) as caught:
+            build._engine_clone("e" * 40)
+
+        self.assertIn("e" * 40, str(caught.exception))
+        self.assertIn("opengwasdb", str(caught.exception))
+        self.assertIn("does not appear to be a git repository", str(caught.exception))
 
 
 class PinnedRevisionTest(unittest.TestCase):
