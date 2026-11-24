@@ -24,6 +24,8 @@ dart-sass = "==1.102.0"
 # publish call `git`.
 gh = "*"
 git = "*"
+# The site draws its diagrams to SVG at build time with `dot` (og-dev-hub#15).
+graphviz = "*"
 
 [pypi-dependencies]
 # The site's own code, installed editable so it imports without sys.path
@@ -59,17 +61,11 @@ site-data = { cmd = "python3 -m project_site.collect" }
 #   pixi run architecture conflicts --refresh --registry ~/repo/opengwasdb-stores --branch B
 architecture = { cmd = "python3 -m project_site.architecture" }
 
-# The site (#388): one Quarto website over opengwasdb-stores' docs/, this
-# repository's site/ and docs/, and the engine's docs.
+# The site (og-dev-hub#15, docs/site.md): collect from public git alone (no token, no
+# /data, no private repository, no board), then write the static page into `_site/`.
 #
-#   pixi run site                     # render; the served-path check fails a drop
-#   pixi run site --jobs 8            # render over 8 Quarto processes (default 24; 1 is Quarto alone)
-#   pixi run site --registry PATH     # read that opengwasdb-stores checkout instead of the clone
-#   pixi run site-preview             # stage, then Quarto's live-reloading preview
-#   pixi run site-publish --dry-run   # render origin/main and commit gh-pages, no push
-#
-# The output is `/data/opengwasdb/work/site/<checkout>/_site`, never under /home
-# or /tmp (src/project_site/paths.py).
-site = { cmd = "python3 -m project_site.build" }
-site-preview = { cmd = "python3 -m project_site.build --preview" }
+#   pixi run site [--out DIR] [--data-dir DIR] [--registry PATH] [--no-refresh]
+#   pixi run site-preview [--port N]   # serve _site/ at http://localhost:4200/og-dev-hub/
+site = { cmd = "python3 -m project_site.site" }
+site-preview = { cmd = "python3 -m project_site.site serve" }
 site-publish = { cmd = "python3 -m project_site.publish" }

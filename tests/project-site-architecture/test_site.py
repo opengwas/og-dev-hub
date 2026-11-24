@@ -1,0 +1,338 @@
+#!/usr/bin/env python3
+"""The static site: one page of built state, rendered from JSON the collectors write (og-dev-hub#15).
+
+The fixture repositories are `test_architecture_repositories`' world: opengwasdb-stores
+and opengwasdb with models, `ogquery` (public, with a model), `ogld` (private, with a
+model, a stage and an ADR), `opengwaspy` (public, no model), `opengwas-gateway`
+(unreadable) and `ogdb-api` (planned). The private repository is collected whole
+here, as `pixi run architecture` collects it, so the build's one filter
+(`architecture_public.public_view`) is what keeps it off the site.
+
+Run from the repository root:
+    python3 tests/project-site-architecture/test_site.py
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+import architecture_fixtures as fx
+from test_architecture_repositories import OGQUERY_FILES, World
+
+from project_site import site, staging
+from project_site.collect import common
+
+CONTEXT = """\
+# OpenGWAS
+
+The whole platform. See [ADR 0001](docs/adr/0001-dev-hub-collects-and-owns-nothing.md)
+and [GitHub](https://github.com/opengwas).
+
+## The platform
+
+**Dev Hub**:
+The developers' view of _built state_.
+
+- one
+- two
+"""
+
+# Every string of the private repository the fixtures hold: its paths, component and
+# stage, its ADR's title and file name. None may appear anywhere under `_site/`.
+SECRETS = ("ogld/genotypes", "Panel readers", "ld_panels", "Secret LD stage", "ld_secret_stage",
+           "Secret panel layout", "0001-secret-panel-layout")
+
+
+def built(cleanup, documents: dict, *, context: str = CONTEXT) -> Path:
+    """`_site/` built from `documents` (source name to collected file), in a directory `cleanup` removes."""
+    root = Path(tempfile.mkdtemp(prefix="site-"))
+    cleanup(shutil.rmtree, root, True)
+    data = root / "data"
+    for document in documents.values():
+        common.write_source(data, document)
+    (root / "CONTEXT.md").write_text(context, encoding="utf-8")
+    site.build(data, root / "_site", context=root / "CONTEXT.md")
+    return root / "_site"
+
+
+def collected(result: dict) -> dict:
+    return {"source": "architecture", "available": True, "collected_at": "2026-11-24T12:00:00Z", "error": None, **result}
+
+
+def read(out: Path, name: str) -> dict:
+    return json.loads((out / "data" / name).read_text(encoding="utf-8"))
+
+
+class SiteWorld:
+    """The fixture repositories once, with an ADR citing another repository's, and a glossary in ogquery."""
+
+    def __init__(self) -> None:
+        self.world = World(unittest.TestCase())
+        engine = {**fx.ENGINE_FILES, **fx.ENGINE_ADRS,
+                  "docs/adr/0003-none.md": "# 0003. Nothing\n\nAs opengwasdb-stores ADR 0072 decided; ogld ADR 0001 too.\n"}
+        registry = {**fx.REGISTRY_FILES, **fx.REGISTRY_ADRS, "docs/adr/0072-bundles.md": "# 0072. Release Bundles\n",
+                    "CONTEXT.md": "# opengwasdb-stores\n"}
+        self.architecture = collected(self.world.variant(
+            registry=registry, engine=engine, ogquery={**OGQUERY_FILES, "CONTEXT.md": "# ogquery\n"}))
+        self.out = built(unittest.addModuleCleanup, {"architecture": self.architecture})
+
+
+_WORLD: list[SiteWorld] = []
+
+
+def site_world() -> SiteWorld:
+    if not _WORLD:
+        _WORLD.append(SiteWorld())
+        unittest.addModuleCleanup(shutil.rmtree, _WORLD[0].world.root, True)
+    return _WORLD[0]
+
+
+class BuiltSite(unittest.TestCase):
+    """The site built once from the fixture world, for every class that only reads it."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.world = site_world()
+        cls.out = cls.world.out
+
+
+class PageTests(BuiltSite):
+    """Seam 1: `build` writes the page, a script per view and `data/*.json`, all by relative paths."""
+
+    def test_the_page_its_stylesheet_and_a_script_per_view_are_written(self) -> None:
+        for name in ("index.html", "style.css", "js/app.js", "js/architecture.js", "js/decisions.js", "js/context.js"):
+            with self.subTest(name=name):
+                self.assertTrue((self.out / name).is_file())
+        self.assertEqual(sorted(p.name for p in (self.out / "data").iterdir()),
+                         ["architecture.json", "context.json", "decisions.json"])
+
+    def test_the_page_has_a_tab_per_view_and_the_stores_tab_says_it_is_coming(self) -> None:
+        page = (self.out / "index.html").read_text(encoding="utf-8")
+        for view in ("architecture", "decisions", "context", "stores"):
+            with self.subTest(view=view):
+                self.assertIn(f'href="#{view}"', page)
+                self.assertIn(f'id="view-{view}"', page)
+        stores = page[page.index('id="view-stores"'):]
+        self.assertIn("coming", stores[:stores.index("</section>")])
+
+    def test_every_script_stylesheet_and_data_path_is_relative(self) -> None:
+        page = (self.out / "index.html").read_text(encoding="utf-8")
+        for attribute in re.findall(r'(?:src|href)="([^"]*)"', page):
+            with self.subTest(attribute=attribute):
+                self.assertFalse(attribute.startswith("/"), attribute)
+                if not attribute.startswith("#"):
+                    self.assertTrue(attribute.startswith("https://github.com/") or "://" not in attribute, attribute)
+        for script in (self.out / "js").iterdir():
+            text = script.read_text(encoding="utf-8")
+            with self.subTest(script=script.name):
+                self.assertNotRegex(text, r"""fetch\(\s*["'`]/""")
+                self.assertNotRegex(text, r"""["'`]/data/""")
+        self.assertNotIn("<link rel=\"stylesheet\" href=\"http", page)
+        self.assertNotIn("<script src=\"http", page)
+
+    def test_a_built_site_holds_no_host_path(self) -> None:
+        root = str(self.world.world.root)
+        for path in self.out.rglob("*"):
+            if path.is_file():
+                with self.subTest(path=path.name):
+                    self.assertNotIn(root, path.read_text(encoding="utf-8"))
+
+
+class ArchitectureViewTests(BuiltSite):
+    """Seam 2: containers, components and gaps; a private repository is its container only."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        cls.data = read(cls.out, "architecture.json")
+
+    def test_every_listed_repository_is_drawn_in_system_yamls_order(self) -> None:
+        self.assertEqual([r["name"] for r in self.data["repos"]], [
+            "opengwasdb-stores", "opengwasdb", "ogquery", "ogld", "opengwaspy", "opengwas-gateway", "ogdb-api"])
+        ogld = next(r for r in self.data["repos"] if r["name"] == "ogld")
+        self.assertEqual((ogld["private"], ogld["model"], ogld["commit"]), (True, None, None))
+        self.assertTrue(next(r for r in self.data["repos"] if r["name"] == "ogdb-api")["planned"])
+
+    def test_the_components_of_every_public_repository_with_a_model_are_listed(self) -> None:
+        by_repo: dict[str, set[str]] = {}
+        for c in self.data["components"]:
+            by_repo.setdefault(c["repo"], set()).add(c["id"])
+        self.assertEqual(by_repo, {"opengwasdb-stores": {"gen", "ogs", "tools"},
+                                   "opengwasdb": {"cli", "query", "check", "store", "model"}, "ogquery": {"oq_read"}})
+        gen = next(c for c in self.data["components"] if c["id"] == "gen")
+        commit = next(r for r in self.data["repos"] if r["name"] == "opengwasdb-stores")["commit"]
+        self.assertEqual(gen["paths"], [{"path": "src/gen/", "url": f"https://github.com/opengwas/opengwasdb-stores/tree/{commit}/src/gen/"}])
+        self.assertEqual(gen["container_name"], "Generation")
+        self.assertIn({"repo": "opengwasdb-stores", "number": "0001", "via": "code",
+                       "title": "0001. Manifest Generation is one pipeline"},
+                      [{k: a[k] for k in ("repo", "number", "via", "title")} for a in gen["adrs"]])
+
+    def test_the_gaps_are_drawn_for_each_public_repository(self) -> None:
+        gaps = {g["repo"]: g for g in self.data["gaps"]}
+        self.assertIn("opengwas-gateway cannot be read", gaps["opengwas-gateway"]["unreadable"])
+        self.assertTrue(gaps["opengwaspy"]["no_model"].startswith("docs/architecture/components.yaml is not in opengwaspy"))
+        self.assertEqual(gaps["opengwasdb"]["unclaimed"], [])
+        self.assertNotIn("ogld", gaps)
+
+    def test_the_seam_the_baseline_and_the_layering_keep_their_counts(self) -> None:
+        self.assertEqual({k: self.data["seam"][k] for k in ("from", "to", "imports", "pairs")},
+                         {"from": "opengwasdb-stores", "to": "opengwasdb", "imports": 5, "pairs": 4})
+        layering = self.data["layering"]
+        self.assertEqual([(l["repo"], len(l["upward"]), l["edges"]) for l in layering], [("opengwasdb", 3, 8)])
+        self.assertEqual({(u["from"], u["to"]) for u in layering[0]["upward"]},
+                         {("query", "cli"), ("store", "query"), ("model", "store")})
+        self.assertIn({"from_repo": "ogquery", "to_repo": "opengwasdb", "imports": 1, "pairs": 1}, self.data["across"])
+
+    def test_the_diagrams_are_svg_drawn_at_build_time(self) -> None:
+        diagrams = {d["id"]: d for d in self.data["diagrams"]}
+        self.assertEqual(list(diagrams), ["containers", "opengwasdb", "opengwasdb-stores", "ogquery"])
+        for d in diagrams.values():
+            with self.subTest(diagram=d["id"]):
+                self.assertTrue(d["svg"].startswith("<svg"), d["svg"][:40])
+                self.assertTrue(d["svg"].rstrip().endswith("</svg>"))
+        # The private repository's container is drawn, marked private; a component box links to its row.
+        self.assertIn("LD library", diagrams["containers"]["svg"])
+        self.assertIn("private", diagrams["containers"]["svg"])
+        self.assertIn('href="#component-cli"', diagrams["opengwasdb"]["svg"])
+
+    def test_nothing_of_the_private_repository_reaches_any_file_of_the_site(self) -> None:
+        for path in self.out.rglob("*"):
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
+            for secret in SECRETS:
+                with self.subTest(path=path.relative_to(self.out).as_posix(), secret=secret):
+                    self.assertNotIn(secret, text)
+
+
+class DecisionsViewTests(BuiltSite):
+    """Seam 3: one index of every public repository's ADRs, with what they govern and cite."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        cls.data = read(cls.out, "decisions.json")
+        cls.by_key = {(a["repo"], a["number"]): a for a in cls.data["adrs"]}
+
+    def test_every_public_repositorys_adrs_are_listed_and_no_private_one(self) -> None:
+        self.assertEqual(sorted({repo for repo, _ in self.by_key}), ["opengwasdb", "opengwasdb-stores", "opengwaspy"])
+        self.assertEqual(self.data["repos"], ["opengwasdb-stores", "opengwasdb", "opengwaspy"])
+        self.assertEqual(list(self.by_key)[:3], [("opengwasdb-stores", "0001"), ("opengwasdb-stores", "0002"),
+                                                 ("opengwasdb-stores", "0003")])
+
+    def test_an_adr_links_to_github_and_names_the_components_it_governs(self) -> None:
+        adr = self.by_key[("opengwasdb-stores", "0001")]
+        self.assertTrue(adr["url"].startswith("https://github.com/opengwas/opengwasdb-stores/blob/"))
+        self.assertTrue(adr["url"].endswith("/docs/adr/0001-one-pipeline.md"))
+        self.assertEqual(adr["components"], [{"id": "gen", "name": "Manifest Generation", "via": "code"}])
+        self.assertEqual(adr["status"], "current")
+
+    def test_a_citation_of_another_repositorys_adr_is_a_link_and_a_private_one_is_text(self) -> None:
+        cites = self.by_key[("opengwasdb", "0003")]["cites"]
+        target = self.by_key[("opengwasdb-stores", "0072")]["url"]
+        self.assertEqual(cites, [{"repo": "ogld", "number": "0001", "text": "ogld ADR 0001", "url": None},
+                                 {"repo": "opengwasdb-stores", "number": "0072", "text": "opengwasdb-stores ADR 0072",
+                                  "url": target}])
+
+
+class ContextViewTests(BuiltSite):
+    """Seam 4: the hub's CONTEXT.md rendered, and each public repository's glossary linked."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        cls.data = read(cls.out, "context.json")
+
+    def test_the_hubs_glossary_is_rendered_with_its_headings_and_links(self) -> None:
+        html = self.data["html"]
+        self.assertIn('<h1 id="opengwas">OpenGWAS</h1>', html)
+        self.assertIn('<h2 id="the-platform">The platform</h2>', html)
+        self.assertIn('<a href="https://github.com/opengwas">GitHub</a>', html)
+        self.assertIn('<a href="https://github.com/opengwas/og-dev-hub/blob/main/docs/adr/0001-dev-hub-collects-and-owns-nothing.md">'
+                      "ADR 0001</a>", html)
+        self.assertIn("<strong>Dev Hub</strong>:", html)
+        self.assertIn("<em>built state</em>", html)
+        self.assertIn("<ul>\n<li>one</li>\n<li>two</li>\n</ul>", html)
+
+    def test_each_public_repository_has_its_glossary_linked_or_its_gap_named(self) -> None:
+        glossaries = {g["repo"]: g for g in self.data["glossaries"]}
+        self.assertEqual(list(glossaries), ["opengwasdb-stores", "opengwasdb", "ogquery", "opengwaspy", "opengwas-gateway"])
+        commit = self.world.architecture["repos"]["ogquery"]["commit"]
+        self.assertEqual(glossaries["ogquery"]["url"], f"https://github.com/opengwas/ogquery/blob/{commit}/CONTEXT.md")
+        self.assertIsNotNone(glossaries["opengwasdb-stores"]["url"])
+        self.assertIsNone(glossaries["opengwasdb"]["url"])
+        self.assertEqual(glossaries["opengwasdb"]["note"], "no CONTEXT.md at the commit read")
+        self.assertIsNone(glossaries["opengwas-gateway"]["url"])
+        self.assertEqual(glossaries["opengwas-gateway"]["note"], "could not be read")
+
+
+class MarkdownTests(unittest.TestCase):
+    def test_text_never_becomes_markup_and_only_web_links_are_kept(self) -> None:
+        from project_site import markdown
+
+        html = markdown.render("A <script>x</script> & [bad](javascript:alert) and `<b>`.", base="https://x.org/")
+        self.assertEqual(html, "<p>A &lt;script&gt;x&lt;/script&gt; &amp; bad and <code>&lt;b&gt;</code>.</p>\n")
+
+    def test_snake_case_is_not_emphasis_and_a_numbered_list_is_a_list(self) -> None:
+        from project_site import markdown
+
+        self.assertEqual(markdown.render("a_b_c\n\n1. one\n2. two", base="https://x.org/"),
+                         "<p>a_b_c</p>\n<ol>\n<li>one</li>\n<li>two</li>\n</ol>\n")
+
+
+class UnavailableTests(unittest.TestCase):
+    def test_an_unavailable_architecture_is_a_notice_in_every_view_and_the_build_succeeds(self) -> None:
+        out = built(self.addCleanup, {"architecture": {"source": "architecture", "available": False, "collected_at": "x",
+                                            "error": "ValueError: system.yaml is broken"}})
+        for name in ("architecture.json", "decisions.json"):
+            data = read(out, name)
+            with self.subTest(name=name):
+                self.assertEqual((data["available"], data["error"]), (False, "ValueError: system.yaml is broken"))
+        self.assertIn("<h1", read(out, "context.json")["html"])
+
+    def test_without_any_collection_the_build_says_so(self) -> None:
+        out = built(self.addCleanup, {})
+        self.assertEqual(read(out, "architecture.json")["error"], "architecture.json was not collected")
+
+
+class PublicGitOnlyTests(unittest.TestCase):
+    """Seam 5: the site's collection reads no private repository and never the board."""
+
+    def test_the_site_collects_without_cloning_a_private_repository_or_calling_the_board(self) -> None:
+        world = World(self)
+        work_root = world.root / "work"
+        data = world.root / "collected"
+        repositories = staging.Repositories(
+            checkouts={fx.REGISTRY: world.root / "registry"},
+            # ogld is left to the work root, where a read would clone it from GitHub: it must never be asked for.
+            git_dirs={k: v for k, v in world.repositories.git_dirs.items() if k != "ogld"})
+        refuse = mock.Mock(side_effect=AssertionError("the site build called gh"))
+        with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": str(work_root)}), \
+                mock.patch("project_site.collect.board.collect", refuse), \
+                mock.patch.object(common, "gh_runner", refuse):
+            results = site.collect(data, repositories=repositories, system_file=world.system, out=lambda line: None)
+        self.assertEqual([r["source"] for r in results], ["architecture"])
+        self.assertNotIn("ogld", repositories.handles)
+        self.assertFalse((work_root / "ogld.git").exists())
+        refuse.assert_not_called()
+        self.assertEqual(sorted(p.name for p in data.iterdir()), ["architecture.json"])
+        collected_doc = json.loads((data / "architecture.json").read_text(encoding="utf-8"))
+        self.assertTrue(collected_doc["available"], collected_doc["error"])
+        self.assertEqual(collected_doc["repos"]["ogld"]["note"], "private: drawn as its container only, never read")
+        self.assertNotIn("ld_panels", {c["id"] for c in collected_doc["components"]})
+
+        (world.root / "CONTEXT.md").write_text(CONTEXT, encoding="utf-8")
+        site.build(data, world.root / "_site", context=world.root / "CONTEXT.md")
+        containers = next(d for d in read(world.root / "_site", "architecture.json")["diagrams"] if d["id"] == "containers")
+        self.assertIn("LD library", containers["svg"])
+
+
+if __name__ == "__main__":
+    unittest.main()

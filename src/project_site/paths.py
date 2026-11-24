@@ -66,7 +66,13 @@ def repo_root() -> Path:
 
 
 def work_root() -> Path:
-    return Path(os.environ.get(WORK_ROOT_ENV) or WORK_ROOT)
+    """Where the clones live: `$OPENGWASDB_SITE_ROOT`, else `/data/opengwasdb/work/site` on a host that has
+    `/data/opengwasdb/work`, else `.work/` in this checkout (git-ignored), so a machine without `/data`
+    (CI, a laptop) builds the site too (og-dev-hub#15)."""
+    configured = os.environ.get(WORK_ROOT_ENV)
+    if configured and configured.strip():
+        return Path(configured)
+    return WORK_ROOT if WORK_ROOT.parent.is_dir() else repo_root() / ".work"
 
 
 def checkout_name(repo: Path) -> str:

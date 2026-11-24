@@ -23,3 +23,8 @@ site/stores/
 # setuptools' output when another environment installs this repository from a
 # path (opengwasdb-stores' `dev` does, for its architecture checks).
 build/
+
+# The site (og-dev-hub#15): `pixi run site` writes it here, and clones into .work/
+# on a machine without /data.
+_site/
+.work/

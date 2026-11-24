@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenGWAS Dev Hub</title>
+  <meta name="description" content="What OpenGWAS has built: its architecture, its decisions and its terms.">
+  <link rel="stylesheet" href="style.css">
+  <script src="js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#architecture">
+      <span class="brand-mark" aria-hidden="true">DH</span>
+      <span class="brand-text">
+        <span class="brand-title">OpenGWAS Dev Hub</span>
+        <span class="brand-sub">What is built</span>
+      </span>
+    </a>
+    <nav class="tabs" aria-label="Views">
+      <a class="tab" href="#architecture" data-view="architecture">Architecture</a>
+      <a class="tab" href="#decisions" data-view="decisions">Decisions</a>
+      <a class="tab" href="#context" data-view="context">Context</a>
+      <a class="tab" href="#stores" data-view="stores">Stores</a>
+    </nav>
+    <button class="btn btn-ghost" id="theme-toggle" type="button">Dark mode</button>
+  </header>
+
+  <main id="main">
+    <section class="view" id="view-architecture" hidden aria-labelledby="t-architecture">
+      <h1 class="view-title" id="t-architecture">Architecture</h1>
+      <p class="view-sub">Every repository's containers and components, the imports within and between them, the gaps in their claims, and the decisions that govern each component.</p>
+      <div class="view-body" id="architecture-body"><p class="loading">Loading…</p></div>
+    </section>
+
+    <section class="view" id="view-decisions" hidden aria-labelledby="t-decisions">
+      <h1 class="view-title" id="t-decisions">Decisions</h1>
+      <p class="view-sub">Every architecture decision record (ADR) of every public repository, the components it governs and the decisions it cites.</p>
+      <div class="view-body" id="decisions-body"><p class="loading">Loading…</p></div>
+    </section>
+
+    <section class="view" id="view-context" hidden aria-labelledby="t-context">
+      <h1 class="view-title" id="t-context">Context</h1>
+      <p class="view-sub">The terms that cross repositories, and where each repository keeps its own.</p>
+      <div class="view-body" id="context-body"><p class="loading">Loading…</p></div>
+    </section>
+
+    <section class="view" id="view-stores" hidden aria-labelledby="t-stores">
+      <h1 class="view-title" id="t-stores">Stores</h1>
+      <div class="card notice">The Stores view is coming.</div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>The Dev Hub shows built state only, collected from public git. Planned state is the
+      <a href="https://github.com/orgs/opengwas/projects/1">project board</a>'s; running state is the operations dashboard's.</span>
+    <a href="https://github.com/opengwas/og-dev-hub">Source</a>
+  </footer>
+
+  <script defer src="js/architecture.js"></script>
+  <script defer src="js/decisions.js"></script>
+  <script defer src="js/context.js"></script>
+</body>
+</html>

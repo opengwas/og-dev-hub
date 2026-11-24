@@ -21,6 +21,7 @@ record of it, else from the file in this checkout.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Iterable, Mapping
 
 Document = Mapping[str, Any]
@@ -28,7 +29,7 @@ Document = Mapping[str, Any]
 ENVELOPE = ("source", "available", "collected_at", "error")
 
 # architecture.json
-REPO_KEYS = ("name", "visibility", "status", "planned", "ref", "commit", "committed", "model", "note", "error")
+REPO_KEYS = ("name", "visibility", "status", "planned", "ref", "commit", "committed", "model", "note", "error", "glossary")
 PRIVATE_REPO_KEYS = ("name", "visibility", "status", "planned")
 COMPONENT_KEYS = ("id", "name", "repo", "container", "layer", "stages", "summary", "paths", "files", "lines", "tracked")
 ENTITY_KEYS = ("id", "name", "summary")
@@ -52,6 +53,21 @@ PLAN_KEYS = ("ticket", "epic", "title", "url", "state")
 ISSUE_KEYS = ("key", "title", "url", "state", "status", "workstream", "next", "priority")
 EPIC_KEYS = (*ISSUE_KEYS, "purpose")
 CHILD_KEYS = ("key", "title", "url", "state")
+
+
+# An absolute path on the host that collected (a clone's git directory, in git's own message).
+HOST_PATH = re.compile(r"(?<![\w.:/~-])/[^\s'\"`,;()]+")
+
+
+def reason(text: Any) -> Any:
+    """A reason a collector wrote, as the public site may show it: each host path cut to its last name (`…/x.git`).
+
+    The site is published, and where the build's clones live is the build host's
+    business; which repository could not be read, and why, stays.
+    """
+    if not isinstance(text, str):
+        return text
+    return HOST_PATH.sub(lambda m: "…/" + m.group(0).rstrip("/").rsplit("/", 1)[-1], text)
 
 
 def _pick(source: Any, keys: Iterable[str]) -> dict[str, Any]:
@@ -123,6 +139,7 @@ def public_view(documents: Mapping[str, Document | None]) -> dict[str, Document 
         if not isinstance(document, Mapping):
             continue
         view[source] = build(document) if document.get("available") else _pick(document, ENVELOPE)
+        view[source] = {**view[source], "error": reason(document.get("error"))}
     return view
 
 
@@ -152,7 +169,10 @@ def _architecture(doc: Document, private: Callable[[Any], bool], hidden: set[str
         if private(name):
             repos[name] = _pick(repo, PRIVATE_REPO_KEYS) | {"model": None, "private": True}
         else:
-            repos[name] = _pick(repo, REPO_KEYS) | {"refresh": _pick(repo.get("refresh"), ("ok", "error")) or None}
+            refresh = _pick(repo.get("refresh"), ("ok", "error"))
+            repos[name] = _pick(repo, REPO_KEYS) | {
+                "error": reason(repo.get("error")), "note": reason(repo.get("note")),
+                "refresh": refresh | {"error": reason(refresh.get("error"))} if refresh else None}
     out["repos"] = repos
     model = doc.get("model") if isinstance(doc.get("model"), Mapping) else {}
     layers = model.get("layers") if isinstance(model.get("layers"), Mapping) else {}
@@ -174,12 +194,14 @@ def _architecture(doc: Document, private: Callable[[Any], bool], hidden: set[str
     gaps = doc.get("gaps") if isinstance(doc.get("gaps"), Mapping) else {}
     out["gaps"] = {
         name: _pick(gap, GAP_KEYS)
-        | {"stale": [_pick(st, ("path", "component")) for st in _maps(gap.get("stale"))] if gap.get("stale") is not None else None,
+        | {"unreadable": reason(gap.get("unreadable")), "no_model": reason(gap.get("no_model")),
+           "stale": [_pick(st, ("path", "component")) for st in _maps(gap.get("stale"))] if gap.get("stale") is not None else None,
            "containers": [_pick(g, ("component", "container")) for g in _maps(gap.get("containers"))]}
         for name, gap in gaps.items() if isinstance(gap, Mapping) and not private(name)
     }
     baseline = doc.get("baseline")
-    out["baseline"] = _pick(baseline, BASELINE_KEYS) if isinstance(baseline, Mapping) and not private(baseline.get("from")) else None
+    out["baseline"] = (_pick(baseline, BASELINE_KEYS) | {"note": reason(baseline.get("note"))}
+                       if isinstance(baseline, Mapping) and not private(baseline.get("from")) else None)
     edges = [_pick(e, EDGE_KEYS) for e in _maps(doc.get("edges")) if e.get("from") not in hidden and e.get("to") not in hidden]
     out["edges"] = edges
     adrs = [

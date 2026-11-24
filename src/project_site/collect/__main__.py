@@ -106,6 +106,7 @@ def run(
     out: Callable[[str], Any] = print,
     checkout: Path | None = None,
     system_file: Path | None = None,
+    public_only: bool = False,
 ) -> list[dict[str, Any]]:
     """Run every collector into `data_dir`.
 
@@ -116,22 +117,29 @@ def run(
     `system_file` is the `system.yaml` read (by default this checkout's). A
     registry that cannot be read makes each source that needs its files
     unavailable, and no other.
+
+    `public_only` is the site's collection (og-dev-hub#15): the architecture of
+    public git alone, a private repository never read, and no board.
     """
     repositories = repositories or staging.Repositories(refresh=refresh, checkouts={paths.REGISTRY: checkout})
 
     def files(*parts: str) -> Path:
         return staging.registry_files(repositories).joinpath(*parts)
 
-    collectors: list[tuple[str, Callable[[], dict[str, Any]]]] = [
-        ("board", lambda: board.collect(gh)),
-        ("catalog", lambda: catalog.collect(catalog_root or catalog.default_root(files()))),
-        ("releases", lambda: releases.collect(gh)),
-        ("stores", lambda: stores.collect(registry or files("stores"))),
-        ("records", lambda: records.collect(epics_dir or files("docs", "_epics"), yardstick_dir or files("docs", "_yardstick"))),
-        ("architecture", lambda: architecture.collect(repositories, system_file=system_file)),
-        # After board and architecture: it reads the files those two just wrote to `data_dir`.
-        ("work", lambda: work.collect(data_dir, repositories)),
-    ]
+    collectors: list[tuple[str, Callable[[], dict[str, Any]]]]
+    if public_only:
+        collectors = [("architecture", lambda: architecture.collect(repositories, system_file=system_file, read_private=False))]
+    else:
+        collectors = [
+            ("board", lambda: board.collect(gh)),
+            ("catalog", lambda: catalog.collect(catalog_root or catalog.default_root(files()))),
+            ("releases", lambda: releases.collect(gh)),
+            ("stores", lambda: stores.collect(registry or files("stores"))),
+            ("records", lambda: records.collect(epics_dir or files("docs", "_epics"), yardstick_dir or files("docs", "_yardstick"))),
+            ("architecture", lambda: architecture.collect(repositories, system_file=system_file)),
+            # After board and architecture: it reads the files those two just wrote to `data_dir`.
+            ("work", lambda: work.collect(data_dir, repositories)),
+        ]
     results = []
     for source, collect in collectors:
         result = common.collect_source(source, collect)

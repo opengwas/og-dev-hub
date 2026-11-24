@@ -52,6 +52,31 @@ stops with git's message and exits 2. A publish's own `git fetch` of og-dev-hub'
 `origin`, which decides the commit it publishes, is not one of these: it must
 succeed, or the publish is refused.
 
+## The site
+
+The site (og-dev-hub#15, `docs/site.md`) is one static page of built state, with
+three views: Architecture, Decisions and Context (Stores is og-dev-hub#16's).
+`pixi run site` collects from **public git only**, through
+`collect.__main__.run(public_only=True)`: the architecture collector with
+`read_private=False`, so a `private` repository is listed (its `note` says
+"private: drawn as its container only, never read") and never asked for, so
+never cloned; the board, the Stores, the work and the other collectors do not
+run. It needs no token, no `/data` and no network access to a private
+repository.
+
+`project_site.site.build(data_dir, out)` reads the collected `architecture.json`
+(a file that is missing or unreadable is `available: false` with why), passes it
+through `public_view`, and writes from that alone:
+
+| File | Content |
+|---|---|
+| `data/architecture.json` | the envelope; `repos` (a list, in `system.yaml`'s order: `name`, `label`, `url`, `private`, `planned`, `visibility`, `status`, `ref`, `commit`, `committed`, `model`, `note`, `error`, `refresh`); `containers` (with `state`: `public`, `private`, `planned` or `data`); `diagrams` (`id`, `title`, `caption`, `svg`); `stages` (with the `components` serving each); `components` (with `anchor`, `container_name`, `size`, `paths` as `{path, url}` on GitHub at the commit read, and `adrs` placed on it with `via`); `gaps` (each public repository not planned: `unreadable`, `no_model`, `unclaimed`, `stale`, `system`); `layering` (`null` when no model declares layers, else each layered repository's `edges` and `upward` imports); `seam` (`imports`, `pairs`, `baseline`); `across` (imports per pair of repositories); `summary` |
+| `data/decisions.json` | the envelope; `repos` (those with an ADR, in order); `adrs` in `system.yaml`'s order then by number: `repo`, `number`, `title`, `status`, `url`, `components` (`{id, name, via}`) and `cites` (`{repo, number, text, url}`, `url` `null` when the cited ADR was not collected or is a private repository's) |
+| `data/context.json` | `html` (the hub's `CONTEXT.md`, rendered by `project_site.markdown`: headings, paragraphs, lists, bold, italics, code spans and links, every character escaped first, a relative link resolved against og-dev-hub's `main` on GitHub, and a link to any other scheme than `http(s)` dropped); `source`; `glossaries`: each public listed repository but og-dev-hub, not planned, with `url` (its `CONTEXT.md` at the commit read) or `null` and a `note` (`no CONTEXT.md at the commit read`, `could not be read`) |
+
+Unknown is `null` in every file, never 0 or an empty list. The view scripts read
+nothing else.
+
 ## The served-path baseline
 
 The build's served-path check reads one fixed list,
@@ -396,7 +421,7 @@ hand: edges, counts and ADR placement are measured.
 
 | Key | Content |
 |---|---|
-| `repos.<name>` | every listed repository, in `system.yaml`'s order: `name`, `visibility`, `status`, `planned`, `url`, `ref`, `commit` read, `committed` (that commit's date), `refresh` (`null` when no fetch was asked for, else `{ok, error}` with git's own message), `source_root` (`src/` when it has one, else `""`), `model` (`true`; `false` with a `note` when the ref has no usable model file; `null` when planned or unreadable) and `error` (why it could not be read). The pages show each commit and its date, and a visible line when a refresh failed |
+| `repos.<name>` | every listed repository, in `system.yaml`'s order: `name`, `visibility`, `status`, `planned`, `url`, `ref`, `commit` read, `committed` (that commit's date), `refresh` (`null` when no fetch was asked for, else `{ok, error}` with git's own message), `source_root` (`src/` when it has one, else `""`), `model` (`true`; `false` with a `note` when the ref has no usable model file; `null` when planned or unreadable) `error` (why it could not be read) and `glossary` (whether `CONTEXT.md` is at the commit read; `null` when not read). The pages show each commit and its date, and a visible line when a refresh failed |
 | `model` | `system`, `people`, `external`, `containers`, `container_relations` (all `system.yaml`'s), `stages` (every model's that holds them, opengwasdb-stores', each with the `repo` it came from), `layers` (`{repo: [...]}`, each model's that declares them; `{}` when none does) |
 | `components` | each modelled repository's, in `system.yaml`'s order: the model's keys plus `repo` (the repository's name), `files` and `lines` (claimed code files), `tracked` (every tracked file claimed) |
 | `files` | `{<repo>: [...]}` (#422): every tracked code file of each repository with a model at the ref read, sorted, read NUL-safely; `null` for a repository read without a model (what is code is not known). A planned `adds` is told to exist from it |
@@ -497,7 +522,7 @@ collected, else `work.json`'s record of it, else the file in this checkout; a
 repository the board names that `system.yaml` does not list is treated as
 private, because a fallback must be safe. Its container comes from
 `system.yaml`'s `containers`, which is public. A gap or reason the collectors
-write names a repository, never a private repository's commit, component or path.
+write names a repository, never a private repository's commit, component or path. A host path in a reason (a clone's git directory, in git's own message) is cut to its last name (`…/ogld.git`) by `architecture_public.reason`, so where the build's clones live is never published.
 
 **The component panel** (#435). On Pipeline, Structure and health and the Work
 map, a component's box in the engine and registry diagrams (a Graphviz `URL`),
