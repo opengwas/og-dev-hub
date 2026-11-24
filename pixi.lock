@@ -138,7 +138,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.12-9_cp312.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026e-h5d301ff_0.conda
       - pypi: ./
-      - pypi: git+https://github.com/opengwas/opengwasdb-stores?rev=e60806f8e1b4e5812d3339fd5e1e84ae385ae9f1#e60806f8e1b4e5812d3339fd5e1e84ae385ae9f1
+      - pypi: git+https://github.com/opengwas/opengwasdb-stores?rev=71574093e5a52350bf1578d851517f0c9015f185#71574093e5a52350bf1578d851517f0c9015f185
       - pypi: git+https://github.com/opengwas/opengwasdb?rev=1230629a2c0958851f8ed5e1bcc8db9472b7516a#1230629a2c0958851f8ed5e1bcc8db9472b7516a
       - pypi: https://files.pythonhosted.org/packages/0a/66/9a06c2227fedfd4919f0eaaa8b94377d9730882a7e4f95823c9a331ab5e1/tzdata-2026.6-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0b/b6/f9c0c52f7a2fcd828e336dd143001b0bcbc1276c90187dfa104458528e2e/pandas-3.1.1-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
@@ -2136,9 +2136,9 @@ packages:
 - pypi: ./
   name: og-dev-hub
   requires_python: '>=3.12'
-- pypi: git+https://github.com/opengwas/opengwasdb-stores?rev=e60806f8e1b4e5812d3339fd5e1e84ae385ae9f1#e60806f8e1b4e5812d3339fd5e1e84ae385ae9f1
+- pypi: git+https://github.com/opengwas/opengwasdb-stores?rev=71574093e5a52350bf1578d851517f0c9015f185#71574093e5a52350bf1578d851517f0c9015f185
   name: ogstores
-  version: 0.37.2.dev16+ge60806f8e1b4e5812d3339fd5e1e84ae385ae9f1
+  version: 0.37.2.dev18+g71574093e5a52350bf1578d851517f0c9015f185
   requires_python: '>=3.12'
 - pypi: git+https://github.com/opengwas/opengwasdb?rev=1230629a2c0958851f8ed5e1bcc8db9472b7516a#1230629a2c0958851f8ed5e1bcc8db9472b7516a
   name: opengwasdb
