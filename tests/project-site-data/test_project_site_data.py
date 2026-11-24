@@ -91,6 +91,24 @@ class TestEpicRecordValidator(unittest.TestCase):
             ["status 'done' is not one of active, finished"],
         )
 
+    def test_a_workstream_is_one_of_the_boards_twelve(self) -> None:
+        for name in ("GWAS Store architecture", "LD Store architecture", "Builds", "Clients", "Data API"):
+            record = minimal_record()
+            record["workstream"] = name
+            self.assertEqual(records.validate_epic(record), [], name)
+
+    def test_a_record_committed_under_a_retired_workstream_stays_valid(self) -> None:
+        for name in ("Data architecture", "Build architecture", "LD", "Store builds", "Python client"):
+            record = minimal_record()
+            record["workstream"] = name
+            self.assertEqual(records.validate_epic(record), [], name)
+
+    def test_an_unknown_workstream_is_refused(self) -> None:
+        record = minimal_record()
+        record["workstream"] = "Store architecture"
+        [error] = records.validate_epic(record)
+        self.assertTrue(error.startswith("workstream 'Store architecture' is not one of GWAS Store architecture,"), error)
+
     def test_a_finished_epic_needs_a_finish_date_and_an_active_one_has_none(self) -> None:
         record = minimal_record()
         record["finished"] = None

@@ -129,7 +129,7 @@ Rules `validate_epic` applies, and the order of the fields above:
 | `repo`, `number` | a repository name; an integer of 1 or more. The file name is `<repo>-<number>.yaml` |
 | `title` | non-empty text, never null |
 | `status` | `active` or `finished`: open or closed, as the epic issue is |
-| `workstream` | one of Data architecture, Build architecture, Interface, Store builds, Tool integration, Analyses, Engineering, or null |
+| `workstream` | one of the board's twelve workstreams (GWAS Store architecture, LD Store architecture, Builds, Interface, Website, Clients, Tool integration, Analyses, Engineering, Data API, Gateway, Dashboard), a name the board retired on 24 Nov 2026 (Data architecture, Build architecture, LD, Store builds, Python client; valid in a record committed before then), or null |
 | `started`, `finished` | an ISO date (`2026-10-21`, unquoted or quoted) or null. A finished epic has a `finished` date, the day the issue closed; an active one has none |
 | `summary` | non-empty text of 2 to 4 sentences, or null |
 | `prs`, `tickets[].key`, `tickets[].pr`, `followups[].key` | `repo#n`: a repository name, `#`, an integer of 1 or more |

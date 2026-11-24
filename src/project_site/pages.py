@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any, Mapping, NamedTuple, Sequence
 
 from project_site.collect.common import DATA_DIR_ENV_VAR
+from project_site.records import WORKSTREAMS
 
 Document = Mapping[str, Any]
 
@@ -58,18 +59,6 @@ TITLES = {
     "work": "Work data",
 }
 
-# The board's Workstream values, in the order the project reads them; a
-# workstream the board gained since is listed after these, and an epic with none
-# last.
-WORKSTREAMS = (
-    "Data architecture",
-    "Build architecture",
-    "Interface",
-    "Store builds",
-    "Tool integration",
-    "Analyses",
-    "Engineering",
-)
 NO_WORKSTREAM = "No workstream"
 
 # Where a generated page says it came from, so a page rendered into a checkout by
@@ -283,6 +272,7 @@ def _epic_link(epic: Mapping[str, Any], prefix: str = "epics/") -> str:
 
 
 def _workstream_order(groups: Mapping[str, Any]) -> list[str]:
+    """Workstreams in the board's order; one the board gained since after them, sorted; none last."""
     known = [name for name in WORKSTREAMS if name in groups]
     extra = sorted(name for name in groups if name not in WORKSTREAMS and name != NO_WORKSTREAM)
     return known + extra + ([NO_WORKSTREAM] if NO_WORKSTREAM in groups else [])

@@ -18,10 +18,21 @@ from typing import Any, Mapping
 import yaml
 
 STATUSES = ("active", "finished")
+# The board's Workstream values, in the board's order (its README, "Workstreams").
 WORKSTREAMS = (
-    "Data architecture", "Build architecture", "Interface", "Store builds",
-    "Tool integration", "Analyses", "Engineering",
+    "GWAS Store architecture", "LD Store architecture", "Builds", "Interface",
+    "Website", "Clients", "Tool integration", "Analyses", "Engineering",
+    "Data API", "Gateway", "Dashboard",
 )
+# Names the board retired on 24 Nov 2026, and what replaced each. A record
+# committed before then keeps its name and stays valid; nothing rewrites it.
+RETIRED_WORKSTREAMS = {
+    "Data architecture": "GWAS Store architecture",
+    "Build architecture": "GWAS Store architecture",
+    "LD": "LD Store architecture",
+    "Store builds": "Builds",
+    "Python client": "Clients",
+}
 FIELDS = (
     "repo", "number", "title", "status", "workstream", "started", "finished",
     "summary", "prs", "versions", "tickets", "decisions", "test_time",
@@ -178,7 +189,7 @@ def validate_epic(document: object, filename: str | None = None) -> list[str]:
     if "status" in document and status not in STATUSES:
         errors.append(f"status {status!r} is not one of {', '.join(STATUSES)}")
     workstream = document.get("workstream")
-    if workstream is not None and workstream not in WORKSTREAMS:
+    if workstream is not None and workstream not in WORKSTREAMS and workstream not in RETIRED_WORKSTREAMS:
         errors.append(f"workstream {workstream!r} is not one of {', '.join(WORKSTREAMS)}")
 
     dates_ok = True
