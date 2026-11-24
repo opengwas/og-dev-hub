@@ -13,6 +13,7 @@ Run from the repository root:
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 import shutil
 import subprocess
@@ -22,7 +23,7 @@ from pathlib import Path
 
 import architecture_fixtures as fx
 
-from project_site.collect import branches
+from project_site.collect import branches, common, work
 from project_site.collect.common import CollectError
 
 NOW = dt.datetime(2026, 11, 2, 12, 0, tzinfo=dt.timezone.utc)
@@ -140,13 +141,52 @@ class GitFailureTests(unittest.TestCase):
             branches.collect(missing, "opengwasdb-stores", main_ref="main", now=NOW)
         self.assertIn("no-such-repo", str(caught.exception))
 
-    def test_a_branch_whose_diff_cannot_be_read_raises_naming_it(self) -> None:
+
+
+class OrphanBranchTests(unittest.TestCase):
+    """A branch with no merge base with `main` is no work against it (og-dev-hub#7).
+
+    Since 22 Nov 2026 opengwasdb and opengwasdb-stores each keep the CLA check's
+    signatures on an orphan branch, `cla-signatures`. `git diff main...<branch>`
+    has no merge base to diff from and exits 128, which made the whole `work`
+    source unavailable and every `architecture conflicts` undecided. It is
+    skipped, and named with the reason, and never fatal.
+    """
+
+    def orphan(self) -> Fixture:
         fixture = Fixture(self)
-        fx.git(fixture.repo, "checkout", "-q", "--orphan", "unrelated")
-        commit(fixture.repo, {"other.txt": "x\n"}, "2026-11-02T08:00:00+00:00")  # no merge base with main
-        with self.assertRaises(CollectError) as caught:
-            fixture.collect()
-        self.assertIn("diff", str(caught.exception))
+        fx.git(fixture.repo, "checkout", "-q", "--orphan", "cla-signatures")
+        fx.git(fixture.repo, "rm", "-rq", "--cached", ".")
+        commit(fixture.repo, {"signatures/cla.json": "[]\n"}, "2026-11-22T08:00:00+00:00")
+        fx.git(fixture.repo, "checkout", "-q", "-f", "main")
+        return fixture
+
+    def test_an_orphan_branch_is_skipped_and_named_and_the_others_are_read(self) -> None:
+        result = self.orphan().collect()
+
+        self.assertEqual([b["name"] for b in result["branches"]], ["fix/issue-345", "orch/302-integration", "orch/416/419"])
+        self.assertEqual(result["skipped"], [{"name": "cla-signatures", "reason": "no merge base with main"}])
+
+    def test_a_repository_without_one_skips_nothing(self) -> None:
+        self.assertEqual(Fixture(self).collect()["skipped"], [])
+
+    def test_the_work_source_stays_available_and_says_what_it_left_out(self) -> None:
+        fixture = self.orphan()
+        data = fixture.root / "data"
+        data.mkdir()
+        (data / "board.json").write_text(json.dumps({"source": "board", "available": True, "epics": []}))
+        (data / "architecture.json").write_text(json.dumps({
+            "source": "architecture", "available": True, "components": [],
+            "engine": {"ref": "main", "commit": "0" * 40, "model": True},
+        }))
+
+        result = common.collect_source("work", lambda: work.collect(
+            data, registry_root=fixture.repo, engine_git=fixture.repo, now=NOW))
+
+        self.assertTrue(result["available"], result["error"])
+        registry = next(s for s in result["branches"]["sources"] if s["repo"] == "opengwasdb-stores")
+        self.assertEqual(registry["skipped"], [{"name": "cla-signatures", "reason": "no merge base with main"}])
+        self.assertNotIn("cla-signatures", [b["name"] for b in result["branches"]["list"]])
 
 
 if __name__ == "__main__":
