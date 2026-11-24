@@ -20,6 +20,10 @@ the `<script>` it sits in, or close the page's raw block.
 What a collector could not measure is unknown, never "none": without
 `work.json`, or for a repository's components when `work.json` says its work
 was not measured, a component's `work` is `null` with a `work_note` saying why.
+
+The panel is built from what `architecture_pages` hands it, which is
+`architecture_public.public_view` of the collected files: a private
+repository's components are not in it at all (og-dev-hub#9).
 """
 
 from __future__ import annotations

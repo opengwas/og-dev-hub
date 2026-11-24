@@ -24,7 +24,10 @@ table, opens the component panel (#435, `architecture_panel.py`): its code,
 the work on it, its imports each way and its ADRs.
 
 Every repository `system.yaml` lists is drawn (og-dev-hub#9): a planned one as
-a planned container, and one that could not be read or has no model as a gap.
+a planned container, one that could not be read or has no model as a gap, and a
+private one as its container only. Each page renders from
+`architecture_public.public_view` of the collected files, and from nothing
+else, so nothing of a private repository reaches a page or the panel.
 """
 
 from __future__ import annotations
@@ -35,7 +38,7 @@ from collections import defaultdict
 from itertools import pairwise
 from typing import Any, Mapping
 
-from project_site import architecture_panel, pages
+from project_site import architecture_panel, architecture_public, pages
 from project_site.collect import architecture_graph, architecture_model as model_rules
 
 Document = Mapping[str, Any]
@@ -62,6 +65,7 @@ STRUCTURE_INTRO = (
 
 def render_pipeline(documents: Mapping[str, Document | None]) -> str:
     """The landing page: each stage with its components and their ADRs."""
+    documents = architecture_public.public_view(documents)
     lines = [pages.GENERATED, "", PIPELINE_INTRO, "", "See also [Structure and health](architecture-structure.qmd).", ""]
     data = pages.available(documents, "architecture")
     if data is None:
@@ -104,6 +108,7 @@ def render_pipeline(documents: Mapping[str, Document | None]) -> str:
 
 def render_structure(documents: Mapping[str, Document | None]) -> str:
     """The structure of every listed repository, and the measured health of the claims and layering."""
+    documents = architecture_public.public_view(documents)
     lines = [pages.GENERATED, "", STRUCTURE_INTRO, "", "See also the [Pipeline](architecture.qmd).", ""]
     data = pages.available(documents, "architecture")
     if data is None:
@@ -177,6 +182,7 @@ STATE_MEANING = (
 
 def render_work(documents: Mapping[str, Document | None]) -> str:
     """The Work map: tiles, where work meets, the components by owner, and the branches."""
+    documents = architecture_public.public_view(documents)
     lines = [pages.GENERATED, "", WORK_INTRO, "", "See also the [Pipeline](architecture.qmd).", ""]
     data = pages.available(documents, "work")
     if data is None:
