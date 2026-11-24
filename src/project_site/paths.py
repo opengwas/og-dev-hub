@@ -4,6 +4,11 @@ Nothing the site build writes goes under `/home` or `/tmp`: the work root is
 `/data/opengwasdb/work/site`, and the output sits under it, one directory per
 checkout. Each path is overridable by an environment variable so a publish run
 can keep its scratch tree apart from a developer's.
+
+The site lives in og-dev-hub (og-dev-hub#7) and reads two other repositories:
+opengwasdb-stores (the registry: its Release Bundles, docs, epic records and
+architecture) and opengwasdb (the engine). Each is read from a bare clone under
+the work root, `<work root>/<name>.git`, which `staging.ensure_clone` keeps.
 """
 
 from __future__ import annotations
@@ -14,17 +19,25 @@ from pathlib import Path
 
 from ogstores import engine
 
-# The two repositories the site shows: this registry, and the engine whose docs
-# it stages at the pinned revision.
-REGISTRY_URL = "https://github.com/opengwas/opengwasdb-stores"
-ENGINE_URL = "https://github.com/opengwas/opengwasdb"
+# The repositories the site shows: this hub, the registry whose docs and
+# Release Bundles it renders, and the engine whose docs it stages at the
+# revision the registry pins.
+GITHUB = "https://github.com/opengwas"
+HUB = "og-dev-hub"
+REGISTRY = "opengwasdb-stores"
+ENGINE = "opengwasdb"
+HUB_URL = f"{GITHUB}/{HUB}"
+REGISTRY_URL = f"{GITHUB}/{REGISTRY}"
+ENGINE_URL = f"{GITHUB}/{ENGINE}"
 
-# Defaults, all under /data. `git clone` keeps the engine's history here; the
-# checkout being rendered names its own output directory.
+# Defaults, all under /data. `git clone` keeps each repository's history here;
+# the checkout being rendered names its own output directory.
 WORK_ROOT = Path("/data/opengwasdb/work/site")
 WORK_ROOT_ENV = "OPENGWASDB_SITE_ROOT"
 OUTPUT_ENV = "OPENGWASDB_SITE_OUT"
 CLONE_ENV = "OPENGWASDB_SITE_ENGINE_CLONE"
+# A clone named here is used instead of `<work root>/<name>.git`.
+CLONE_ENVS = {ENGINE: CLONE_ENV, REGISTRY: "OPENGWASDB_SITE_REGISTRY_CLONE"}
 
 # The ref `site-publish` renders: every merge lands on `main`, and each is a
 # version (#386), so that is what the site publishes; `--ref` names another.
@@ -32,7 +45,11 @@ DEFAULT_PUBLISH_REF = "origin/main"
 
 
 def repo_root() -> Path:
-    """The checkout being documented: the one this package is installed from."""
+    """The og-dev-hub checkout being rendered: the one this package is installed from.
+
+    It holds the site's Quarto project (`site/`) and the hub's own docs. The
+    registry the site documents is `staging.registry_root`'s, never this.
+    """
     return Path(__file__).resolve().parents[2]
 
 
@@ -71,8 +88,19 @@ def preview_dir(repo: Path) -> Path:
     return work_root() / checkout_name(repo) / "_preview"
 
 
-def engine_clone() -> Path:
-    return Path(os.environ.get(CLONE_ENV) or (WORK_ROOT / "opengwasdb.git"))
+def clone_dir(name: str) -> Path:
+    """Where the site keeps its bare clone of the opengwas repository `name`.
+
+    `<work root>/<name>.git`, unless the repository's variable in `CLONE_ENVS`
+    names another git directory.
+    """
+    configured = os.environ.get(CLONE_ENVS.get(name, ""), "")
+    return Path(configured) if configured.strip() else work_root() / f"{name}.git"
+
+
+def registry_tree_dir(repo: Path) -> Path:
+    """Where the registry's files are extracted for a render of `repo`, beside its mirror."""
+    return work_root() / checkout_name(repo) / "_registry"
 
 
 def pinned_opengwasdb_revision(lock: Path) -> str:

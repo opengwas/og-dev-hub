@@ -13,10 +13,9 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
-from ogstores import paths
 from yardstick import result as yardstick_result
 
-from project_site import records
+from project_site import records, staging
 
 Validator = Callable[[dict[str, Any]], list[str]]
 
@@ -38,11 +37,11 @@ def yardstick_errors(document: dict[str, Any]) -> list[str]:
 
 
 def default_epics_dir() -> Path:
-    return paths.REPO_ROOT / "docs" / "_epics"
+    return staging.registry_root().root / "docs" / "_epics"
 
 
 def default_yardstick_dir() -> Path:
-    return paths.REPO_ROOT / "docs" / "_yardstick"
+    return staging.registry_root().root / "docs" / "_yardstick"
 
 
 def _json_ready(value: Any) -> Any:

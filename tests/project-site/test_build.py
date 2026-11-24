@@ -38,7 +38,7 @@ BASELINE = Path("resources/site/legacy-served-paths.txt")
 BASELINE_HEADER = "# generated from ff204b6 docs/ (#397)\n"
 
 # What the published site serves besides the pages Quarto renders, as
-# `docs/_quarto.yml` must keep copying them (`origin/main`'s docs/ holds these).
+# `site/_quarto.yml` must keep copying them (opengwasdb-stores' docs/ holds these).
 SERVED_RESOURCES = (
     "data/trait-mapping-summary.json",
     "data/trait-mapping-validation-ogs00011.tsv",
@@ -110,13 +110,13 @@ class ServedPathGateTest(unittest.TestCase):
 
         self.assertIn("adr/0001-store-registry-boundary.md", str(caught.exception))
 
-    def test_the_gate_fails_closed_when_the_baseline_is_missing(self) -> None:
+    def test_without_a_baseline_there_is_nothing_published_to_protect(self) -> None:
+        # og-dev-hub#7: the site starts fresh at og-dev-hub's address, and the
+        # baseline is written from the first publish there. Until then no reader
+        # holds a link, so an absent file checks nothing; the summary says so.
         (self.repo / BASELINE).unlink()
 
-        with self.assertRaises(build.SiteCheckFailed) as caught:
-            build.served_paths(self.repo)
-
-        self.assertIn(str(BASELINE), str(caught.exception))
+        self.assertEqual(build.served_paths(self.repo), [])
 
     def test_the_gate_fails_closed_when_the_baseline_is_empty(self) -> None:
         (self.repo / BASELINE).write_text(BASELINE_HEADER, encoding="utf-8")
@@ -204,7 +204,7 @@ class ServedResourcesTest(unittest.TestCase):
     """The site copies what it serves, and not the data its pages read (#391 review, item 12)."""
 
     def setUp(self) -> None:
-        self.config = yaml.safe_load((REPO_ROOT / "docs" / "_quarto.yml").read_text(encoding="utf-8"))
+        self.config = yaml.safe_load((REPO_ROOT / "site" / "_quarto.yml").read_text(encoding="utf-8"))
         self.patterns = self.config["project"]["resources"]
 
     def test_the_collected_data_is_not_copied_into_the_site(self) -> None:

@@ -1,7 +1,7 @@
 """Publish a site render of a ref to the `gh-pages` branch (#388).
 
-The site is published from `gh-pages`, served at
-blog.opengwas.io/opengwasdb-stores/, and rendered on the host where its data
+The site is published from og-dev-hub's `gh-pages`, served at
+blog.opengwas.io/og-dev-hub/, and rendered on the host where its data
 lives. A publish therefore renders a clean detached checkout of the ref itself,
 never a developer's working tree, and commits the output to `gh-pages` with a
 message naming the commit it came from.
@@ -185,8 +185,9 @@ def publish(
     checkout = _scratch(work_root, name, "publish")
     output = _scratch(work_root, name, "site")
     published = _scratch(work_root, name, "gh-pages")
-    # The render reads a mirror and writes its output; both are this run's.
-    derived = [output, output.with_name(f"{output.name}-stage")]
+    # The render reads a mirror, beside it the registry's files it extracted, and
+    # writes its output; all three are this run's.
+    derived = [output, output.with_name(f"{output.name}-stage"), output.with_name(f"{output.name}-stage-registry")]
     made: list[Path] = [checkout, published]
     leftovers: list[str] = []
     try:

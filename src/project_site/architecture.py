@@ -1,6 +1,6 @@
 """`python3 -m project_site.architecture`: ask the architecture map from a terminal (#419, epic #416).
 
-    check      [--registry-root P] [--engine-git P] [--engine-ref R] [--data DIR]
+    check      [--registry P] [--engine-git P] [--engine-ref R] [--data DIR]
     conflicts  (--branch B [--repo engine|registry] | --files PATH... --repo engine|registry [--ticket repo#n])
                [--local GIT_DIR...] [--data DIR] [--refresh] [--days N]
 
@@ -21,7 +21,9 @@ leaves `check` and `conflicts` undecided unless they find a problem anyway: what
 was read may be out of date.
 
 Both run from data collected on the spot with the site's own collectors, or from an
-existing collection with `--data DIR`. `--local GIT_DIR` adds the local branches of a
+existing collection with `--data DIR`. opengwasdb-stores is read from the site's
+bare clone of it, or from the checkout `--registry` names (`--registry-root` is
+the same option's older name). `--local GIT_DIR` adds the local branches of a
 clone (an orchestrate host's lanes live there), which the published page never shows.
 """
 
@@ -35,6 +37,7 @@ from typing import Any, Callable, Mapping, Sequence, TextIO
 
 
 from project_site import paths as site_paths
+from project_site import staging
 from project_site.collect import architecture, architecture_graph, board, branches, common, work
 
 BASELINE_PATH = "docs/architecture/layering-baseline.yaml"
@@ -311,7 +314,8 @@ def main(argv: Sequence[str] | None = None, *, stdout: TextIO | None = None) -> 
     for name in ("check", "conflicts"):
         p = sub.add_parser(name)
         p.add_argument("--data", type=Path, default=None, help="read this collection (docs/_data) instead of collecting now")
-        p.add_argument("--registry-root", type=Path, default=None, help="this repository's git directory or checkout (default: this checkout)")
+        p.add_argument("--registry", "--registry-root", dest="registry_root", type=Path, default=None,
+                       help="an opengwasdb-stores checkout or git directory (default: the site's clone of it, at main)")
         p.add_argument("--engine-git", type=Path, default=None, help="the engine's git directory (default: the site's bare clone)")
         p.add_argument("--engine-ref", default=architecture.DEFAULT_ENGINE_REF)
         p.add_argument("--refresh", action="store_true", help="fetch the engine and both repositories' branches first")
@@ -325,6 +329,9 @@ def main(argv: Sequence[str] | None = None, *, stdout: TextIO | None = None) -> 
     conflict.add_argument("--days", type=int, default=branches.WINDOW_DAYS)
     args = parser.parse_args(argv)
     try:
+        if args.registry_root is None and not (args.data and not getattr(args, "local", None)):
+            # One read of the registry for the whole command, by its one owner.
+            args.registry_root = staging.registry_root().git_dir
         return (check if args.command == "check" else conflicts)(args, out)
     except Unavailable as error:
         print(f"cannot decide: {error}", file=out)

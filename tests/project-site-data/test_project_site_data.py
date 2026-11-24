@@ -25,7 +25,6 @@ from unittest import mock
 import yaml
 from pathlib import Path
 
-from ogstores import paths
 from project_site import records
 from project_site.collect import __main__ as site_data
 from project_site.collect import board, catalog, common, releases, stores
@@ -206,12 +205,17 @@ class TestEpicRecordValidator(unittest.TestCase):
         self.assertEqual(record, before)
 
 
+# opengwasdb-stores' docs/_epics/ at 2fff9eb6, copied: the records live in the
+# repository of each epic, not in this hub (og-dev-hub#7).
+COMMITTED_EPICS = Path(__file__).resolve().parent / "fixtures" / "epics"
+
+
 class TestCommittedEpicRecords(unittest.TestCase):
     """The records backfilled from the orchestrate run states (docs/spec/project-site.md, Backfill)."""
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.valid, cls.invalid = records.load_epics(paths.REPO_ROOT / "docs" / "_epics")
+        cls.valid, cls.invalid = records.load_epics(COMMITTED_EPICS)
         cls.by_number = {r["number"]: r for r in cls.valid}
 
     def test_every_committed_record_is_valid(self) -> None:

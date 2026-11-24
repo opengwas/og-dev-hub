@@ -1,6 +1,6 @@
 """The Stores collector: each registered Store Release's facts, through `ogstores.bundle` (#389).
 
-The registry is the checkout being rendered (`stores/`), not `/data`. A
+The registry is the one being rendered (`stores/` of `staging.registry_root`), not `/data`. A
 Release Bundle is read as `ogstores.bundle.load` reads it and no Store is
 opened. A fact the bundle cannot state exactly (a `trial` that is not a
 boolean, a coverage outside the vocabulary) is `null` with the reason in
@@ -16,11 +16,12 @@ from typing import Any, Callable
 from ogstores import bundle as release_bundle
 from ogstores import paths
 
+from project_site import staging
 from project_site.collect.common import CollectError
 
 
 def default_registry() -> Path:
-    return paths.REPO_ROOT / "stores"
+    return staging.registry_root().root / "stores"
 
 
 def registered_store_ids(registry: Path) -> list[str]:

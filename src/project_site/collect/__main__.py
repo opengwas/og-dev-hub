@@ -2,6 +2,9 @@
 
     pixi run site-data [--data-dir PATH] [--catalog-root PATH] [--registry PATH] [--strict]
 
+opengwasdb-stores is read from `main` of the site's bare clone of it, or from the
+checkout `--registry` names (`staging.registry_root`).
+
 A source that fails is written as `available: false` with its error, printed as
 `UNAVAILABLE <source>: <error>`, and the others still run. The exit status is 0
 anyway, because the pages show the notice; `--strict` exits 1 when any source
@@ -15,6 +18,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable
 
+from project_site import staging
 from project_site.collect import architecture, board, catalog, common, records, releases, stores, work
 
 
@@ -88,15 +92,34 @@ def run(
     engine_ref: str = architecture.DEFAULT_ENGINE_REF,
     refresh_engine: bool = False,
     out: Callable[[str], Any] = print,
+    registry_ref: str = architecture.DEFAULT_REGISTRY_REF,
+    registry_tree: Path | None = None,
+    checkout: Path | None = None,
 ) -> list[dict[str, Any]]:
+    """Run every collector into `data_dir`.
+
+    `registry` (the Release Bundles), `epics_dir`, `yardstick_dir`,
+    `registry_tree` (the registry's files) and `repo_root` (its git directory,
+    read at `registry_ref`) say where opengwasdb-stores is. What is left out
+    comes from `staging.registry_root(checkout)`, read once.
+    """
+    if None in (registry, epics_dir, yardstick_dir, repo_root) or (catalog_root is None and registry_tree is None):
+        source = staging.registry_root(checkout)
+        registry = registry or source.root / "stores"
+        epics_dir = epics_dir or source.root / "docs" / "_epics"
+        yardstick_dir = yardstick_dir or source.root / "docs" / "_yardstick"
+        registry_tree = registry_tree or source.root
+        if repo_root is None:
+            repo_root, registry_ref = source.git_dir, source.ref
     collectors: list[tuple[str, Callable[[], dict[str, Any]]]] = [
         ("board", lambda: board.collect(gh)),
-        ("catalog", lambda: catalog.collect(catalog_root)),
+        ("catalog", lambda: catalog.collect(catalog_root, registry_tree)),
         ("releases", lambda: releases.collect(gh)),
         ("stores", lambda: stores.collect(registry)),
         ("records", lambda: records.collect(epics_dir, yardstick_dir)),
         ("architecture", lambda: architecture.collect(
-            repo_root, engine_git=engine_git, engine_ref=engine_ref, refresh_engine=refresh_engine)),
+            repo_root, engine_git=engine_git, engine_ref=engine_ref, registry_ref=registry_ref,
+            refresh_engine=refresh_engine)),
         # After board and architecture: it reads the files those two just wrote to `data_dir`.
         ("work", lambda: work.collect(
             data_dir, registry_root=repo_root, engine_git=engine_git, refresh=refresh_engine)),
@@ -117,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--catalog-root", type=Path, default=None,
                         help="the catalog's versions directory (default: <artifact root>/catalog/versions)")
     parser.add_argument("--registry", type=Path, default=None,
-                        help="directory of Release Bundles (default: stores/ of this checkout)")
+                        help="an opengwasdb-stores checkout to read (default: its main, from the site's clone)")
     parser.add_argument("--engine-git", type=Path, default=None,
                         help="the engine's git directory (default: the site's bare clone under the work root)")
     parser.add_argument("--engine-ref", default=architecture.DEFAULT_ENGINE_REF,
@@ -127,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--strict", action="store_true", help="exit 1 when any source is unavailable")
     args = parser.parse_args(argv)
     results = run(args.data_dir or common.data_dir(), catalog_root=args.catalog_root,
-                  registry=args.registry, engine_git=args.engine_git, engine_ref=args.engine_ref,
+                  checkout=args.registry, engine_git=args.engine_git, engine_ref=args.engine_ref,
                   refresh_engine=args.refresh_engine)
     return 1 if args.strict and not all(r["available"] for r in results) else 0
 

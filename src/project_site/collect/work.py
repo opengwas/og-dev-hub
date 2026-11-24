@@ -338,6 +338,12 @@ def repo_of(git_dir: Path) -> str:
     return "opengwasdb" if "opengwasdb" in top else "opengwasdb-stores"
 
 
+def _is_bare(git_dir: Path) -> bool:
+    done = subprocess.run(["git", "-C", str(git_dir), "rev-parse", "--is-bare-repository"],
+                          capture_output=True, text=True, check=False)
+    return done.stdout.strip() == "true"
+
+
 def _has_ref(git_dir: Path, ref: str) -> bool:
     return subprocess.run(["git", "-C", str(git_dir), "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
                           capture_output=True, check=False).returncode == 0
@@ -349,16 +355,21 @@ def read_branches(
 ) -> list[dict[str, Any]]:
     """Pushed branches of both repositories, then those of each local git directory given.
 
-    The engine's clone holds them as `refs/heads/*`; this repository's checkout as
+    The engine's clone holds them as `refs/heads/*`, and so does the registry's
+    bare clone; a registry checkout (`--registry`) holds them as
     `refs/remotes/origin/*`. `refresh` fetches each first, recording a failure.
     """
-    registry_main = next((r for r in ("origin/main", "main") if _has_ref(registry_root, r)), "HEAD")
+    if _is_bare(registry_root):
+        registry_main, registry_prefix, registry_fetch = "main", "refs/heads/", ENGINE_FETCH
+    else:
+        registry_main = next((r for r in ("origin/main", "main") if _has_ref(registry_root, r)), "HEAD")
+        registry_prefix, registry_fetch = "refs/remotes/origin/", REGISTRY_FETCH
     sets = [
         # Ahead of the engine's `main`, whatever ref the architecture was read at.
         branch_reader.collect(engine_git, "opengwasdb", main_ref="main", prefixes=("refs/heads/",), days=days, now=now,
                               fetch=ENGINE_FETCH if refresh else None),
-        branch_reader.collect(registry_root, "opengwasdb-stores", main_ref=registry_main, prefixes=("refs/remotes/origin/",),
-                              days=days, now=now, fetch=REGISTRY_FETCH if refresh else None),
+        branch_reader.collect(registry_root, "opengwasdb-stores", main_ref=registry_main, prefixes=(registry_prefix,),
+                              days=days, now=now, fetch=registry_fetch if refresh else None),
     ]
     for git_dir in local:
         main = next((r for r in ("origin/main", "main") if _has_ref(git_dir, r)), "HEAD")
@@ -384,12 +395,14 @@ def collect(
     if board is None or architecture is None:
         problems = [why for doc, why in ((board, board_why), (architecture, architecture_why)) if doc is None]
         raise CollectError("; ".join(problems))
-    if registry_root is None or engine_git is None:
-        from ogstores import paths
+    if registry_root is None:
+        from project_site import staging
+
+        registry_root = staging.registry_root().git_dir
+    if engine_git is None:
         from project_site import paths as site_paths
 
-        registry_root = registry_root or paths.REPO_ROOT
-        engine_git = engine_git or site_paths.engine_clone()
+        engine_git = site_paths.clone_dir(site_paths.ENGINE)
     sets = read_branches(registry_root=registry_root, engine_git=engine_git, refresh=refresh,
                          local=local, days=days, now=now)
     return compute(board, architecture, sets)

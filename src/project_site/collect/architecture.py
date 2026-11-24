@@ -4,7 +4,9 @@ Each repository keeps a hand-written `docs/architecture/components.yaml` whose
 components claim code paths (`architecture_model` holds the one ownership rule).
 This collector reads both through git, without a checkout of either:
 
-- this repository at a ref (default `HEAD`), tracked files only;
+- the registry, opengwasdb-stores, at a ref of a git directory (by default its
+  clone's `main`, or the checkout `--registry` names at `HEAD`; `staging.registry_root`),
+  tracked files only;
 - the engine at a ref (default `main`) of a git directory, normally the bare
   clone the site build already keeps. The site's *docs* mirror stays at the
   revision `pixi.lock` pins; the map shows current work, so this reads `main`.
@@ -96,11 +98,12 @@ def collect(
     refresh_engine: bool = False,
 ) -> dict[str, Any]:
     """Both repositories' components, gaps, import graph and ADRs, as the site's `architecture` source."""
-    if registry_root is None or engine_git is None:
-        from ogstores import paths
+    if registry_root is None:
+        from project_site import staging
 
-        registry_root = registry_root or paths.REPO_ROOT
-        engine_git = engine_git or _default_engine_clone()
+        registry = staging.registry_root()
+        registry_root, registry_ref = registry.git_dir, registry.ref
+    engine_git = engine_git or _default_engine_clone()
     registry = Tree(registry_root, registry_ref)
     refresh = _refresh(engine_git, engine_ref) if refresh_engine else None
     engine = Tree(engine_git, engine_ref)
@@ -184,7 +187,7 @@ def collect(
 def _default_engine_clone() -> Path:
     from project_site import paths
 
-    return paths.engine_clone()
+    return paths.clone_dir(paths.ENGINE)
 
 
 def _repository(

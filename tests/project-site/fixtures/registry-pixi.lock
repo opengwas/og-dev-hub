@@ -1,0 +1,16 @@
+# The opengwasdb pin of opengwasdb-stores' pixi.lock at 2fff9eb6, and the shape
+# around it that `ogstores.engine.locked_commit` reads (og-dev-hub#7): the
+# registry's real lock is not in this repository.
+version: 6
+environments:
+  default:
+    packages:
+      linux-64:
+      - pypi: git+https://github.com/opengwas/opengwasdb?branch=main#1230629a2c0958851f8ed5e1bcc8db9472b7516a
+  dev:
+    packages:
+      linux-64:
+      - pypi: git+https://github.com/opengwas/opengwasdb?branch=main#1230629a2c0958851f8ed5e1bcc8db9472b7516a
+packages:
+- pypi: git+https://github.com/opengwas/opengwasdb?branch=main#1230629a2c0958851f8ed5e1bcc8db9472b7516a
+  name: opengwasdb

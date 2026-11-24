@@ -1,6 +1,8 @@
 """The catalog-history collector: every Analysis Catalog version, read-only (#389).
 
-The root is `<artifact root>/catalog/versions/` unless one is passed. Each
+The root is `<artifact root>/catalog/versions/` unless one is passed, the
+artifact root resolved as `ogstores.paths.artifact_root` resolves it for the
+registry being rendered (its `ogstores.yaml`). Each
 version's `catalog.sqlite` is opened through a `mode=ro` URI and read with three
 queries; nothing is written. The total of Analyses is `count(*)` on
 `listed_analyses`: the `counts` rows are per dimension and overlap, so a total
@@ -17,11 +19,14 @@ from typing import Any
 
 from ogstores import paths
 
+from project_site import staging
 from project_site.collect.common import CollectError
 
 
-def default_root() -> Path:
-    return paths.artifact_root() / "catalog" / "versions"
+def default_root(registry: Path | None = None) -> Path:
+    """`<artifact root>/catalog/versions`, the root read from `registry`'s configuration, never an installed package's."""
+    registry = registry if registry is not None else staging.registry_root().root
+    return paths.artifact_root(repo_root=registry) / "catalog" / "versions"
 
 
 def _read_only(database: Path) -> sqlite3.Connection:
@@ -73,8 +78,8 @@ def _version(directory: Path, current: str | None) -> dict[str, Any]:
     }
 
 
-def collect(root: Path | None = None) -> dict[str, Any]:
-    root = default_root() if root is None else Path(root)
+def collect(root: Path | None = None, registry: Path | None = None) -> dict[str, Any]:
+    root = default_root(registry) if root is None else Path(root)
     if not root.is_dir():
         raise CollectError(f"catalog root {root} does not exist")
     link = root.parent / "current"

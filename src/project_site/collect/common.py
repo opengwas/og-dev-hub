@@ -9,10 +9,11 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from ogstores import paths
+from project_site import paths
 
 DATA_DIR_ENV_VAR = "OPENGWASDB_SITE_DATA"
-DEFAULT_DATA_DIR = paths.REPO_ROOT / "docs" / "_data"
+# A hand run's collection, in this og-dev-hub checkout (git-ignored).
+DEFAULT_DATA_DIR = paths.repo_root() / "docs" / "_data"
 
 # Runs `gh <args>` with optional standard input and returns its standard
 # output. A fake of this is how the tests stand in for the network.

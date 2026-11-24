@@ -21,7 +21,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from project_site import build, paths
+from project_site import build, paths, staging
 from project_site import publish as publish_module
 from project_site.collect import common as collect_common
 from project_site.publish import PublishRefused, publish
@@ -242,15 +242,35 @@ class PublishCollectsItsOwnData(unittest.TestCase):
         subprocess.run(["git", "clone", "-q", "--bare", str(engine), str(self.engine)], check=True)
         self.engine_commit = git(engine, "rev-parse", "HEAD")
 
+        # The registry the site documents (og-dev-hub#7): its docs, glossary,
+        # Release Bundles and engine pin, read from the site's bare clone of it.
+        registry = self.root / "registry"
+        registry.mkdir()
+        git(registry, "init", "-q", "-b", "main")
+        git(registry, "config", "user.email", "test@example.org")
+        git(registry, "config", "user.name", "Test")
+        (registry / "docs").mkdir()
+        # What the site serves today: the path the publish's check must find.
+        (registry / "docs" / "keep.md").write_text("# Kept\n", encoding="utf-8")
+        (registry / "CONTEXT.md").write_text("# Glossary\n", encoding="utf-8")
+        (registry / "stores").mkdir()
+        (registry / "stores" / "README.md").write_text("# Stores\n", encoding="utf-8")
+        (registry / "pixi.lock").write_text(
+            "packages:\n  - pypi: git+https://github.com/opengwas/opengwasdb"
+            f"?tag=v0.3.0#{self.engine_commit}\n",
+            encoding="utf-8",
+        )
+        git(registry, "add", "-A")
+        git(registry, "commit", "-q", "-m", "the registry")
+        self.registry_commit = git(registry, "rev-parse", "HEAD")
+        self.registry_clone = self.root / "registry.git"
+        subprocess.run(["git", "clone", "-q", "--bare", str(registry), str(self.registry_clone)], check=True)
+
         self.repo = self.root / "checkout"
         self.repo.mkdir()
         git(self.repo, "init", "-q", "-b", "dev")
         git(self.repo, "config", "user.email", "test@example.org")
         git(self.repo, "config", "user.name", "Test")
-        (self.repo / "docs").mkdir()
-        # What the site serves today: the path the publish's check must find.
-        (self.repo / "docs" / "keep.md").write_text("# Kept\n", encoding="utf-8")
-        (self.repo / "CONTEXT.md").write_text("# Glossary\n", encoding="utf-8")
         # The gate's fixed baseline: the served paths the render must keep (#397).
         baseline = self.repo / "resources" / "site" / "legacy-served-paths.txt"
         baseline.parent.mkdir(parents=True)
@@ -261,20 +281,15 @@ class PublishCollectsItsOwnData(unittest.TestCase):
         git(self.repo, "push", "-q", "origin", "dev")
         git(self.repo, "push", "-q", "origin", "dev:main")
 
-        (self.repo / "docs" / "_quarto.yml").write_text(
+        (self.repo / "site").mkdir()
+        (self.repo / "site" / "_quarto.yml").write_text(
             "project:\n  type: website\n  pre-render:\n    - \"./pre-render.sh\"\n"
             "  resources:\n    - \"**/*.md\"\n",
             encoding="utf-8",
         )
-        shutil.copyfile(REPO_ROOT / "docs" / "pre-render.sh", self.repo / "docs" / "pre-render.sh")
-        (self.repo / "docs" / "pre-render.sh").chmod(0o755)
-        (self.repo / "docs" / "index.qmd").write_text("# Overview\n\nGenerated at render time.\n", encoding="utf-8")
-        (self.repo / "stores").mkdir()
-        (self.repo / "pixi.lock").write_text(
-            "packages:\n  - pypi: git+https://github.com/opengwas/opengwasdb"
-            f"?tag=v0.3.0#{self.engine_commit}\n",
-            encoding="utf-8",
-        )
+        shutil.copyfile(REPO_ROOT / "site" / "pre-render.sh", self.repo / "site" / "pre-render.sh")
+        (self.repo / "site" / "pre-render.sh").chmod(0o755)
+        (self.repo / "site" / "index.qmd").write_text("# Overview\n\nGenerated at render time.\n", encoding="utf-8")
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-q", "-m", "the site")
         git(self.repo, "push", "-q", "origin", "dev")
@@ -282,7 +297,8 @@ class PublishCollectsItsOwnData(unittest.TestCase):
 
     def test_the_publish_collects_into_the_render_and_renders_what_it_collected(self) -> None:
         STUBBED.clear()
-        with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ENGINE_CLONE": str(self.engine)}), \
+        with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ENGINE_CLONE": str(self.engine),
+                                          "OPENGWASDB_SITE_REGISTRY_CLONE": str(self.registry_clone)}), \
                 mock.patch.object(collect_common, "gh_runner", lambda *a, **k: ""), \
                 mock.patch("project_site.collect.__main__.run", stub_collect):
             result = publish(repo=self.repo, ref="origin/dev", remote="origin", dry_run=True,
@@ -294,22 +310,25 @@ class PublishCollectsItsOwnData(unittest.TestCase):
         self.assertTrue(data_dir.parent.name.endswith("-stage"), "collected into the render's own staging tree")
         self.assertFalse((self.repo / "docs" / "_data").exists(), "the checkout itself is never written to")
         registry = Path(kwargs["registry"])
-        # The registry is the published checkout's — the scratch worktree this run
-        # rendered — and not the developer's tree the command was run in.
+        # The registry is the one this run extracted from the registry's clone,
+        # beside its own staging tree (og-dev-hub#7), and not any checkout.
         self.assertEqual(registry.name, "stores")
         self.assertIn(str(self.work), str(registry))
-        self.assertTrue(registry.parent.name.startswith("checkout-publish"), registry)
+        self.assertTrue(registry.parent.name.endswith("-stage-registry"), registry)
         self.assertNotEqual(registry.parent, self.repo)
         self.assertEqual(Path(kwargs["epics_dir"]), registry.parent / "docs" / "_epics")
         self.assertEqual(Path(kwargs["yardstick_dir"]), registry.parent / "docs" / "_yardstick")
+        self.assertEqual(kwargs["registry_ref"], self.registry_commit)
+        self.assertFalse(registry.exists(), "the extracted registry is this run's, and goes with it")
 
         published = sorted(git(self.repo, "ls-tree", "-r", "--name-only", "gh-pages").splitlines())
         self.assertIn("stores/OGS-00042.html", published)
         self.assertIn("epics/opengwasdb-stores-9.html", published)
+        self.assertIn("keep.html", published)
         self.assertIn("Collected, not copied", git(self.repo, "show", "gh-pages:epics.html"))
-        # And the pages point at the commit they were rendered from (#391 review, item 13).
+        # And the pages point at the registry commit they were rendered from (#391 review, item 13).
         self.assertIn(
-            f"/blob/{result.source_commit}/stores/OGS-00042",
+            f"/blob/{self.registry_commit}/stores/OGS-00042",
             git(self.repo, "show", "gh-pages:stores/OGS-00042.html"),
         )
         self.assertTrue(result.dry_run)
@@ -318,7 +337,7 @@ class PublishCollectsItsOwnData(unittest.TestCase):
     def test_a_named_data_directory_is_used_instead_of_collecting(self) -> None:
         with mock.patch.dict(os.environ, {collect_common.DATA_DIR_ENV_VAR: str(self.root / "collected")}), \
                 mock.patch("project_site.collect.__main__.run", stub_collect):
-            self.assertEqual(build.collect_data(self.root / "mirror", self.repo), [])
+            self.assertEqual(build.collect_data(self.root / "mirror", staging.registry_root(self.repo)), [])
 
         self.assertEqual(STUBBED, [])
 

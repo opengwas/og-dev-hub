@@ -1,13 +1,16 @@
-"""Stage what the site renders: the engine's docs, the glossary, and a docs mirror (#388).
+"""Stage what the site renders: the repositories it reads, their docs, the glossary (#388).
 
-The site is one Quarto project over two repositories' documentation, so a render
-needs a tree it may alter. This module builds that tree:
+The site is one Quarto project over several repositories' documentation, so a
+render needs a tree it may alter. This module builds that tree:
 
-- the engine's `docs/` at the revision `pixi.lock` pins, from a bare clone under
-  the work root, keeping only its Markdown and self-contained HTML;
-- `CONTEXT.md` as the glossary page;
-- a mirror of this repository's `docs/` without `reports/`, whose `.qmd` sources
-  are report sources the site does not execute;
+- a bare clone of each repository under the work root (`ensure_clone`), and the
+  registry's files extracted from its clone (`extract_tree`, `registry_root`);
+- the engine's `docs/` at the revision the registry's `pixi.lock` pins, keeping
+  only its Markdown and self-contained HTML;
+- the registry's `CONTEXT.md` as the glossary page;
+- a mirror of the registry's `docs/` without `reports/`, whose `.qmd` sources
+  are report sources the site does not execute, with og-dev-hub's `site/` and
+  `docs/` staged into it the same way;
 - over the mirror, the link rewrite and the Mermaid fence spelling from
   `project_site.links`, so no source file is ever edited.
 
@@ -23,7 +26,9 @@ import subprocess
 import tarfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Sequence
 
+from project_site import paths
 from project_site.links import convert_mermaid_fences, rewrite_document
 
 # Documentation, not data: the engine's `docs/` also holds logs, JSON, JSONL and
@@ -109,16 +114,79 @@ def stage_docs(repo: Path, revision: str, dest: Path) -> list[str]:
     return sorted(path.relative_to(dest).as_posix() for path in dest.rglob("*") if path.is_file())
 
 
-def ensure_engine_clone(clone: Path, revision: str, *, url: str) -> Path:
-    """A bare clone of the engine holding `revision`, cloned or fetched as needed."""
+def ensure_clone(name: str, *, revision: str | None = None, url: str | None = None) -> Path:
+    """The site's bare clone of the opengwas repository `name`, cloned and fetched as needed.
+
+    It lives at `paths.clone_dir(name)`, `<work root>/<name>.git`, and is cloned
+    from `url` (GitHub's `opengwas/<name>` unless a test names another) the first
+    time. With `revision`, it is fetched only when it does not hold that commit,
+    because a pinned commit never moves; without one, it is always fetched, so
+    its branches are the origin's now. Branches are fetched as `refs/heads/*`,
+    the same refs a fresh bare clone has.
+    """
+    clone = paths.clone_dir(name)
     if not (clone / "HEAD").exists():
         clone.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["git", "clone", "--bare", "--quiet", url, str(clone)], check=True)
-    if not _has_revision(clone, revision):
-        subprocess.run(["git", "-C", str(clone), "fetch", "--quiet", "origin"], check=True)
-    if not _has_revision(clone, revision):
-        raise SystemExit(f"the engine clone at {clone} does not have revision {revision}")
+        subprocess.run(["git", "clone", "--bare", "--quiet", url or f"{paths.GITHUB}/{name}", str(clone)], check=True)
+    if revision is None or not _has_revision(clone, revision):
+        subprocess.run(
+            ["git", "-C", str(clone), "fetch", "--quiet", "origin", "+refs/heads/*:refs/heads/*"], check=True
+        )
+    if revision is not None and not _has_revision(clone, revision):
+        raise SystemExit(f"the {name} clone at {clone} does not have revision {revision}")
     return clone
+
+
+# What the site reads from the registry's files, as opposed to through git: the
+# Release Bundles, the docs it mirrors (with the epic records and the yardstick
+# results), the glossary, the lock that pins the engine, and the configuration
+# `ogstores.paths.artifact_root` reads the catalog's root from.
+REGISTRY_TREE = ("stores", "docs", "CONTEXT.md", "pixi.lock", "ogstores.yaml")
+
+
+def extract_tree(clone: Path, ref: str, dest: Path, members: tuple[str, ...] = REGISTRY_TREE) -> str:
+    """Extract `members` of `clone` at `ref` into `dest` with `git archive`; return the commit.
+
+    `dest` is rebuilt, so a file the ref no longer has is never left behind. A
+    path the ref does not hold is left out rather than failing the archive.
+    """
+    commit = _git(clone, "rev-parse", "--verify", f"{ref}^{{commit}}").strip()
+    present = [path for path in members if _git(clone, "ls-tree", "--name-only", commit, "--", path).strip()]
+    if dest.exists():
+        shutil.rmtree(dest)
+    dest.mkdir(parents=True)
+    archive = subprocess.run(
+        ["git", "-C", str(clone), "archive", "--format=tar", commit, "--", *present], capture_output=True, check=True
+    ).stdout
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        tar.extractall(dest, filter="data")
+    return commit
+
+
+@dataclass(frozen=True)
+class Registry:
+    """opengwasdb-stores as the site reads it: files from `root`, history from `git_dir` at `ref`."""
+
+    root: Path
+    git_dir: Path
+    ref: str
+
+
+def registry_root(checkout: Path | None = None, *, tree: Path | None = None, url: str | None = None) -> Registry:
+    """The one owner of where the site reads opengwasdb-stores from (og-dev-hub#7).
+
+    A named `checkout` (`--registry PATH`) is read as it is: its files, and its
+    git at `HEAD`. Otherwise the registry is `main` of the site's bare clone,
+    fetched now, with the files the site reads extracted into `tree` (by
+    default beside this hub checkout's mirror) and git read at that same commit.
+    """
+    if checkout is not None:
+        checkout = Path(checkout).resolve()
+        return Registry(root=checkout, git_dir=checkout, ref="HEAD")
+    clone = ensure_clone(paths.REGISTRY, url=url)
+    tree = Path(tree) if tree is not None else paths.registry_tree_dir(paths.repo_root())
+    commit = extract_tree(clone, "main", tree)
+    return Registry(root=tree, git_dir=clone, ref=commit)
 
 
 def _has_revision(clone: Path, revision: str) -> bool:
@@ -138,11 +206,19 @@ def stage_glossary(context: Path, dest: Path) -> Path:
     return dest
 
 
-def mirror_docs(repo: Path, dest: Path) -> list[str]:
-    """Copy `repo`'s `docs/` to `dest`, leaving out the directories the site builds."""
-    if dest.exists():
+def mirror_docs(repo: Path, dest: Path, *, docs: str = "docs", replace: bool = True) -> list[str]:
+    """Copy `repo`'s `docs/` to `dest`, leaving out the directories the site builds.
+
+    `docs` names another directory of `repo` to copy, as og-dev-hub's `site/` is.
+    With `replace` false, `dest` is copied over rather than rebuilt: a file both
+    hold is `repo`'s. A `repo` without the directory copies nothing.
+    """
+    if replace and dest.exists():
         shutil.rmtree(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
+    if not (repo / docs).is_dir():
+        dest.mkdir(exist_ok=True)
+        return sorted(path.relative_to(dest).as_posix() for path in dest.rglob("*") if path.is_file())
 
     def ignore(directory: str, names: list[str]) -> set[str]:
         skipped = set()
@@ -153,7 +229,7 @@ def mirror_docs(repo: Path, dest: Path) -> list[str]:
                 skipped.add(name)
         return skipped
 
-    shutil.copytree(repo / "docs", dest, ignore=ignore)
+    shutil.copytree(repo / docs, dest, ignore=ignore, dirs_exist_ok=not replace)
     return sorted(path.relative_to(dest).as_posix() for path in dest.rglob("*") if path.is_file())
 
 
@@ -167,11 +243,14 @@ def rewrite_mirror(
     engine_commit: str,
     engine_url: str,
     engine_prefix: str,
+    sections: Sequence[tuple[str, Path, str, str]] = (),
 ) -> LinkReport:
     """Rewrite the mirror's outbound links, spelling Mermaid fences for Quarto.
 
-    A page under `engine_prefix` came from the engine at `engine_commit`; every
-    other page came from this repository at `commit`. A rewritten target that the
+    A page under `engine_prefix` came from the engine at `engine_commit`; a page
+    under the prefix of one of `sections`, each `(prefix, git directory, commit,
+    url)`, came from that repository (og-dev-hub's own docs, og-dev-hub#7); every
+    other page came from the registry at `commit`. A rewritten target that the
     commit does not have is reported rather than hidden: its GitHub link will 404
     exactly as the relative one would have.
 
@@ -180,26 +259,31 @@ def rewrite_mirror(
     into the same pass, so every link *to* such a page, and the page itself, still
     reach the rendered HTML rather than the source.
     """
-    registry_paths = set(_git(registry, "ls-tree", "-r", "--name-only", commit).splitlines())
-    engine_paths = set(_git(engine, "ls-tree", "-r", "--name-only", engine_commit).splitlines())
+    # Each tree a page can come from: its prefix in the mirror, its URL and commit,
+    # the paths that commit has, and the pages of it staged under another name.
+    trees = [
+        (prefix, url, at, set(_git(git_dir, "ls-tree", "-r", "--name-only", at).splitlines()), {})
+        for prefix, git_dir, at, url in [(engine_prefix, engine, engine_commit, engine_url), *sections]
+    ]
+    registry_tree = ("", registry_url, commit, set(_git(registry, "ls-tree", "-r", "--name-only", commit).splitlines()), {})
+
+    def tree_of(page: str) -> tuple[str, str, str, set[str], dict[str, str]]:
+        return next((tree for tree in trees if page.startswith(tree[0])), registry_tree)
 
     report = LinkReport()
     pages: list[tuple[Path, str, str]] = []  # the staged file, its docs path, its tree path
     renamed: set[str] = set()
-    registry_rendered: dict[str, str] = {}
-    engine_rendered: dict[str, str] = {}
     for path in sorted(dest.rglob("*")):
         if not path.is_file() or path.suffix.lower() not in {".md", ".qmd"}:
             continue
         page = path.relative_to(dest).as_posix()
-        from_engine = page.startswith(engine_prefix)
-        relative = page[len(engine_prefix):] if from_engine else page
+        prefix, *_, rendered = tree_of(page)
+        relative = page[len(prefix):]
         text = convert_mermaid_fences(path.read_text(encoding="utf-8"))
         if path.suffix.lower() == ".md" and _has_mermaid_cell(text):
             staged = path.with_suffix(".qmd")
             staged.write_text(text, encoding="utf-8")
             path.unlink()
-            rendered = engine_rendered if from_engine else registry_rendered
             rendered[relative] = f"{relative[: -len('.md')]}.html"
             renamed.add(page)
             pages.append((staged, page, relative))
@@ -207,10 +291,7 @@ def rewrite_mirror(
             pages.append((path, page, relative))
 
     for path, page, relative in pages:
-        from_engine = page.startswith(engine_prefix)
-        repo_url, page_commit = (engine_url, engine_commit) if from_engine else (registry_url, commit)
-        known = engine_paths if from_engine else registry_paths
-        rendered = engine_rendered if from_engine else registry_rendered
+        _, repo_url, page_commit, known, rendered = tree_of(page)
         text, targets, unparsed = rewrite_document(
             path.read_text(encoding="utf-8"),
             page=relative,
