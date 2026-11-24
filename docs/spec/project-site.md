@@ -314,6 +314,14 @@ has `validated_at: null`, never a date borrowed from elsewhere, and a
 `n_variants × n_analyses`). This collector does not run `bundle.check()`;
 `pixi run bundle-check` does.
 
+**The Stores page and LD Stores.** `stores.json` holds GWAS Stores only, and the
+Stores page heads its listing "GWAS Stores". It ends with an "LD Stores" section
+that is a gap: the LD Store Registry is not yet in opengwasdb-stores
+(opengwasdb-stores#496), so LD Stores are not listed and their number is
+unknown, never 0. The Overview names its Store figure "GWAS Stores" and shows
+"LD Stores" as `unknown`. The gap is static text with no collector; og-dev-hub#10's
+second half replaces it with a collector that reads the registry once #496 lands.
+
 ### Records (`records.json`)
 
 | Key | Content |

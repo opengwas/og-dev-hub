@@ -329,6 +329,20 @@ class TestStorePages(unittest.TestCase):
         self.assertIn("unknown (1 of 2 Stores report it)", total)
         self.assertIn("| 20,650 |", total)
 
+    def test_the_stores_page_shows_ld_stores_as_a_gap_naming_496(self) -> None:
+        index = pages.render_stores_index(self.documents)
+        section = index[index.index("## LD Stores"):]
+        self.assertIn("## GWAS Stores", index)
+        self.assertIn("The LD Store Registry is not yet in opengwasdb-stores", section)
+        self.assertIn("(https://github.com/opengwas/opengwasdb-stores/issues/496)", section)
+        self.assertIn("so LD Stores are not listed.", section)
+        self.assertIn("Their number is unknown, not 0.", section)
+        self.assertNotRegex(section, r"\d[\d,]*\s+LD Stores")
+
+    def test_the_ld_gap_is_drawn_even_when_the_stores_data_is_unavailable(self) -> None:
+        index = pages.render_stores_index(documents())
+        self.assertIn("so LD Stores are not listed.", index)
+
     def test_the_page_shows_the_lifecycle_the_layout_and_the_release_notes(self) -> None:
         page = pages.render_store_page(self.documents, self.silent)
         self.assertIn("2026-10-27T20:13:36Z", page)
@@ -1240,10 +1254,15 @@ class TestOverview(unittest.TestCase):
         page = pages.render_overview(self.documents)
         analyses = raw_block_after(page, "Analyses, per catalog version")
         self.assertEqual(analyses.count("<circle"), 2)
-        stores = raw_block_after(page, "Stores, per catalog version")
+        stores = raw_block_after(page, "GWAS Stores, per catalog version")
         self.assertEqual(stores.count("<circle"), 2)
         self.assertIn("| Analyses | 31,940 | 19,250 → 31,940 over 2 versions |", page)
-        self.assertIn("| Stores | 9 | 1 → 9 over 2 versions |", page)
+        self.assertIn("| GWAS Stores | 9 | 1 → 9 over 2 versions |", page)
+
+    def test_the_overview_shows_ld_stores_as_unknown_never_zero(self) -> None:
+        page = pages.render_overview(self.documents)
+        self.assertIn("| LD Stores | unknown | no LD Store Registry to count |", page)
+        self.assertNotIn("| LD Stores | 0 |", page)
 
     def test_the_latest_tag_per_repository_or_untagged(self) -> None:
         page = pages.render_overview(self.documents)
