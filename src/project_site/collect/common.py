@@ -24,11 +24,6 @@ class CollectError(RuntimeError):
     """A source could not be read; its file says so instead of stopping the others."""
 
 
-def mapping(document: Any) -> dict[str, Any]:
-    """`document` if it is a mapping, else none: a YAML file of another shape is read as holding nothing."""
-    return document if isinstance(document, dict) else {}
-
-
 def data_dir(env: Mapping[str, str] | None = None) -> Path:
     value = (os.environ if env is None else env).get(DATA_DIR_ENV_VAR)
     return Path(value) if value and value.strip() else DEFAULT_DATA_DIR

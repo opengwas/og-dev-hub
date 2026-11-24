@@ -93,7 +93,7 @@ class StoresScript(unittest.TestCase):
                          "not applicable", "unavailable", "20261118T000000Z-broken.json is not a valid result",
                          "Not measured by yardstick", "taken under load: load average 70 over 56",
                          "not built yet (Release Status candidate)", "withdrawn", "answered by its scan",
-                         "no record says how the HM3 step ended"):
+                         "no record says how the HM3 step ended", "LD Stores are not listed yet", "og-dev-hub#10", "unknown, not 0"):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
 

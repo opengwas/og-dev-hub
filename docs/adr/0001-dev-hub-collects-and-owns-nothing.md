@@ -7,6 +7,7 @@ them, and owns none of them:
 - the GWAS Store Registry and the LD Store Registry live in opengwasdb-stores,
   where the pull request that builds a Store also records it;
 - epic records stay in each epic's own repository;
+  *(2026-11-24: epic records were retired (og-dev-hub#14); planned state is the board's alone.)*
 - the hub measures the rest (size, imports, which ADRs cite what) from the code.
 
 The hub writes by hand only what no single repository owns: `system.yaml` (the

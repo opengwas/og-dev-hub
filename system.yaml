@@ -99,7 +99,7 @@ containers:
   - {id: ops_dashboard, name: ogdb-dashboard, repo: ogdb-dashboard, tech: web app,
      summary: "Running state for developers: the Data API's workers and queue, the server, the loaded catalog version, and audited operations."}
   - {id: dev_hub, name: Dev Hub, repo: og-dev-hub, tech: Static site (HTML and plain JS) built in CI,
-     summary: "Built state only: the GWAS Stores and LD Stores, the architecture, and the decisions and terms, collected from every public repository. No plan and no epics."}
+     summary: "Built state only: the GWAS Stores (and the LD Stores once og-dev-hub#10 lands), the architecture, and the decisions and terms, collected from every public repository. No plan and no epics."}
 
 container_relations:
   - [curator, gwas_generation, "selects sources and maps traits with"]

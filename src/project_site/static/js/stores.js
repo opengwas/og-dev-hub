@@ -102,7 +102,7 @@
   D.register("stores", function () {
     return D.json("stores").then(function (data) {
       if (!data.available) return D.unavailable(data, "The Stores");
-      return [D.collected(data), inventory(data), yardstick(data.yardstick)];
+      return [D.collected(data), D.alert("note", el("p", {}, data.ld_stores.gap)), inventory(data), yardstick(data.yardstick)];
     });
   });
 })();

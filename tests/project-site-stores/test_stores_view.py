@@ -208,6 +208,57 @@ class CauseTests(Fixture):
         self.assertEqual(self.shown["OGS-00004"]["store_bytes"]["text"], "1 B")  # built once: its record reads as any built Store's
 
 
+class LdStoresTests(Fixture):
+    def test_ld_stores_are_a_named_gap_not_a_zero(self) -> None:
+        gap = self.view["ld_stores"]["gap"]
+        self.assertIn("og-dev-hub#10", gap)
+        self.assertIn("opengwasdb-stores#496", gap)
+        self.assertIn("unknown, not 0", gap)
+        self.assertNotIn("n", {k for k in self.view["ld_stores"] if k != "gap"})
+
+
+class DeclaredTopHitsTests(unittest.TestCase):
+    """The recipe's top-hit rule is `ogstores.plan.declared_top_hits`'s, not a second copy of it."""
+
+    COUNTS = {"n_top_hits": {"5e-08": 3}}
+
+    def top_hits(self, build: dict, observed: dict) -> dict:
+        from project_site.collect import inventory
+        return inventory._top_hits(build, observed)
+
+    def test_the_hyphenated_alias_declares_the_index(self) -> None:
+        got = self.top_hits({"post": {"top-hits": True}}, self.COUNTS)
+        self.assertEqual(got["value"], [{"threshold": "5e-08", "count": 3}])
+        self.assertTrue(self.top_hits({"post": {"top-hits": False}}, self.COUNTS)["gap"].startswith("not computed"))
+
+    def test_a_recipe_with_no_key_does_not_declare_it(self) -> None:
+        self.assertTrue(self.top_hits({"post": {}}, self.COUNTS)["gap"].startswith("not computed"))
+        self.assertTrue(self.top_hits({}, self.COUNTS)["gap"].startswith("not computed"))
+
+    def test_a_value_that_is_not_a_boolean_is_a_gap_carrying_the_owners_message(self) -> None:
+        self.assertEqual(self.top_hits({"post": {"top_hits": "yes"}}, self.COUNTS)["gap"],
+                         "post.top_hits is 'yes'; it is true or false")
+
+    def test_a_bad_count_is_refused_by_the_one_count_rule(self) -> None:
+        got = self.top_hits({"post": {"top_hits": True}}, {"n_top_hits": {"5e-08": -1}})
+        self.assertEqual(got["gap"], "observed.n_top_hits[5e-08] -1 is not a count")
+
+
+class NoObservedBlockTests(Fixture):
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        fx.write_bundle(cls.registry, "OGS-00009", release={"label": "bare", "status": "validated", "association_coverage": "gwas"},
+                        build={"layout": "dense", "completion_state": "observed_only", "post": {"top_hits": True}},
+                        validation={"status": "passed"}, analyses="analysis_id\nX1\n")
+        cls.row = {r["store_id"]: r for r in stores_view.stores_view(collected(cls.registry))["inventory"]}["OGS-00009"]
+
+    def test_a_built_store_whose_record_has_no_observed_block_says_so_and_not_the_backfill(self) -> None:
+        for field in ("store_bytes", "n_variants", "top_hits", "has_hm3", "has_rho", "n_clumped"):
+            with self.subTest(field=field):
+                self.assertEqual(self.row[field]["gap"], "the Validation Record has no observed block")
+
+
 class YardstickTests(Fixture):
     """Seam 4: old and new workloads both render; the states are distinct; an invalid file is a gap."""
 

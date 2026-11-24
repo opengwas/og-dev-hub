@@ -229,7 +229,7 @@ has `validated_at: null`, never a date borrowed from elsewhere, and a
 
 **LD Stores.** `stores.json` holds GWAS Stores only: the LD Store Registry is
 not yet in opengwasdb-stores (opengwasdb-stores#496), so LD Stores are not
-listed and their number is unknown, never 0. The Stores view does not draw them.
+listed and their number is unknown, never 0. The Stores view says so as `ld_stores.gap`, naming og-dev-hub#10 and opengwasdb-stores#496: unknown, not 0.
 
 **`inventory[]`** (`collect.inventory`, og-dev-hub#16), one row per Release Bundle: `store_id`,
 `label`, `description`, and a *cell* (`{value, gap}`, never both set) for each of `layout`,
@@ -242,7 +242,7 @@ the registry's, called and not re-derived: the bundle through `ogstores.bundle.l
 `partition_membership`), **built rows only**: an `exclude_from_build` audit row is in no count, ancestry or median.
 A sample size the quantity rule refuses is counted as unparseable, never dropped silently.
 
-**A Store that is not built has no observed facts.** A Store whose Release Status is `candidate` or `accepted`,
+**A record with no `observed` block** reads "the Validation Record has no observed block" in every observed cell (the backfill skips such a record). **A Store that is not built has no observed facts.** A Store whose Release Status is `candidate` or `accepted`,
 or that has no Validation Record, shows "not built yet (Release Status …)" in every observed cell
 (`store_bytes`, `n_variants`, `top_hits`, `has_hm3`, `has_rho`, `n_clumped`); it never names the backfill or
 the engine, which have nothing to fill. Its manifest cells still read. Any other status (`built`, `validated`,
@@ -253,7 +253,7 @@ the engine, which have nothing to fill. Its manifest cells still read. Any other
 |---|---|---|
 | `store_bytes` | `observed.store_bytes` | absent or `null`: "recorded from opengwasdb-stores#502's backfill" |
 | `n_variants` | `observed.n_variants` | absent: the backfill; `null`: "counts come with opengwasdb#488" |
-| `top_hits` | the count at each threshold | the recipe's `post.top_hits` is false: "not computed"; `n_top_hits` absent: the backfill; `null`: "counts come with opengwasdb#488"; a count that is `null` or not a non-negative integer: "observed.n_top_hits[<threshold>] <value> is not a count" |
+| `top_hits` | the count at each threshold | the recipe does not declare `post.top_hits` (`ogstores.plan.declared_top_hits`: `top_hits` or the `top-hits` alias; none is not declared): "not computed"; a value that is not a boolean: the owner's message; `n_top_hits` absent: the backfill; `null`: "counts come with opengwasdb#488"; a count that is `null` or not a non-negative integer: "observed.n_top_hits[<threshold>] <value> is not a count" |
 | `has_hm3`, `has_rho` | `true` or `false` | absent: the backfill; `has_hm3` `null`: "no record says how the HM3 step ended"; `has_rho` `null`: "the recipe builds no Rho Matrix, so whether the Store holds one is unknown until opengwasdb#488" |
 | `n_clumped` | `observed.n_clumped` | absent or `null`: "pending opengwasdb-stores#507" |
 | `n_analyses` | the built rows (and how many `excluded` rows were left out) | `analyses.tsv` missing or unreadable, naming which |

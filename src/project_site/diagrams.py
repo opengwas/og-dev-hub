@@ -23,6 +23,8 @@ from collections import defaultdict
 from itertools import pairwise
 from typing import Any, Mapping
 
+from project_site.shapes import mapping
+
 UPWARD = "#c0392b"
 GREY = "#7f8c8d"
 HEAD = (
@@ -233,7 +235,7 @@ def architecture(parts: Any, repos: Mapping[str, Mapping[str, Any]], boxes: list
     the other repositories read, each in `system.yaml`'s order.
     """
     model, components, edges = parts.model, parts.components, parts.edges
-    layers = model.get("layers") if isinstance(model.get("layers"), Mapping) else {}
+    layers = mapping(model.get("layers"))
     out = [{
         "id": "containers",
         "title": "Containers",

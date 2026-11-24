@@ -2,12 +2,12 @@
 
 The developers' view of OpenGWAS's built state: every repository's components,
 how they depend on one another, the decisions that govern them and the terms
-that cross repositories, and (og-dev-hub#16) the GWAS Stores and LD Stores. It
+that cross repositories, and (og-dev-hub#16) the GWAS Stores, and the LD Stores once og-dev-hub#10 lands. It
 shows no planned state, which is the project board's, and no running state,
 which is the operations dashboard's.
 
 **The hub collects; it owns nothing** ([ADR 0001](docs/adr/0001-dev-hub-collects-and-owns-nothing.md)).
-Each repository keeps its own components, glossary, ADRs and epic records, and
+Each repository keeps its own components, glossary and ADRs, and
 each Store Registry stays in the repository that builds its Stores. This
 repository writes by hand only what no single repository owns:
 

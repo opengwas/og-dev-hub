@@ -25,6 +25,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping
 
+from project_site.shapes import mapping
+
 Document = Mapping[str, Any]
 
 ENVELOPE = ("source", "available", "collected_at", "error")
@@ -86,8 +88,8 @@ class Parts:
 
 def parts(doc: Document) -> Parts:
     """The one reader of a public `architecture.json`'s parts: what is not a mapping is left out, never guessed."""
-    repos = doc.get("repos") if isinstance(doc.get("repos"), Mapping) else {}
-    model = doc.get("model") if isinstance(doc.get("model"), Mapping) else {}
+    repos = mapping(doc.get("repos"))
+    model = mapping(doc.get("model"))
     return Parts(model=model, repos={str(n): r for n, r in repos.items() if isinstance(r, Mapping)},
                  components=_maps(doc.get("components")), edges=_maps(doc.get("edges")), adrs=_maps(doc.get("adrs")))
 
@@ -149,8 +151,8 @@ def _architecture(doc: Document, private: Callable[[Any], bool], hidden: set[str
                 "error": reason(repo.get("error")), "note": reason(repo.get("note")),
                 "refresh": refresh | {"error": reason(refresh.get("error"))} if refresh else None}
     out["repos"] = repos
-    model = doc.get("model") if isinstance(doc.get("model"), Mapping) else {}
-    layers = model.get("layers") if isinstance(model.get("layers"), Mapping) else {}
+    model = mapping(doc.get("model"))
+    layers = mapping(model.get("layers"))
     out["model"] = {
         "system": _pick(model.get("system"), ("name", "summary")),
         "people": [_pick(p, ENTITY_KEYS) for p in _maps(model.get("people"))],
@@ -166,7 +168,7 @@ def _architecture(doc: Document, private: Callable[[Any], bool], hidden: set[str
         _pick(c, COMPONENT_KEYS) | {"stages": _texts(c.get("stages")), "paths": _texts(c.get("paths"))}
         for c in _maps(doc.get("components")) if not private(c.get("repo"))
     ]
-    gaps = doc.get("gaps") if isinstance(doc.get("gaps"), Mapping) else {}
+    gaps = mapping(doc.get("gaps"))
     out["gaps"] = {
         name: _pick(gap, GAP_KEYS)
         | {"unreadable": reason(gap.get("unreadable")), "no_model": reason(gap.get("no_model")),
