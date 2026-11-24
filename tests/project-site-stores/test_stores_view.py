@@ -92,9 +92,28 @@ class TileTests(Fixture):
         short = stores_view.summary(real)
         self.assertEqual(short, "Full dense Store Release of all 2,514 UK Biobank (ukb-b) GWAS-VCF Analyses declared in the "
                                 "OpenGWAS IGD collection and verified present in…")
-        self.assertNotIn("……", short.replace("…/", "……"))
         self.assertNotIn("…/", short)
         self.assertEqual(stores_view.summary("Read at /data/opengwasdb/raw/x by the builder."), "Read at…")
+
+    def test_et_al_and_other_abbreviations_do_not_end_the_sentence(self) -> None:
+        chen = ("Full European-ancestry slice of the Chen et al. 2023 plasma metabolome atlas (PMID 36635386): every candidate "
+                "analysis for this ancestry, no cap, as a single-ancestry no-cis ragged GWAS-SSF release.\n")
+        self.assertEqual(stores_view.summary(chen), "Full European-ancestry slice of the Chen et al. 2023 plasma metabolome atlas "
+                         "(PMID 36635386): every candidate analysis for this ancestry, no cap, as a…")
+        sun = ("First 10 Sun et al. INTERVAL SomaScan plasma-proteome pQTL analyses (PMID 29875488) -- a deterministic prefix of "
+               "the 100-analysis 2018-sun-pilot-100 selection, built end-to-end through OpenGWASDB's real ragged builder as a small, "
+               "current, grounded proof that this Store Family's pipeline (Trait Ontology Mapping, CURIE-normalised trait_ontology_id, "
+               "analysis_label) actually produces a working store.\n")
+        self.assertEqual(stores_view.summary(sun), "First 10 Sun et al. INTERVAL SomaScan plasma-proteome pQTL analyses (PMID 29875488) "
+                         "-- a deterministic prefix of the 100-analysis 2018-sun-pilot-100 selection…")
+        self.assertEqual(stores_view.summary("Use a tool, e.g. a script. Then stop."), "Use a tool, e.g. a script.")
+        self.assertEqual(stores_view.summary("Run by J. Smith in 2026. Then stop."), "Run by J. Smith in 2026.")
+        self.assertEqual(stores_view.summary("That is, i.e. this one. Next."), "That is, i.e. this one.")
+
+    def test_each_status_tag_has_its_tone_written_by_the_build(self) -> None:
+        tone = {s: r["status"]["tone"] for s, r in ((r["status"]["text"], r) for r in self.shown.values())}
+        self.assertEqual(tone, {"validated": "ok", "built": "ok", "candidate": None, "accepted": None, "withdrawn": "muted"})
+        self.assertEqual(stores_view.STATUS_TONE["superseded"], "muted")
 
     def test_a_shorter_description_is_its_first_sentence_alone(self) -> None:
         self.assertEqual(stores_view.summary("Dense build of UKB. Second sentence."), "Dense build of UKB.")

@@ -127,6 +127,11 @@ TILE_FACTS = (("layout", "Layout"), ("coverage", "Coverage"), ("store_bytes", "S
               ("n_analyses", "Analyses"), ("median_sample_size", "Median sample size"), ("ancestry", "Ancestry"),
               ("top_hits", "Top hits"), ("has_hm3", "HM3"), ("has_rho", "Rho"))
 _SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+# A full stop after one of these does not end a sentence: "et al.", "e.g.", "i.e." or a single initial ("J. Smith").
+_ABBREVIATION = re.compile(r"(?:^|[\s(])(?:et al|e\.g|i\.e|[A-Za-z])\.$", re.IGNORECASE)
+# The tone of a Release Status tag, written by the build: built and validated are ok, a Store not built yet is neutral, a
+# Store that is gone is muted.
+STATUS_TONE = {"validated": "ok", "built": "ok", "candidate": None, "accepted": None, "withdrawn": "muted", "superseded": "muted"}
 
 
 def summary(description: Any, limit: int = SUMMARY_CUT) -> str | None:
@@ -137,8 +142,11 @@ def summary(description: Any, limit: int = SUMMARY_CUT) -> str | None:
     flat = " ".join(str(description or "").split())
     if not flat:
         return None
-    end = _SENTENCE_END.search(flat)
-    first = flat[:end.end()] if end else flat
+    first = flat
+    for end in _SENTENCE_END.finditer(flat):
+        if not _ABBREVIATION.search(flat[:end.end()]):
+            first = flat[:end.end()]
+            break
     cut = first
     if len(first) > limit:
         cut = first[:limit + 1]
@@ -192,6 +200,7 @@ def inventory_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
         "ancestry": _cell(row.get("ancestry"), _ancestry),
     }
     # What the tile draws: each fact's display (a gap is `n/a`), and the reason behind each `n/a` for the expanded tile.
+    out["status"]["tone"] = None if out["status"]["gap"] else STATUS_TONE.get(out["status"]["text"])
     cells = [(label, out[key]) for key, label in TILE_FACTS]
     out["facts"] = [{"label": label, "display": cell["display"], "detail": cell["detail"], "na": bool(cell["gap"])} for label, cell in cells]
     out["why_na"] = [{"label": label, "reason": cell["gap"]} for label, cell in cells + [("Release Status", out["status"])] if cell["gap"]]
