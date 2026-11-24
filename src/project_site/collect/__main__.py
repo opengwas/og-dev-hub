@@ -120,9 +120,7 @@ def run(
     repositories = repositories or staging.Repositories(refresh=refresh, checkouts={paths.REGISTRY: checkout})
 
     def files(*parts: str) -> Path:
-        root = repositories.get(paths.REGISTRY, files=True).require().root
-        assert root is not None
-        return root.joinpath(*parts)
+        return staging.registry_files(repositories).joinpath(*parts)
 
     collectors: list[tuple[str, Callable[[], dict[str, Any]]]] = [
         ("board", lambda: board.collect(gh)),

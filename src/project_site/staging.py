@@ -26,10 +26,12 @@ import shutil
 import subprocess
 import tarfile
 from dataclasses import dataclass, field, replace
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from project_site import paths
+from project_site.collect.architecture_model import split_nul
 from project_site.collect.common import CollectError
 from project_site.links import convert_mermaid_fences, rewrite_document
 
@@ -216,6 +218,14 @@ class Repository:
         """The commit `ref` names in this repository's git, or `None` (`resolve_ref`)."""
         return resolve_ref(self.git_dir, ref)[0]
 
+    def tree(self, at: str | None = None) -> Tree:
+        """Every file of this repository at `at` (by default the commit read): the one way its files are read."""
+        return Tree(self.git_dir, at or str(self.require().commit))
+
+    def read(self, paths: Sequence[str], *, at: str | None = None) -> dict[str, str]:
+        """The files `paths` at `at` (by default the commit read), listing only those; a path not there is absent."""
+        return Tree(self.git_dir, at or str(self.require().commit), only=list(paths)).read(list(paths))
+
     def require(self) -> "Repository":
         """This handle, or a `CollectError` saying why the repository cannot be read."""
         if self.commit is None:
@@ -303,9 +313,9 @@ class Repositories:
         )
 
 
-def registry_files() -> Path:
-    """opengwasdb-stores' files from its clone's `main`, for a reader run on its own (a run passes its handles)."""
-    root = Repositories().get(paths.REGISTRY, files=True).require().root
+def registry_files(repositories: Repositories) -> Path:
+    """opengwasdb-stores' files, extracted through the run's own handle of it."""
+    root = repositories.get(paths.REGISTRY, files=True).require().root
     assert root is not None
     return root
 
@@ -323,6 +333,65 @@ def resolve_ref(git_dir: Path, ref: str) -> tuple[str | None, str]:
     if done.returncode == 0 and done.stdout.strip():
         return done.stdout.strip(), ""
     return None, done.stderr.strip() or f"{git_dir} has no {ref}"
+
+
+class Tree:
+    """The files of one repository at one ref, read through git and nothing else.
+
+    `only` lists just those paths rather than the whole tree, for a reader of a few files.
+    """
+
+    def __init__(self, git_dir: Path, ref: str, only: Sequence[str] | None = None) -> None:
+        self.git = ["git", "-C", str(git_dir)]
+        self.ref = ref
+        commit, why = resolve_ref(git_dir, ref)
+        if commit is None:
+            raise CollectError(f"{git_dir} has no ref {ref}: {why}")
+        self.commit = commit
+        # `<mode> <type> <oid>\t<path>` per NUL-terminated record: the object id is how a file is read
+        # back, because a path can hold a newline and an id cannot.
+        self.oids: dict[str, str] = {}
+        listing = ["ls-tree", "-r", "-z", self.commit, *(["--", *only] if only is not None else [])]
+        if only is None or only:
+            for record in split_nul(self._run(listing).decode()):
+                meta, path = record.split("\t", 1)
+                mode, kind, oid = meta.split()
+                if kind == "blob":
+                    self.oids[path] = oid
+        self.files = list(self.oids)
+
+    @cached_property
+    def committed(self) -> str:
+        """The commit's date, read when it is asked for."""
+        return self._run(["show", "-s", "--format=%cI", self.commit]).decode().strip()
+
+    def _run(self, args: list[str], stdin: bytes | None = None) -> bytes:
+        done = subprocess.run([*self.git, *args], input=stdin, capture_output=True, check=False)
+        if done.returncode != 0:
+            raise CollectError(f"git {args[0]} exited {done.returncode}: {done.stderr.decode(errors='replace').strip()}")
+        return done.stdout
+
+    def read(self, paths: list[str]) -> dict[str, str]:
+        """Many files at the ref through one `git cat-file --batch`; a path not in the tree is absent.
+
+        Blobs are requested by object id, one `<oid>` per line: a path is never
+        put on a line, because a tracked path may contain a newline.
+        """
+        wanted = [(path, self.oids[path]) for path in paths if path in self.oids]
+        if not wanted:
+            return {}
+        out = self._run(["cat-file", "--batch"], "".join(f"{oid}\n" for _, oid in wanted).encode())
+        found: dict[str, str] = {}
+        position = 0
+        for path, oid in wanted:
+            newline = out.index(b"\n", position)
+            header = out[position:newline].split()
+            if header[0].decode() != oid or header[1] != b"blob":
+                raise CollectError(f"git cat-file answered {header!r} for {oid} ({path!r})")
+            size = int(header[2])
+            found[path] = out[newline + 1 : newline + 1 + size].decode("utf-8", "replace")
+            position = newline + 1 + size + 1
+        return found
 
 
 def has_revision(clone: Path, revision: str) -> bool:

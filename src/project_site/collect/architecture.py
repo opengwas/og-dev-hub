@@ -25,12 +25,12 @@ opengwasdb revision `pixi.lock` pins; the map shows current work, so this reads
 
 from __future__ import annotations
 
-import subprocess
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Collection, Mapping
 
 from project_site import paths, staging
+from project_site.staging import Tree
 from project_site.collect import architecture_adrs, architecture_graph, architecture_model as model_rules
 from project_site.collect.common import CollectError
 
@@ -39,56 +39,6 @@ DEFAULT_REF = "main"
 # The hub's own system model (#8): read from its working tree, which is the published state
 # because publishing renders a clean checkout of the hub.
 SYSTEM_FILE = "system.yaml"
-
-
-class Tree:
-    """The files of one repository at one ref, read through git and nothing else."""
-
-    def __init__(self, git_dir: Path, ref: str) -> None:
-        self.git = ["git", "-C", str(git_dir)]
-        self.ref = ref
-        commit, why = staging.resolve_ref(git_dir, ref)
-        if commit is None:
-            raise CollectError(f"{git_dir} has no ref {ref}: {why}")
-        self.commit = commit
-        # `<mode> <type> <oid>\t<path>` per NUL-terminated record: the object id is how a file is read
-        # back, because a path can hold a newline and an id cannot.
-        self.oids: dict[str, str] = {}
-        for record in model_rules.split_nul(self._run(["ls-tree", "-r", "-z", self.commit]).decode()):
-            meta, path = record.split("\t", 1)
-            mode, kind, oid = meta.split()
-            if kind == "blob":
-                self.oids[path] = oid
-        self.files = list(self.oids)
-        self.committed = self._run(["show", "-s", "--format=%cI", self.commit]).decode().strip()
-
-    def _run(self, args: list[str], stdin: bytes | None = None) -> bytes:
-        done = subprocess.run([*self.git, *args], input=stdin, capture_output=True, check=False)
-        if done.returncode != 0:
-            raise CollectError(f"git {args[0]} exited {done.returncode}: {done.stderr.decode(errors='replace').strip()}")
-        return done.stdout
-
-    def read(self, paths: list[str]) -> dict[str, str]:
-        """Many files at the ref through one `git cat-file --batch`; a path not in the tree is absent.
-
-        Blobs are requested by object id, one `<oid>` per line: a path is never
-        put on a line, because a tracked path may contain a newline.
-        """
-        wanted = [(path, self.oids[path]) for path in paths if path in self.oids]
-        if not wanted:
-            return {}
-        out = self._run(["cat-file", "--batch"], "".join(f"{oid}\n" for _, oid in wanted).encode())
-        found: dict[str, str] = {}
-        position = 0
-        for path, oid in wanted:
-            newline = out.index(b"\n", position)
-            header = out[position:newline].split()
-            if header[0].decode() != oid or header[1] != b"blob":
-                raise CollectError(f"git cat-file answered {header!r} for {oid} ({path!r})")
-            size = int(header[2])
-            found[path] = out[newline + 1 : newline + 1 + size].decode("utf-8", "replace")
-            position = newline + 1 + size + 1
-        return found
 
 
 def collect(
@@ -130,7 +80,7 @@ def collect(
         tree = None
         if handle.readable:
             try:
-                tree = Tree(handle.git_dir, str(handle.commit))
+                tree = handle.tree()
             except CollectError as error:
                 record["error"] = f"{name} cannot be read at {handle.ref}: {error}"
         else:

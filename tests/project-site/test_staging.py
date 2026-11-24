@@ -494,6 +494,27 @@ class RegistryTreeTest(unittest.TestCase):
             staging.Repositories(tree=self.tree).get("opengwasdb", files=True)
 
 
+class RepositoryReadTest(unittest.TestCase):
+    """A repository's files are read one way: through its handle, at the commit read or one named (og-dev-hub#6)."""
+
+    def test_named_files_are_read_at_the_commit_read_or_at_another(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="repo-read-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        git(root, "init", "-q", "-b", "main")
+        for name, text in (("a.txt", "one\n"), ("odd\nname.py", "x = 1\n")):
+            (root / name).write_text(text, encoding="utf-8")
+        git(root, "add", "-A")
+        git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "commit", "-q", "-m", "first")
+        first = git(root, "rev-parse", "HEAD")
+        (root / "a.txt").write_text("two\n", encoding="utf-8")
+        git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "commit", "-qam", "second")
+        handle = staging.Repositories(git_dirs={"opengwasdb": root}).get("opengwasdb")
+
+        self.assertEqual(handle.read(["a.txt", "odd\nname.py", "missing.txt"]), {"a.txt": "two\n", "odd\nname.py": "x = 1\n"})
+        self.assertEqual(handle.read(["a.txt"], at=first), {"a.txt": "one\n"})
+        self.assertEqual(sorted(handle.tree().files), ["a.txt", "odd\nname.py"])
+
+
 class ReadHandleTest(unittest.TestCase):
     """One read handle per listed repository per run: cloned, fetched once, and a failure recorded (og-dev-hub#9)."""
 

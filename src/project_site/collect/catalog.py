@@ -19,13 +19,11 @@ from typing import Any
 
 from ogstores import paths
 
-from project_site import staging
 from project_site.collect.common import CollectError
 
 
-def default_root(registry: Path | None = None) -> Path:
+def default_root(registry: Path) -> Path:
     """`<artifact root>/catalog/versions`, the root read from `registry`'s configuration, never an installed package's."""
-    registry = registry if registry is not None else staging.registry_files()
     return paths.artifact_root(repo_root=registry) / "catalog" / "versions"
 
 
@@ -78,8 +76,8 @@ def _version(directory: Path, current: str | None) -> dict[str, Any]:
     }
 
 
-def collect(root: Path | None = None) -> dict[str, Any]:
-    root = default_root() if root is None else Path(root)
+def collect(root: Path) -> dict[str, Any]:
+    root = Path(root)
     if not root.is_dir():
         raise CollectError(f"catalog root {root} does not exist")
     link = root.parent / "current"

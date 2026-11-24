@@ -24,10 +24,15 @@ run**. One read handle per repository per run is the one
 owner of this (`project_site.staging.Repositories`: given a name, the handle's
 clone, ref, commit and fetch record), so the architecture, the work and the
 render's engine docs read the same commit of each. A repository with
-`visibility: null` is planned, and never cloned. Only opengwasdb-stores also has
-its files extracted (`stores/`, `docs/`, `CONTEXT.md`, `pixi.lock`,
-`ogstores.yaml`, by `git archive` at that commit), because only its readers need
-files. `--registry PATH` reads that checkout instead, at its `HEAD`.
+`visibility: null` is planned, and never cloned. A repository's files are read
+one way, through its handle (`Repository.read(paths, at=...)`, or `tree()` for
+all of them, both by object id through git, at the commit read unless another is
+named). Only opengwasdb-stores also has its files extracted (`stores/`, `docs/`,
+`CONTEXT.md`, `pixi.lock`, `ogstores.yaml`, by `git archive` at that commit),
+because only its readers need files on disk: the Stores, Records and Catalog
+collectors are given paths under the run's own extraction
+(`staging.registry_files(repositories)`), never one of their own. `--registry
+PATH` reads that checkout instead, at its `HEAD`.
 
 Every clone and fetch of the site's clones under the work root, and of the git
 directories the collectors read, goes through one owner,

@@ -171,8 +171,7 @@ def _baseline(args: argparse.Namespace, document: Mapping[str, Any], name: str, 
     """Print how repository `name`'s layering baseline compares with its measured upward imports; True when it does not match."""
     repo = document["repos"][name]
     try:
-        handle = args.repositories.get(name).require()
-        text = architecture.Tree(handle.git_dir, repo["commit"]).read([BASELINE_PATH]).get(BASELINE_PATH)
+        text = args.repositories.get(name).require().read([BASELINE_PATH], at=repo["commit"]).get(BASELINE_PATH)
     except (common.CollectError, OSError) as error:
         # An unreadable repository is not an absent baseline: never certify the check.
         raise Unavailable(f"{name} layering baseline: not read ({error})") from error
