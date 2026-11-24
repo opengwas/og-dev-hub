@@ -26,6 +26,36 @@ no `/data`, no private repository and no board. It is published at
 It shows no planned state (the project board's) and no running state (the
 operations dashboard's).
 
+## How it is published
+
+`.github/workflows/site.yml` builds and publishes the site; nobody publishes by hand.
+
+- **Triggers:** a push to `main`, a nightly run at 05:17 UTC (so the built state
+  follows the other repositories' `main`), and `workflow_dispatch`.
+- **Build job:** `pixi install --locked`, `pixi run site`, then the `_site/` upload
+  (`actions/upload-pages-artifact`). It needs no secret and no token.
+- **Deploy job:** `actions/deploy-pages`, with `pages: write` and `id-token: write`
+  on that job alone. It runs only from `main`: a pull request, or a dispatch on
+  another branch, builds but never deploys.
+- **Ordering:** the workflow's `concurrency` group is `site-<ref>` with
+  `cancel-in-progress: false`, so runs on `main` queue one at a time and a running
+  deploy finishes. A pull request has its own ref, so it never waits on a deploy.
+- **Pull requests** run the build job only, so a build error fails the check. One
+  workflow serves both, so the pull-request build cannot drift from the published one.
+
+**The 60-day pause.** GitHub disables a scheduled workflow after 60 days without
+activity in the repository, and the site then goes stale without warning. Re-enable
+it with `gh workflow enable site.yml -R opengwas/og-dev-hub`.
+
+### One-time switch to Actions (2026-11-24; the owner removes this list once done)
+
+The Pages source is still the `gh-pages` branch. In order:
+
+1. Switch the source: `gh api -X PUT repos/opengwas/og-dev-hub/pages -f build_type=workflow`
+2. Allow `main` to deploy: `gh api -X POST repos/opengwas/og-dev-hub/environments/github-pages/deployment-branch-policies -f name=main -f type=branch`
+3. Merge.
+4. After the first successful deploy, delete `gh-pages`: `gh api -X DELETE repos/opengwas/og-dev-hub/git/refs/heads/gh-pages`
+
 ## What a build reads
 
 `pixi run site` runs the architecture collector in its public mode
