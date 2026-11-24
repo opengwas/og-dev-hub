@@ -12,8 +12,15 @@ version = "0.1.0"
 python = "3.12.*"
 pip = "*"
 pyyaml = "*"
-# The render (`site`, `site-preview`, `site-publish`).
-quarto = "*"
+# The render (`site`, `site-preview`, `site-publish`). Pinned to the version
+# opengwasdb-stores' lock rendered the site with when it moved here, with its Sass
+# (og-dev-hub#7), so the move changes nothing the site renders: a newer Quarto
+# writes different `site_libs/` and a different search index. Moving it is a
+# change of its own.
+quarto = "==1.9.38"
+# Quarto compiles the theme with it, and another version writes the same colours
+# in other numbers, so it is pinned with Quarto.
+dart-sass = "==1.102.0"
 # The board and Releases collectors call `gh`; staging, the collectors and the
 # publish call `git`.
 gh = "*"
