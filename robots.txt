@@ -1,0 +1,1 @@
+Sitemap: https://blog.opengwas.io/og-dev-hub/sitemap.xml

@@ -1,0 +1,114 @@
+# Planning is pure; artifact existence is a runtime fact
+
+Amends [0023](0023-the-registry-store-seam-is-a-command-line.md) with a bounded,
+syntactic exception to its opaque-options rule. ADR 0023's 17 November 2026
+amendment records the additional worker-count forwarding exception for stores#358.
+
+**Amended for opengwasdb v0.6.0 (opengwas/opengwasdb#354).** Existence is no
+longer the executor's only question about a present artifact. An
+`extract-variant-reference` before v0.6.0 named its routing column
+`source_keys`; v0.6.0 renamed it `routed_source_keys` when it added
+`reoriented_keys`, the source keys whose statistics the lift re-oriented, and
+every reader there refuses an artifact that still names `source_keys`
+(`UnmarkedArtifactError`). So `run.execute_step` reads a present artifact's
+header line, as the engine reads it, and refuses one that names that column
+with `UnmarkedVariantReferenceError`: it writes a failed record, runs nothing,
+and leaves the file where it is. It does not delete it and extract again,
+because the destination may be a shared or pre-computed reference it was
+handed, which other releases read; the operator deletes it, and the next run
+extracts. Every other judgement of an artifact's content stays the engine's,
+made when the build reads it.
+
+A Build Recipe may declare an optional `variant_reference` pre-build stage for the
+Dense-VCF and Hybrid builders (#145): the release wants a variant axis extracted
+from its own derived build manifest before the store build runs:
+
+```yaml
+build:
+  command: build-dense-vcf
+  options:
+    variant-reference: /artifact/OGS-00042/work/variant-ref.tsv.gz
+  variant_reference:
+    output: /artifact/OGS-00042/work/variant-ref.tsv.gz
+    options:
+      n-workers: 16
+```
+
+The stage has one property the rest of the seam does not: the artifact it names
+may already exist. It can be a shared panel computed once for many releases, a
+plain ALID list, or a store Variant Table -- `opengwasdb` distinguishes these by
+content, not suffix. Whether the file is present is a fact about the build host at
+the moment the step runs, not a fact about the accepted bundle, which is fixed
+input. That mismatch is the whole decision: where does the existence check go?
+
+## Decision
+
+- **`plan()` stays pure.** It emits the `extract-variant-reference` Step whenever
+  the Build Recipe declares `variant_reference`, and does nothing else. It resolves
+  the derived build manifest path and the declared destination with `paths.py`,
+  appends the destination to the build step's inputs, and performs no filesystem
+  I/O. It never asks whether the destination exists. The same bundle yields the
+  same `[Step]` on every host, every run.
+- **The executor decides at runtime.** `run.execute_step` checks the declared
+  destination when the step actually runs. If it is present, no subprocess is
+  launched and a success record is written with `skipped: true` and
+  `skip_reason: provided`. If it is absent, `opengwasdb extract-variant-reference`
+  runs under the existing process-group supervision and timeout, writing to a
+  staged sibling that is atomically renamed into place on success and removed on
+  failure or interruption. A partial artifact therefore never satisfies a later
+  existence check.
+- **`register` records the provenance.** The assembled `validation.yaml` states
+  whether the variant reference was `provided` (the step skipped, or a build
+  option named a panel with no declared pre-stage, as OGS-00004/OGS-00005 do) or
+  `extracted` (the step ran). A release that uses no variant reference carries no
+  such key.
+- **One bounded cross-check, the syntactic exception to ADR 0023.** `plan()`
+  compares the declared `variant_reference` destination with the build step's
+  `variant-reference` option and rejects a Build Recipe whose two copies of the
+  same path disagree, or that declares the pre-stage without the option. ADR 0023
+  otherwise keeps option semantics opaque; this exception exists because two
+  paths for one artifact must not be allowed to diverge
+  silently. The check is syntactic -- path equality on the declared strings, no
+  filesystem access -- so it preserves the purity the decision rests on.
+
+## Why planning stays pure
+
+- **Testability by string comparison.** The plan suite asserts `plan()`'s output
+  against golden argv files. A deterministic function with no host input is exactly
+  what a golden comparison can pin; a planner that stat'ed the filesystem would
+  make the same bundle plan differently on CI and on the production host.
+- **Reproducibility.** The accepted bundle is immutable and is the only input.
+  An existence check at planning time would fold host state into the plan, so the
+  published `build_command` and the Snakefile's DAG would describe a machine rather
+  than a release.
+- **No race conditions at planning time.** A file can appear or be deleted between
+  the plan and the execution. Checking at planning time would freeze a stale answer
+  into a plan that is then executed later; checking at execution time asks the
+  question at the only moment the answer is meaningful.
+- **The DAG edge survives a skip.** Because the pre-stage is always planned, the
+  build step's declared input always names the artifact and Snakemake always
+  sequences extraction before the build. A skipped step still writes a record, so
+  the record chain the `{step}` rule and `register` walk is unbroken.
+
+## Why existence is a runtime fact
+
+Whether a shared panel is already on the host is operational state. The same
+bundle must be buildable on CI, on a developer laptop, and on the production host,
+and only the production host may already hold a multi-hour reference. Encoding the
+answer in the bundle would make the bundle non-portable; encoding it in the plan
+would make the plan wrong on whichever host it was not computed for. The executor
+is the single place that can see both the plan and the host, so the decision lives
+there.
+
+## Consequences
+
+- The planner carries a declared pre-stage the same way it carries every other
+  step: as argv and explicit inputs/outputs. The workflow needs one new step name;
+  the rules, the record chain, and `register` need no structural change.
+- A skipped extraction is visible in the release evidence rather than implied by
+  a missing file, so an auditor can distinguish "extracted during this run" from
+  "provided by the host".
+- The bounded option-key cross-check and ADR 0023's stores#358 worker-count
+  forwarding are the documented cases where the planner reads an option value
+  rather than only rendering it. Any future proposal to interpret another key
+  must be recorded explicitly, reuse a declared fact and preserve pure planning.

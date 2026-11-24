@@ -1,0 +1,2736 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.38">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>validation-rules-over-shared-scans – OpenGWASDB</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../opengwasdb/adr/0075-alleles-are-upper-cased-before-identity-assignment.html" rel="next">
+<link href="../../opengwasdb/adr/0072-association-admission.html" rel="prev">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-b46a788e9dbe025090d634cacd4b6238.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">OpenGWASDB</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="../../index.html"> 
+<span class="menu-text">Overview</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../../stores.html"> 
+<span class="menu-text">Stores</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../../epics.html"> 
+<span class="menu-text">Epics</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../../trends.html"> 
+<span class="menu-text">Trends</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../../changelog.html"> 
+<span class="menu-text">Changelog</span></a>
+  </li>  
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-architecture" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Architecture</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-architecture">    
+        <li>
+    <a class="dropdown-item" href="../../architecture.html">
+ <span class="dropdown-text">Pipeline</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../architecture-work.html">
+ <span class="dropdown-text">Work map</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../architecture-structure.html">
+ <span class="dropdown-text">Structure and health</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="../../reports.html"> 
+<span class="menu-text">Reports</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link active" href="../../reference.html" aria-current="page"> 
+<span class="menu-text">Registry</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../../opengwasdb/index.html"> 
+<span class="menu-text">Engine</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/opengwas/opengwasdb-stores"> <i class="bi bi-github" role="img" aria-label="opengwasdb-stores on GitHub">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../allele-orientation-failure-modes.html">Guides</a></li><li class="breadcrumb-item"><a href="../../opengwasdb/besd-resolver.html">Opengwasdb</a></li><li class="breadcrumb-item"><a href="../../opengwasdb/adr/0001-hybrid-sqlite-zarr-store-envelope.html">Adr</a></li><li class="breadcrumb-item"><a href="../../opengwasdb/adr/0074-validation-rules-over-shared-scans.html">Validation Rules over shared scans</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../reference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Registry</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Guides</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../allele-orientation-failure-modes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Allele Orientation &amp; Ancestry Gate Failure Modes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../amr-ld-panel-proposal.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">AMR Reference-Completion LD panel: a calibration proposal</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../amr-ld-pilot-evidence.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">AMR LD calibration pilot: evidence (#241)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../eaf-reference-flip.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">EAF reference flip (#409)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../epic-232-execution.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Epic #232 execution record</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../glossary.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OpenGWASDB Store Operations</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../hgdp1kgp-ld-release-evidence.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">HGDP+1kGP LD panel release evidence</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../hm3-pipeline-proof.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Real-data HM3 pipeline proof (stores #213)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../mvp-acquisition-conversion-retry-2026-10-12.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MVP dbGaP conversion retry and metadata-refresh qualification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../mvp-acquisition-reconciliation-2026-10-11.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MVP (PMID 39024449) acquisition reconciliation — owner decision record</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../mvp-metric-resolution-plan.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MVP metric-resolution plan (PMID 39024449) — planning checkpoint</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../ogs-00011-nworkers-10-amendment.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Execution-only amendment: <code>n-workers: 10</code> for OGS-00011’s build</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../ogs-00012-16-nworkers-16-amendment.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Execution-only amendment: <code>n-workers: 16</code> for MVP observed Stores 12/13/14/16</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../ogs-00016-to-ogs-00017-migration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Identity migration: FinnGen <code>OGS-00016</code> → <code>OGS-00017</code></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../qc-panel-concordance-report.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">QC Panel Concordance Study &amp; Reference Policy Report</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../release-metadata-schema.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Release Bundle schema</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../release-seam-audit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Release seam audit</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../runtime.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The release runtime: pinned, current-format, and gated before writes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../se-reencode-2026-10-26.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dense SE codec re-encode — 2026-10-24 to 2026-10-26</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../software-management-audit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Software management audit</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../software-management-proposal.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Unified software management proposal</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../store-release-readiness.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Store Release readiness reconciliation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../trait-mapping-ukb-b-round2.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">UKB-B canonical trait mapping: round 2</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../ukb-b-restored-inventory-2026-10-11.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Restored full UKB (ukb-b) Source Inventory and candidate — acceptance report (#219)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../ukb-restored-successors-plan.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Restored UKB successors: identity, completion-panel and qualification plan (#219)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../workflow-engine-comparison.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Workflow orchestration engine comparison</span></a>
+  </div>
+</li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+ <span class="menu-text">Adr</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0001-store-registry-boundary.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Store registry boundary</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0002-custom-manifest-generators-standard-release-manifests.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Custom manifest generators with standard release manifests</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0003-separate-release-manifests-from-build-recipes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Separate release manifests from build recipes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0004-store-release-identity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Store release identity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0005-release-errata.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Release errata</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0006-family-scoped-release-ids.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Family-scoped release IDs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0007-reference-completion-as-release-lineage.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reference completion as release lineage</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0008-registry-service-catalogue-boundary.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Registry and service catalogue boundary</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0009-source-formats-and-reader-capabilities.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Source formats and reader capabilities</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0010-single-source-store-families.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Single-source store families</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0011-reference-resources-are-build-resources.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reference resources are build resources</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0012-manifest-generators-own-orchestration-only.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Manifest generators own orchestration only</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0013-yaml-metadata-tsv-tables.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">YAML metadata and TSV tables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0014-release-manifest-bundles.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Release manifest bundles</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0015-registry-not-artifact-store.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Registry not artifact store</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0016-infer-variant-axis-policy.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Infer variant-axis policy</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0017-opengwasdb-owns-shared-analysis-schema.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OpenGWASDB owns the shared analysis schema</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0018-family-first-external-artifact-layout.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Family-first external artifact layout</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0019-reference-af-effect-scale-validation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reference-AF effect-scale validation as a generator stage</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0020-non-eur-ld-panels-from-hgdp-1kgp.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Non-EUR LD Reference Panels are built from HGDP+1kGP, at structurally lower power</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0021-trait-ontology-mapping-lookup-lives-in-registry.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Trait Ontology Mapping lookup lives in the registry, not OpenGWASDB</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0022-flat-opaque-store-ids.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Flat opaque Store Release IDs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0023-the-registry-store-seam-is-a-command-line.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The registry/store seam is a command line</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0024-one-family-record-no-source-collection-tier.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">One family record, and no Source Collection tier</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0025-registry-filters-excluded-analyses.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The registry filters excluded analyses before build</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0026-detached-builds-die-with-their-orchestrator.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Detached builds die with their orchestrator</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0027-build-recipes-carry-only-what-differs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Build Recipes carry only what differs between Store Releases</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0028-store-family-tier-retired.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Store Family tier retired</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0029-release-identity-file-trimmed.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Release identity file trimmed to identity, lineage, status and prose</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0030-artifact-path-is-the-identifier-migration-retired.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Artifact path is the identifier; the migration block is retired</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0031-pure-planning-runtime-artifact-existence.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Planning is pure; artifact existence is a runtime fact</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0032-phase-b-candidate-workflow.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Phase B candidate generation invokes the OpenGWASDB resolver</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0033-shared-stores-admit-only-maf-filtered-analyses.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">A shared Store admits only MAF-filtered Analyses</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0034-indexed-variant-subsets-in-release-planning.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Indexed Variant Subsets are optional, declared in the Build Recipe</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0035-manifest-generation-and-store-release-build.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Manifest Generation and Store Release Build meet at the Release Bundle</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0036-manifest-generation-is-one-pipeline-fed-by-source-connectors.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Manifest Generation is one pipeline fed by source connectors</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0037-reference-completion-replaces-its-store.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reference completion replaces its Store under the same id</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0038-one-home-per-kind-of-thing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">One home per kind of thing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0039-analysis-catalog.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Analysis Catalog is a generated, versioned database over Release Bundles</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0040-association-coverage-is-declared-in-the-release-bundle.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Association Coverage is declared in the Release Bundle, in one vocabulary</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0041-analysis-catalog-is-laid-out-for-http-range-reads.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Analysis Catalog is laid out for reading over HTTP, and opengwas.io’s browse indexes are part of its contract</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">Benchmark Output</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../benchmark-output/opengwasdb_hm3_release_benchmark.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Release benchmark report: HM3 Indexed Variant Subset</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
+ <span class="menu-text">Dev Hub</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../dev-hub/consolidation-plan.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Consolidating OpenGWASDB</span></a>
+  </div>
+</li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false">
+ <span class="menu-text">Adr</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth3 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../dev-hub/adr/0001-dev-hub-collects-and-owns-nothing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Dev Hub collects and owns nothing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../dev-hub/adr/0002-adrs-and-glossaries-live-with-their-owner.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">ADRs and glossaries live with their owner</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../dev-hub/adr/0003-one-data-api-serves-gwas-and-ld.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">One Data API serves GWAS and LD</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../dev-hub/adr/0004-repo-name-is-package-name-is-command.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Repository name = package name = command, and OpenGWASDB is retired</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../dev-hub/adr/0005-opengwasdb-is-the-data-layer.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OpenGWASDB is the data layer: one engine, one registry, one query package</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false">
+ <span class="menu-text">Spec</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth3 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../dev-hub/spec/project-site.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Project site data</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true">
+ <span class="menu-text">Opengwasdb</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth2 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/besd-resolver.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Resolving BESD Analyses</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/convert-store-to-0-2-0.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Converting a Store Release to format 0.2.0</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting started</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/gwas-vcf-resolver.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Resolving GWAS-VCF Analysis metadata</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/info-score-resolver.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">CORE resolver INFO and MAF diagnostics (stores #175, #176)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/install.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Installing OpenGWASDB</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/opengwas-roadmap.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OpenGWAS Roadmap</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/statistic-disagreement.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">When a source’s p-value and its beta/se disagree</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/store-format-compatibility.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Package version and Store format compatibility</span></a>
+  </div>
+</li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true">
+ <span class="menu-text">Adr</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth3 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0001-hybrid-sqlite-zarr-store-envelope.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Use a hybrid SQLite, tabix, and Zarr store envelope</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0002-store-local-variant-indices.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Use store-local variant indices</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0003-one-reference-assembly-per-store-release.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Use one reference assembly per Store Release</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0004-controlled-stored-effect-scale.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Use a controlled stored effect scale and loose original effect scale</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0005-store-z-and-se-as-canonical-statistics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Store Z and SE as canonical association statistics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0006-layout-independent-query-engine.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Use a layout-independent query engine</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0007-layout-independent-build-pipeline.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Use a layout-independent build pipeline</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0008-implement-dense-observed-only-first.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Implement Dense Observed-Only first</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0009-separate-layout-coverage-completion.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Separate layout, coverage, and completion</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0010-model-eaf-and-info-scope.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Model EAF and INFO scope explicitly</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0011-reference-completion-release-enhancement.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Make reference completion an optional release enhancement</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0012-reference-completed-query-semantics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Include imputed associations by default in reference-completed queries</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0013-association-status-nan-plus-imputed-mask.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Encode association status with NaN and an imputed mask</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0014-ragged-reference-completed-regions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Complete ragged regions within retained boundaries</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0015-dense-reference-completed-overflow.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Use ragged overflow for off-panel observations in dense completed stores</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0016-sample-size-kind-and-scope.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Factor sample-size kind and scope</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0017-long-allele-normalisation-and-hashing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Retain full normalised long alleles</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0018-local-path-cli-and-external-catalogue.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Use explicit local store paths and keep catalogues external</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0019-two-pass-vcf-build-with-inline-liftover.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Two-pass VCF build path with inline liftover</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0020-sparse-array-query-contract.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">ADR-0020: Sparse flat array query contract</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0021-clip-zarr-chunk-shape-to-array-dimensions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">ADR-0021: Clip zarr chunk shape to actual array dimensions at write time</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0022-dense-completed-axis-is-source-union-panel.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dense Reference-Completed variant axis is source ∪ reference panel, not panel-only</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0023-dense-completion-block-parallel-build.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dense Reference-Completion build: process pool over LD blocks, no thread layer, checkpointed resume</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0024-parallel-dense-vcf-build-disk-spill.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Parallel Dense VCF build: serial Pass 1, disk-spill Pass 2, no large IPC</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0025-dense-rho-matrix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dense Rho Matrix: distance-thinned self-axis, observed-only null Z, pleiodb CML estimator</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0026-hybrid-layout-dense-ragged-overflow.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hybrid Layout: Dense Component + Ragged Overflow for heterogeneous genome-wide collections</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0027-analysis-catalogue-ingestion-hub.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Analysis Catalogue as the ingestion hub; stores are subset views</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0028-ancestry-assignment-from-allele-frequencies.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ancestry assignment from allele frequencies; ancestry-matched completion</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0029-standardise-continuous-effects-via-phenotype-sd.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Standardise continuous-trait effects to SD units via phenotype-SD rescaling</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0030-analytical-metadata-travels-with-the-store.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Analytical Metadata travels with the Store Release; <code>analyses.tsv</code> replaces the SQLite <code>analyses</code> table</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0031-ld-panels-store-eigendecompositions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LD Reference Panels store eigendecompositions, not LD matrices</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0032-overview-html-is-a-single-tabbed-page-with-persisted-hit-counts.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><code>overview.html</code> is one tabbed page; Top-Hit Counts are persisted <code>analyses.tsv</code> columns, not rendered on the fly</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0033-query-facade-adapter-contract.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Query facade stays three adapters behind one documented contract</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0034-unify-analysestsv-across-layouts-retire-phenotype-id.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">One <code>analyses.tsv</code> schema for every layout; retire <code>phenotype_id</code>/<code>phenotype_label</code>; add Attribution Metadata</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0035-retire-gene-id-gene-name-scope-tissue-context.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Retire <code>gene_id</code>/<code>gene_name</code>; keep <code>tissue</code>/<code>context</code> scoped to what was measured</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0036-store-effect-allele-frequency-per-association.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Store effect allele frequency as a per-association array, per-Analysis opt-in</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0037-statistic-array-encodings.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Statistic array encodings: fixed-point z, residual-coded EAF, reference EAF for imputed cells</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0038-store-format-versioning-and-migration-policy.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Store format versioning, reader obligations, and migration expectations</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0039-completion-region-identity-and-ancestry-refusal.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reference Completion: what identifies a region, and what happens when a panel matches nothing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0040-top-hit-index-carries-decoded-eaf.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Top-hit indexes carry decoded effect allele frequency</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0041-reset-format-version-and-drop-pre-release-formats.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reset <code>format_version</code> to 0.1.0 and drop the pre-release formats</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0042-registry-orchestration-seam-and-manifest-precedence.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Registry-orchestration seam, canonical manifest column aliases, per-release option precedence, machine-readable evidence, and phenotype-SD computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0043-staging-work-isolation-and-commit-locking.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Staged Release work isolation and parent-directory commit locking</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0044-one-pass-analysis-resolution-with-bounded-evidence.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">One-pass pre-build Analysis resolution, with evidence bounded by configuration</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0045-resumable-manifest-resolver-with-atomic-records.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Resumable manifest Analysis resolution with atomic per-Analysis records</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0046-retain-full-source-scan-over-prefix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Retain the full source scan: a prefix is not a substitute for one-pass Analysis resolution</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0047-adopt-50k-ancestry-site-bound.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Adopt a 50,000-site ancestry bound for the full-catalog release</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0048-decouple-ancestry-site-bound-from-quantitative-phenotype-sd.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Decouple the ancestry-site bound from quantitative phenotype-SD evidence</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0049-resolve-effect-source-over-assuming-beta.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Resolve an Analysis’s effect source rather than assuming <code>beta</code></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0050-enumerate-effect-column-spellings.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Enumerate accepted effect-column spellings</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0051-derive-effect-from-signed-z-score.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Derive an effect from a signed z-score, EAF and per-variant N</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0052-canonicalise-non-autosomal-chromosome-labels.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Canonicalise non-autosomal chromosome labels</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0053-hybrid-build-phase-checkpoint-and-resume.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Phase-granularity checkpoint and resume for the Hybrid build tail</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0054-whole-stream-evidence-and-one-row-admission-rule.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Whole-stream evidence and one row-admission rule</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0055-recover-effect-and-standard-error-from-row-columns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Recover a row’s effect and standard error from its own columns</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0056-zarr-runtime-configuration-owned-by-the-array-seam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">zarr’s process-wide runtime configuration is owned by the array seam</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0057-store-format-0-2-0-zarr-v3-with-sharding.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Store format 0.2.0: Zarr v3 with sharding</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0058-dense-chunk-and-shard-shapes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dense chunk and shard shapes for format 0.2.0</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0059-convert-remaining-layouts-and-ragged-shards.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Convert every layout to 0.2.0, and bound the Ragged shards</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0060-variant-centric-index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">A variant-centric index for the Ragged and Hybrid Overflow components</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0061-indexed-variant-subsets.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Indexed Variant Subsets are optional full-statistic Dense query indexes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0062-resolve-besd-probes-from-one-per-file-esi-measurement.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Resolve BESD probes from one per-file <code>.esi</code> measurement</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0063-read-tabular-collections-through-a-column-map.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Read tabular collections through a Column Map</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0064-association-coverage-is-a-build-input.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Association Coverage is a build input, not a layout constant</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0065-count-overflow-only-alids-a-hybrid-index-skips.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Leave an Overflow-only ALID out of a Hybrid’s Indexed Variant Subset on request, and count it</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0066-withhold-an-rsid-its-sources-dispute.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Withhold an rsid its sources dispute, and read compound ids as their rs identifier</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0067-per-association-sample-size-and-besd-allele-frequency.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Store per-association sample size, and the BESD allele frequency, in Ragged Stores</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0068-an-se-beyond-float16-is-missing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">An SE beyond float16’s range is not stored</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0069-refuse-an-effect-that-contradicts-its-sources-p-value.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Refuse an effect that contradicts its source’s own p-value</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0070-one-presence-rule-for-every-reader.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">One presence rule for every association reader</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0071-variant-routing-is-one-module.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Variant Routing is one module</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0072-association-admission.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Association Admission: one rule set, one gate, one record</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0074-validation-rules-over-shared-scans.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Validation Rules over shared scans</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0075-alleles-are-upper-cased-before-identity-assignment.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Alleles are upper-cased before identity assignment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0076-the-source-reader-is-one-seam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Source Reader is one seam</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0077-one-module-owns-how-an-association-is-encoded.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">One module owns how an association is encoded</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0078-completion-keeps-its-sources-se-model.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reference Completion keeps its source’s SE model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0079-indel-alids-spell-the-reference-allele-first.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">An indel’s ALID spells its reference allele first</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0080-completion-writes-its-planes-a-unit-at-a-time-across-workers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Completion writes its planes a unit at a time, across workers</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0081-no-second-implementation-language-after-epic-307.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">No compiled extension after epic #307: what remains is compiled numerics, layout and one reader</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0082-the-package-is-licensed-under-the-sustainable-use-license.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The package is licensed under the Sustainable Use License</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0083-every-tagged-release-from-a-boundary-is-published-to-pypi.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Every tagged release from a boundary is published to PyPI, reconciled</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0084-storable-standardises-every-builders-se.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><code>storable</code> standardises every builder’s SE by its Analysis’s phenotype SD</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/adr/0085-declare-the-test-a-sources-p-value-comes-from.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Declare the test a source’s p-value comes from</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="false">
+ <span class="menu-text">Benchmark Output</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth3 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/benchmark-output/opengwasdb_epic307_after.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Epic #307: OGS-00009 after measurement (#322)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/benchmark-output/opengwasdb_se_residual_implementation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Residual-SE implementation pilot</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/benchmark-output/opengwasdb_store_comparison_ogs00009_zarr3_set_l.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OGS-00009 on zarr-python 3 against set L (#244 Stage B)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/benchmark-output/opengwasdb_ukbb_dense_completed_issue135_benchmark.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reference-completed ukb-b EAF rechunk benchmark (issue #135)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/benchmark-output/opengwasdb_ukbb_dense_issue134_benchmark.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">ukb-b Dense top-hit EAF index benchmark (#134)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/benchmark-output/opengwasdb_ukbb_dense_issue135_benchmark.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">ukb-b EAF baseline rechunk benchmark (issue #135)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/benchmark-output/opengwasdb_ukbb_dense_issue148_benchmark.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">ukb-b at Store format 3.0: residual-coded <code>se</code> (issue #148)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/benchmark-output/opengwasdb_ukbb_dense_rho_benchmark.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dense Rho Matrix: genome-scale run on the real ukb-b store (issue 051)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/benchmark-output/opengwasdb_zarr_v3_sharding_summary.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Zarr v3 with sharding: before and after (epic #240)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="false">
+ <span class="menu-text">Opengwasdb 246 Shapes</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth4 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/benchmark-output/opengwasdb_246_shapes/opengwasdb_store_comparison_ogs00009_shapes_s256_set_l.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OGS-00009 across chunk and shard shapes (#246)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/benchmark-output/opengwasdb_246_shapes/opengwasdb_store_comparison_ogs00009_shapes_s256_set_l_pair2.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OGS-00009 across chunk and shard shapes (#246)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/benchmark-output/opengwasdb_246_shapes/opengwasdb_store_comparison_ogs00009_shapes_set_l.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OGS-00009 across chunk and shard shapes (#246)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/benchmark-output/opengwasdb_246_shapes/opengwasdb_store_comparison_ogs00009_shapes_set_l_pair2.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OGS-00009 across chunk and shard shapes (#246)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/benchmark-output/opengwasdb_246_shapes/PROVENANCE.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Provenance: #246’s OGS-00009 shape comparison</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="false">
+ <span class="menu-text">Opengwasdb Zarr3 Read Levers</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-11" class="collapse list-unstyled sidebar-section depth4 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/benchmark-output/opengwasdb_zarr3_read_levers/PROVENANCE.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Provenance: #244’s zarr-python 3 read-lever outputs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/benchmark-output/opengwasdb_zarr3_read_levers/RESULTS-step1.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">244 step 1: zarr 3 read levers. Results</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="false">
+ <span class="menu-text">Reviews</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-12" class="collapse list-unstyled sidebar-section depth3 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/reviews/v0.1-compatibility.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">v0.1 Dense Observed-Only Compatibility Review</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-13" role="navigation" aria-expanded="false">
+ <span class="menu-text">Spec</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-13" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-13" class="collapse list-unstyled sidebar-section depth3 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/spec/bounded-evidence-scan-preregistration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Preregistration: Bounded-Prefix and Compiled-Parser Acceleration for Resolver Evidence Scans</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/spec/bounded-evidence-scan-report.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bounded-Prefix and Compiled-Parser Resolver Evidence Scan: Results (#209)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/spec/resolver-effect-consistency.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Resolver effect-consistency check (ADR 0069, issue #345)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/spec/resolver-reference-overlap.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Resolver reference-overlap diagnostics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../opengwasdb/spec/store-format.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OpenGWASDB Store Format Specification</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-14" role="navigation" aria-expanded="false">
+ <span class="menu-text">Spec</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-14" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-14" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../spec/analysis-catalog.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Analysis Catalog</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../spec/project-site.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Project site data</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../spec/qc-panel-concordance-preregistration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Preregistration: QC Panel Concordance Study &amp; Reference-AF Fallback Policy</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../spec/release-config.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Release config</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../spec/source-connectors.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Source connectors and freeze</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../spec/store-audit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Store Audit</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../spec/store-release-workflow.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Store Release workflow</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../spec/yardstick.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The yardstick</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-15" role="navigation" aria-expanded="false">
+ <span class="menu-text">Tasks</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-15" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-15" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../tasks/rescue-remaining-studies.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Task: Rescue remaining unassigned and orientation-failing studies for GWAS Catalog EUR Hybrid</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-16" role="navigation" aria-expanded="true">
+ <span class="menu-text">Decisions (ADRs)</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-16" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-16" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0001-store-registry-boundary.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Store registry boundary</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0002-custom-manifest-generators-standard-release-manifests.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Custom manifest generators with standard release manifests</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0003-separate-release-manifests-from-build-recipes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Separate release manifests from build recipes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0004-store-release-identity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Store release identity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0005-release-errata.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Release errata</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0006-family-scoped-release-ids.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Family-scoped release IDs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0007-reference-completion-as-release-lineage.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reference completion as release lineage</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0008-registry-service-catalogue-boundary.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Registry and service catalogue boundary</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0009-source-formats-and-reader-capabilities.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Source formats and reader capabilities</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0010-single-source-store-families.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Single-source store families</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0011-reference-resources-are-build-resources.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reference resources are build resources</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0012-manifest-generators-own-orchestration-only.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Manifest generators own orchestration only</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0013-yaml-metadata-tsv-tables.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">YAML metadata and TSV tables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0014-release-manifest-bundles.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Release manifest bundles</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0015-registry-not-artifact-store.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Registry not artifact store</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0016-infer-variant-axis-policy.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Infer variant-axis policy</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0017-opengwasdb-owns-shared-analysis-schema.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OpenGWASDB owns the shared analysis schema</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0018-family-first-external-artifact-layout.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Family-first external artifact layout</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0019-reference-af-effect-scale-validation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reference-AF effect-scale validation as a generator stage</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0020-non-eur-ld-panels-from-hgdp-1kgp.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Non-EUR LD Reference Panels are built from HGDP+1kGP, at structurally lower power</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0021-trait-ontology-mapping-lookup-lives-in-registry.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Trait Ontology Mapping lookup lives in the registry, not OpenGWASDB</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0022-flat-opaque-store-ids.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Flat opaque Store Release IDs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0023-the-registry-store-seam-is-a-command-line.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The registry/store seam is a command line</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0024-one-family-record-no-source-collection-tier.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">One family record, and no Source Collection tier</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0025-registry-filters-excluded-analyses.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The registry filters excluded analyses before build</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0026-detached-builds-die-with-their-orchestrator.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Detached builds die with their orchestrator</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0027-build-recipes-carry-only-what-differs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Build Recipes carry only what differs between Store Releases</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0028-store-family-tier-retired.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Store Family tier retired</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0029-release-identity-file-trimmed.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Release identity file trimmed to identity, lineage, status and prose</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0030-artifact-path-is-the-identifier-migration-retired.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Artifact path is the identifier; the migration block is retired</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0031-pure-planning-runtime-artifact-existence.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Planning is pure; artifact existence is a runtime fact</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0032-phase-b-candidate-workflow.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Phase B candidate generation invokes the OpenGWASDB resolver</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0033-shared-stores-admit-only-maf-filtered-analyses.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">A shared Store admits only MAF-filtered Analyses</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0034-indexed-variant-subsets-in-release-planning.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Indexed Variant Subsets are optional, declared in the Build Recipe</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0035-manifest-generation-and-store-release-build.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Manifest Generation and Store Release Build meet at the Release Bundle</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0036-manifest-generation-is-one-pipeline-fed-by-source-connectors.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Manifest Generation is one pipeline fed by source connectors</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0037-reference-completion-replaces-its-store.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reference completion replaces its Store under the same id</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0038-one-home-per-kind-of-thing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">One home per kind of thing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0039-analysis-catalog.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Analysis Catalog is a generated, versioned database over Release Bundles</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0040-association-coverage-is-declared-in-the-release-bundle.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Association Coverage is declared in the Release Bundle, in one vocabulary</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../adr/0041-analysis-catalog-is-laid-out-for-http-range-reads.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Analysis Catalog is laid out for reading over HTTP, and opengwas.io’s browse indexes are part of its contract</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-17" role="navigation" aria-expanded="true">
+ <span class="menu-text">Specifications</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-17" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-17" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../spec/analysis-catalog.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Analysis Catalog</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../spec/project-site.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Project site data</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../spec/qc-panel-concordance-preregistration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Preregistration: QC Panel Concordance Study &amp; Reference-AF Fallback Policy</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../spec/release-config.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Release config</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../spec/source-connectors.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Source connectors and freeze</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../spec/store-audit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Store Audit</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../spec/store-release-workflow.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Store Release workflow</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../spec/yardstick.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The yardstick</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-18" role="navigation" aria-expanded="true">
+ <span class="menu-text">Benchmarks and reports</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-18" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-18" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../benchmark-output/opengwasdb_hm3_release_benchmark.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Release benchmark report: HM3 Indexed Variant Subset</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-19" role="navigation" aria-expanded="true">
+ <span class="menu-text">This site</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-19" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-19" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../dev-hub/site.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The site</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../dev-hub/spec/project-site.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Project site data</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#validation-rules-over-shared-scans" id="toc-validation-rules-over-shared-scans" class="nav-link active" data-scroll-target="#validation-rules-over-shared-scans">Validation Rules over shared scans</a>
+  <ul class="collapse">
+  <li><a href="#context" id="toc-context" class="nav-link" data-scroll-target="#context">Context</a></li>
+  <li><a href="#decision" id="toc-decision" class="nav-link" data-scroll-target="#decision">Decision</a></li>
+  <li><a href="#consequences" id="toc-consequences" class="nav-link" data-scroll-target="#consequences">Consequences</a></li>
+  <li><a href="#amendment-no-rule-reads-the-dense-eaf-exception-table-whole-issue-387" id="toc-amendment-no-rule-reads-the-dense-eaf-exception-table-whole-issue-387" class="nav-link" data-scroll-target="#amendment-no-rule-reads-the-dense-eaf-exception-table-whole-issue-387">Amendment: no rule reads the Dense EAF exception table whole (issue #387)</a></li>
+  <li><a href="#amendment-a-check-rides-the-association-scan-and-the-scan-reads-the-table-once-issue-314" id="toc-amendment-a-check-rides-the-association-scan-and-the-scan-reads-the-table-once-issue-314" class="nav-link" data-scroll-target="#amendment-a-check-rides-the-association-scan-and-the-scan-reads-the-table-once-issue-314">Amendment: a check rides the association scan, and the scan reads the table once (issue #314)</a></li>
+  <li><a href="#amendment-a-dense-grids-band-pass-is-spread-across-forked-workers-issue-315" id="toc-amendment-a-dense-grids-band-pass-is-spread-across-forked-workers-issue-315" class="nav-link" data-scroll-target="#amendment-a-dense-grids-band-pass-is-spread-across-forked-workers-issue-315">Amendment: a Dense grid’s band pass is spread across forked workers (issue #315)</a></li>
+  <li><a href="#alternatives-considered" id="toc-alternatives-considered" class="nav-link" data-scroll-target="#alternatives-considered">Alternatives considered</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../allele-orientation-failure-modes.html">Guides</a></li><li class="breadcrumb-item"><a href="../../opengwasdb/besd-resolver.html">Opengwasdb</a></li><li class="breadcrumb-item"><a href="../../opengwasdb/adr/0001-hybrid-sqlite-zarr-store-envelope.html">Adr</a></li><li class="breadcrumb-item"><a href="../../opengwasdb/adr/0074-validation-rules-over-shared-scans.html">Validation Rules over shared scans</a></li></ol></nav></header>
+
+
+
+
+<section id="validation-rules-over-shared-scans" class="level1">
+<h1>Validation Rules over shared scans</h1>
+<p>Issue <a href="https://github.com/opengwas/opengwasdb/issues/55">#55</a>, part of epic #58. Records how <code>validate</code> is organised: as named rules, judged against a release’s targets, with the rules that read association values sharing one streamed read.</p>
+<section id="context" class="level2">
+<h2 class="anchored" data-anchor-id="context">Context</h2>
+<p><code>validate</code> was three per-layout orchestrators, Dense, Ragged and Hybrid, in one module of 4,434 lines, each a sequence of checks that appended messages to one shared error list. That shape caused three problems, and none of them raised an error.</p>
+<ul>
+<li><strong>No rule could be named.</strong> A test asserted on message substrings, so it could not tell “this rule failed” from “some rule with a similar message failed”, nor see a collateral failure beside the intended one. A caller could not run one rule.</li>
+<li><strong>One failure hid others.</strong> 29 checks returned early when the shared list was non-empty. A bad vocabulary skipped the Dense band pass, the Top-Hit pass and rho. Any error skipped the z overflow-table rule. A Dense Component error skipped the Overflow. A release with two independent defects reported one.</li>
+<li><strong>Planes were read and decoded several times.</strong> A full validate read a Dense grid’s <code>se</code>, <code>eaf</code> and per-variant arrays three times and its imputed mask six. On a Ragged release it decoded the EAF twice (once to predict SE, once to range-check it), each time gathering <code>eaf_baseline</code> per association from Zarr. It also read <code>variant_index</code> once per check that needed it. The same rule was written once per layout, and the copies drifted. The Ragged Top-Hit check sampled 1,000 cells where the Dense one was exhaustive, the Overflow’s frequencies were never checked, and the Ragged release’s Store Variant Table was never validated.</li>
+</ul>
+</section>
+<section id="decision" class="level2">
+<h2 class="anchored" data-anchor-id="decision">Decision</h2>
+<p><strong>A Validation Rule is a named judgement of one kind of target</strong> (<code>validation/rule.py</code>):</p>
+<ul>
+<li>A <code>Rule</code> has a stable <code>name</code>, the <code>kinds</code> of target it judges (<code>RELEASE</code>, <code>GRID</code>, <code>CSR</code>), a <code>when</code> predicate, the rules it runs <code>after</code>, and a severity.</li>
+<li>A <code>Check</code> reads what it needs and yields messages.</li>
+<li>A <code>Fold</code> is judged from a shared <code>Scan</code>. It <code>measure</code>s each block, the measures are added, and it <code>judge</code>s the total.</li>
+<li><code>Skip</code> says a rule cannot judge this target. It is recorded with its reason, and it is not a pass.</li>
+</ul>
+<p><strong>A release is judged as targets</strong> (<code>validate.release_targets</code>): - a Dense release is a release and its grid; - a Ragged release is a release and its association sequence; - a Hybrid release is its outer release, its Ragged Overflow, and, when it opens as a Dense release, its Dense Component’s release and grid.</p>
+<p>A prerequisite is looked up on the target, then on the targets it belongs to. A prerequisite that does not apply to a target constrains nothing.</p>
+<p><strong>The runner</strong> (<code>validation/run.py</code>) runs the rules in registration order on every target each applies to: - A rule whose prerequisite failed or was skipped is skipped, with the names that blocked it. A selection runs the named rules and their prerequisites, and an unknown name is refused before anything is read. - An exception fails the rule that raised it, as <code>validation failed: …</code>, after whatever it found. It fails no other rule. That holds for a rule’s <code>when</code> too, which is asked only once the rule’s prerequisites passed: it may read what a failed prerequisite found broken. A rule blocked there is recorded as skipped, whether or not its <code>when</code> would have accepted the target. A prerequisite on a fold’s own scan is the exception, below: it is decided after the read, and the fold’s <code>when</code> is asked before it. - Findings come out in rule order, then target order. - A scan is read once per target, for every fold on it that can run there. A read that fails part-way is reported by the first fold still measuring, and the others are skipped. A plane decoded lazily that cannot be decoded (<code>Unreadable</code>) is reported by the first fold that reads it, and blocks only the folds that read it after. So an undecodable SE no longer hides the side table that explains it. A plane whose reason another fold on the scan already reports names that fold, and its readers are skipped behind it: an undecodable EAF is reported by <code>side_tables.eaf_exceptions</code>, which names the cell, and <code>associations.eaf_range</code> is skipped behind it. Selected without that fold, the reader reports the plane. - A fold’s <code>after</code> may name an earlier fold on the same scan, and the registry refuses a later one. That prerequisite is decided when the pass ends. Every fold measures in the one read; then the folds are judged in registration order, and one standing on a fold that failed or was skipped is skipped behind it, its <code>judge</code> not called. So a prerequisite means one thing everywhere: a selection takes it, and its failure skips what stands on it. <code>variant_table.representatives</code> runs after <code>variant_table.rows</code> this way: its rows are chosen from the offsets, so it stands on the row count. - A rule with nothing to judge raises <code>Skip</code>: <code>associations.eaf_range</code> on a component holding no frequencies records “no frequencies”, not a pass. - <code>fidelity.source</code> runs after every error rule before it, and is stopped only by one that failed (<code>only_failures_block</code>), as source fidelity ran only on a release with no error before. Each skip among its prerequisites stands behind a failure that is also one, or behind nothing to judge.</p>
+<p><strong>Three scans</strong> stream what the value rules judge: - <code>ASSOCIATIONS</code> reads a Dense grid in row bands and a sequence in windows of consecutive cells, under one 1 GiB decoded budget (#254). Each block reads every plane’s codes once. It decodes EAF through the plane classes, given the block in memory. SE is decoded from the block’s own EAF, and Z and SE only on first use. - <code>VARIANT_TABLE</code> streams the Store Variant Table once. - <code>BY_VARIANT</code> reads a variant index’s <code>analysis_index</code> once.</p>
+<p>A <code>Block</code> is the seam: a grid band’s (<code>GridSplit.read</code>, since #315), a sequence window’s (<code>_Sequence.window</code>), and <code>Block.of</code> for tests.</p>
+<p><strong>One rule for both layouts.</strong> Where a Dense rule and its Ragged twin judged the same thing, they are one rule, and each layout keeps the words it has always reported in. “Ragged Overflow se contains negative finite values” and “se contains negative finite values” are one rule, <code>associations.se_negative</code>.</p>
+<p><strong>The registry is the contract.</strong> Spec §20.0 lists every rule by name, in the order it runs, and <code>tests/test_validation_registry.py</code> holds the two together. <code>validate_store(path, rules=…)</code> and <code>ValidationResult.failed()</code>, <code>of()</code> and <code>skipped</code> reach the names from Python.</p>
+<p><strong><code>validate --format json</code> did not change (D1).</strong> Its keys stayed <code>ok</code>, <code>errors</code> and <code>warnings</code>, and its messages stayed byte-identical: opengwasdb-stores’ <code>register.validate_verdict</code> refuses any other key. Emitting rule names there was a two-repository follow-up: <code>register</code> first accepts an optional <code>findings</code> key, then this package emits it. That is #378, below.</p>
+<p><strong>The follow-up (#378) is this repository’s half of a two-repository change.</strong> <code>validate --format json</code> emits a fourth key, <code>findings</code>, naming each record’s rule, its severity (<code>error</code>, <code>warning</code> or <code>skip</code>), the target the rule judged, and the message it always had — or, for a skip, the reason recorded above. <code>ok</code>, <code>errors</code> and <code>warnings</code> still say what they said. <code>ValidationResult</code> keeps one ordered record list with <code>errors</code>, <code>warnings</code>, <code>skips</code> and <code>skipped</code> as projections, so what the CLI prints and what Python sees cannot drift apart. Spec §20.1 fixes the shape.</p>
+<p><strong>The stores half is a dependency, not a fact here.</strong> opengwasdb-stores’ <code>register.validate_verdict</code> accepts exactly <code>ok</code>, <code>errors</code> and <code>warnings</code> at the revision this landed, so it refuses a record an engine with this change writes. It must gain <code>findings</code> — accepting a record with or without the key, and checking the key’s items and their agreement with <code>errors</code> and <code>warnings</code> when it is present — before such an engine is pinned there. The two halves are ordered: the reader first, then the pin. Until then, this package’s own readers are the only ones that see the key.</p>
+<p><strong>Clarification: the CLI did not list skips until #378, and its “valid” stays truthful.</strong> <code>validate</code> printed <code>ok</code>, <code>errors</code> and <code>warnings</code>, and no skips; listing them was a follow-up, and #378 lists them. In a full run, the only run the CLI makes, a rule is skipped with no error recorded only where it has nothing to judge. A skip is recorded in these places: - <code>_Run.ready</code>, behind a prerequisite, and <code>_Run.conclude</code>, behind one on the fold’s own scan. A prerequisite that failed recorded an error. One that was skipped is one of these cases in turn. - <code>_Pass.drive</code>, behind a read that failed part-way. The first fold still measuring reports that read as an error. - <code>_Pass.unreadable</code>, behind the fold that reports an undecodable plane as an error. That fold is the first reader, or <code>side_tables.eaf_exceptions</code>, which reports every band it measured that could not be decoded. - <code>_contained</code>, where a rule raises <code>Skip</code> before reporting anything. Three do: - <code>associations.eaf_range</code>, “no frequencies”: the component has no <code>eaf</code> plane and no reference panel. - <code>by_variant.present</code>: a format 0.1.0 Ragged component without the variant-centric index, which spec §11.1 permits. The eight <code>by_variant.*</code> rules after it are skipped with it; there is no index for them to judge. - <code>sqlite.variant_aliases</code>: an <code>index.sqlite</code> with no alias table, which spec §20 lists as a skip.</p>
+<p>A <code>when</code> that declines a target records no skip: the target is not one the rule judges. <code>fidelity.source</code> is stopped only by a failure, not by a skip. A selection takes every prerequisite of what it names, so the same holds for a selection: <code>variant_table.representatives</code>, selected alone, brings <code>variant_table.rows</code>, which reports a row-count mismatch and skips it. <code>tests/test_validation_skips.py</code> holds the rules that raise <code>Skip</code>, and the rules their skips stop, to this list.</p>
+<p><strong>Admission’s witnesses.</strong> Six rules check, after the fact, what Association Admission (ADR 0072) guarantees of every cell it admits. Each records the Admission <code>Reason</code>s whose drops keep a cell it would fail out of a Store (<code>Rule.witnesses</code>): - <code>associations.markers_paired</code>: <code>se_unusable</code> and <code>effect_missing</code>; - <code>associations.markers_canonical</code> and <code>completion.imputed_present</code>: <code>z_nonfinite</code> and <code>se_unusable</code>; - <code>associations.se_negative</code>: <code>se_unusable</code>; - <code>csr.segment_order</code>, its repeat case: <code>duplicate_collapsed</code> and <code>duplicate_conflicting</code> (and <code>duplicate_reversed_indel</code>, until #316 retired it); - <code>completion.mask_binary</code>: none. It witnesses the cell guard’s flag rule, which no row’s <code>Reason</code> names.</p>
+<p>A rule naming a reason Admission lacks is refused at import: the reasons are read from Admission’s <code>Reason</code> enum, and <code>tests/test_admission_witnesses.py</code> holds the witness list to it. The rules and Admission deliberately do not share predicates where Admission is stricter than published Stores. Admission requires SE &gt; 0 and EAF in (0, 1); <code>validate</code> accepts SE ≥ 0, warns on <code>+inf</code>, and accepts EAF in [0, 1].</p>
+</section>
+<section id="consequences" class="level2">
+<h2 class="anchored" data-anchor-id="consequences">Consequences</h2>
+<ul>
+<li><strong>Rules run after unrelated failures (D4).</strong> Only failing Stores change. Every published Store’s <code>validate --format json</code> was byte-identical across #55’s change, except #380’s three 0.1.0 releases (below). #378’s key is a later change, and the JSON object gained a key there: the three keys #55 left alone still say what they said, and a reader that enumerates the keys must accept <code>findings</code>.</li>
+<li><strong>Coverage gained (D3).</strong> These checks held on one layout only, and now hold on all:
+<ul>
+<li>a Ragged release’s Store Variant Table;</li>
+<li>a sequence’s Top-Hit Index, every cell, completeness included, where it was a sample of 1,000;</li>
+<li>a completed Ragged release’s declaration against its mask, and its <code>completion_n_missing_total</code>;</li>
+<li>an Overflow’s frequencies. Every published Store passes them: OGS-00001, -00002, -00006, -00007, -00027, and OGS-00011’s Overflow.</li>
+</ul></li>
+<li><strong>A 0.1.0 Ragged component need not carry the variant-centric index (#380).</strong> Spec §11.1 requires it in 0.2.0. OGS-00004, -00005 and -00007 now pass.</li>
+<li><strong>Reads.</strong> The value rules read each plane once per target, and tests hold them to it by element count. On a completed Ragged release, a full validate read <code>z</code>, <code>se</code> and <code>eaf</code> 2.17 times, <code>imputed</code> 3.17 times and <code>eaf_baseline</code> 3 times, and now reads them 1.17, 1.17 and 1.0 times. The remainder is <code>by_variant.sample</code>’s cells.</li>
+<li><strong>Time and memory</strong>, measured against the release before. RSS is read from the validating process alone. Wall times are from a shared node.
+<ul>
+<li>OGS-00006, a Ragged release, two runs each, alternating: 52–53 s against 55 s, and peak RSS from 3.8 GiB to 1.6 GiB.</li>
+<li>OGS-00008, a Dense release, two runs each, alternating: 41–44 s against 72 s, and peak RSS from 0.76–0.80 GiB to 0.56 GiB.</li>
+<li>OGS-00011, a Hybrid release, side by side and without the Indexed Variant Subset check, which did not change: 13,821 s against 13,230 s, and peak RSS from 113.8 GiB to 46.0 GiB. That check is 30,209 s of an instrumented 45,132 s run. A full run’s peak is not measured here.</li>
+<li>OGS-00016, a Dense release, full runs side by side, with the kernel’s exact high-water mark read as each phase starts and ends: 16,826 s against 18,814 s, and peak RSS from 14.56 GiB to 14.32 GiB. The Indexed Variant Subset check sets the peak in both, starting from 3.07 GiB and 2.38 GiB. Before it, the highest point rose from 9.42 GiB to 10.52 GiB. Both are the same whole read of the eaf exception table, 6.4 GiB above where it starts. It starts higher, 4.11 GiB against 3.02 GiB, because the association scan’s folds are judged before the 1.6 GiB the scan holds, chiefly the Top-Hit Index’s tiers, is released.</li>
+</ul></li>
+<li><strong>SE decoding.</strong> ADR 0070’s list of <code>validate</code>’s own SE decodes is now two: <code>_dense_band_se</code> and <code>_sequence_window_se</code> in <code>validation/scans.py</code>, one decode per block, shared by every rule. The whole-sequence Ragged decode is gone. The guard (<code>tests/test_association_reads_guard.py</code>) checks every module under <code>validation/</code> that is not a reader, so a new rule module cannot decode SE unseen.</li>
+<li><strong>One message is kept that a JSON change could drop.</strong> A completed Ragged release with an imputed cell missing Z reports “missing z rows have imputed=1 (inconsistent)” after “imputed=1 rows have missing z-scores”, the same count in other words. Dropping it changes <code>validate --format json</code>, which #378 can do.</li>
+<li><strong>What stays as it was.</strong> <code>subsets.indexed</code> wraps the Indexed Variant Subset validation the build’s publication gate runs over a sample (#270); each subset is now judged on its own findings. Source fidelity is <code>fidelity.source</code>, its read untouched in one function (#56). <code>check-observed-view</code> is not a rule set here (#375).</li>
+</ul>
+</section>
+<section id="amendment-no-rule-reads-the-dense-eaf-exception-table-whole-issue-387" class="level2">
+<h2 class="anchored" data-anchor-id="amendment-no-rule-reads-the-dense-eaf-exception-table-whole-issue-387">Amendment: no rule reads the Dense EAF exception table whole (issue #387)</h2>
+<p>Three rules read that table, and each read it whole or once per band. The table is one Zarr v3 shard of hundreds of millions of entries – 237,027,522 on OGS-00016, 1,136,991,041 on OGS-00011 – so <code>[:]</code> is 2.7 GiB and 12.7 GiB of <code>int64</code> plus <code>float32</code>.</p>
+<ul>
+<li><code>encoding.eaf</code> loaded it to check that positions pair with values, are sorted and unrepeated, and hold frequencies.</li>
+<li><code>subsets.indexed</code> loaded it to prove the index’s copy was the primary’s, remapped, and <code>_remap_side_table</code> held several copies of it at once; the value comparison then had the plane consult the table again for every band.</li>
+<li><code>side_tables.eaf_exceptions</code> held the flat position of every marked cell for the whole association scan – 1.14 billion of them, 8.5 GiB – and its judge read the whole table beside them, sorted them and set-differenced the two.</li>
+</ul>
+<p><strong>No consumer reads it whole.</strong> The shard’s inner chunks are 200,000 entries and Zarr reads them as byte ranges, so each rule streams what it needs and holds a page at most – about 96 MB for the subset check, one page of 262,144 entries for the plan rule and the scan (all inside the 1 GiB budget above):</p>
+<ul>
+<li><code>encoding.eaf</code> walks the table a page at a time, carrying the last position across the boundary, so sortedness, uniqueness and the value range are judged where they were and its three findings keep their order.</li>
+<li><code>subsets.indexed</code> keeps the cells whose variant the subset holds – 21,157,534 of them on OGS-00011’s HapMap3 index – compares that set with the index’s own table, and hands it to the value comparison keyed by the primary’s flat positions, so the table is not consulted again per band: 1,128 bands on OGS-00016’s HapMap3 subset, 2,114 on OGS-00011’s.</li>
+<li><code>side_tables.eaf_exceptions</code> compares each block’s marked cells against the span of the table that block must occupy, as the scan reaches it. A block’s cells are one contiguous range of flat positions and the table is sorted by them, so its entries are one contiguous span starting where the previous block’s ended: nothing but the running counts, the first position of each kind and one page’s tail is held.</li>
+</ul>
+<p>A table that is not sorted and unique, or whose values are not parallel with its positions, is the subset’s finding rather than an exception that ends the rule before the entries after it are judged.</p>
+<p><strong>A pass still streams the table several times</strong> (superseded by the amendment for issue #314 below, which reads it once a pass), which is not the same as reading it whole: once in <code>encoding.eaf</code>, once in <code>side_tables.eaf_exceptions</code>, once in <code>subsets.indexed</code>, and once per band in the association scan’s own decode. Each stream is bounded, and each rule needs its own view. Merging them into one pass is #314’s, which moves the subset comparison onto the scan’s bands; the subset check’s own read is once per Indexed Variant Subset today, and a release carries one.</p>
+<p>The per-band consult the association scan makes when it decodes a band stays (superseded by the amendment for issue #314 below: each block now takes its span from the pass’s one read of the table, <code>TablePages</code>, in place of the per-band lookup): a Dense band’s exception cells are one contiguous span of the sorted table, so a band’s lookup is one read of it already. A Dense grid reads the table in 4,756 bands on OGS-00011, about 239,000 exception cells a band.</p>
+<p>A shared scan’s folds are also judged after, not before, the 1.60 GiB the plain association scan holds for them is released – chiefly the Top-Hit Index’s tiers – so a judge words its findings from its total and from each tier’s key and cell count, which are metadata, and reports exactly what it did before.</p>
+<p>Measured, each side’s peak read from its own <code>VmHWM</code>:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th></th>
+<th>base <code>df000b4</code></th>
+<th>head, round 1</th>
+<th>head, round 2</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>OGS-00016’s HapMap3 subset, the subset rule’s high-water mark</td>
+<td>12.12 GiB</td>
+<td>0.60 GiB</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>OGS-00011’s HapMap3 subset, the subset rule’s high-water mark</td>
+<td>57.37 GiB</td>
+<td>1.60 GiB</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>OGS-00011’s HapMap3 subset, one comparison band</td>
+<td>26.4 s</td>
+<td>14.6 s</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>OGS-00016, a full <code>validate</code>, wall time</td>
+<td>21,056 s</td>
+<td>20,436 s</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>OGS-00016, a full <code>validate</code>, peak RSS</td>
+<td>14.55 GiB</td>
+<td>3.92 GiB</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>OGS-00011, a full <code>validate</code>, wall time</td>
+<td>40,998 s</td>
+<td>33,219 s</td>
+<td>32,279 s</td>
+</tr>
+<tr class="odd">
+<td>OGS-00011, a full <code>validate</code>, peak RSS</td>
+<td>68.53 GiB</td>
+<td>18.15 GiB</td>
+<td>8.30 GiB</td>
+</tr>
+</tbody>
+</table>
+<p>The two full runs on each Store were started at the same moment, so they saw the same load; the round-2 run on OGS-00011 is head alone, against a base figure measured on the same Store. Base’s OGS-00016 peak rises from 4.88 GiB at 16:59:16 to 14.55 GiB at 16:59:46, a window that holds both the side-table judge’s whole read and the subset check’s — 16:59:27 to 16:59:39, 12.12 GiB on its own — so the samples cannot say which of the two took it over the other. Round 1’s peaks are reads of the table: 3.92 GiB is the plan rule’s read of the 2.65 GiB table on OGS-00016, and 18.15 GiB its read of the 12.7 GiB one on OGS-00011. After round 2 pages that read, nothing head does reads the table whole: its 8.30 GiB is the Dense association scan’s own working set, 8.10 GiB of it reached two minutes into that scan and 0.2 GiB gained over the four hours that followed.</p>
+<p><code>validate</code>’s report is the same to the byte across base and head on OGS-00011 and on every published Store and fixture this change was run over; on OGS-00016 it differs by one record, 355-build’s <code>side_tables.se_exceptions_rounded</code> warning, which <code>df000b4</code> predates. <strong>The one report that did change is a release no earlier version could judge.</strong> A release whose own EAF exception table is disordered, duplicated or unpaired used to abort the rule, in <code>EafExceptionTable.__post_init__</code>, with <code>validation failed: eaf exception table index must be sorted and unique</code> or <code>… index and value must be parallel 1-D arrays</code>, and <code>_eaf_reference</code> never ran. It now gets a finding — <code>… eaf exception table is not sorted by position, or repeats one</code>, or <code>… eaf exception table has 3 positions but 2 values</code> — and the entries after it are still judged, which is round 1’s “a corrupt table is a finding, not an abort”.</p>
+<p>The paragraphs in “Time and memory” above that call the subset check’s table read the peak of a full run, and that call the scan’s held folds the reason its later stage starts higher, describe the code before this amendment.</p>
+</section>
+<section id="amendment-a-check-rides-the-association-scan-and-the-scan-reads-the-table-once-issue-314" class="level2">
+<h2 class="anchored" data-anchor-id="amendment-a-check-rides-the-association-scan-and-the-scan-reads-the-table-once-issue-314">Amendment: a check rides the association scan, and the scan reads the table once (issue #314)</h2>
+<p>Two passes crossed a Dense grid’s statistic planes: the association scan, which every value fold and the Top-Hit Index verification share, and the Indexed Variant Subset comparison, which read the primary planes again for each unit it compared – an index write band by a tile of Analyses. On OGS-00009 the comparison was 11,030.5 s of a 16,973.9 s validation and the scan 5,886.3 s (issue #308’s phase report). Beside them the release’s EAF exception table was streamed four times a pass: by the scan’s per-band lookup, <code>side_tables.eaf_exceptions</code>, <code>encoding.eaf</code> and the subset check.</p>
+<p><strong>A check may ride a scan</strong> (<code>Ride</code>). It boards before the pass over a target, is handed each block after the folds, and is judged as a check in its own place in the registry, from what the pass left on the target. A ride that fails, and a check that no pass carried – a selection without the scan’s folds, or a target on which no fold is ready – reads for itself, exactly as before. A ride that hands a check the data itself, as <code>encoding.eaf</code>’s does, saves a read and changes no finding. <code>subsets.indexed</code>’s hands it digests of the planes instead, and its guarantee is probabilistic, below.</p>
+<p><strong><code>subsets.indexed</code> rides the association scan.</strong> The pass hands each band to every published subset’s ride, which folds the subset’s cells of the band into one 64-bit digest per comparison unit: per cell, MurmurHash3’s finaliser over the cell’s key and then each compared plane’s value – decoded Z, SE and EAF and the stored imputed mask, with every NaN and -0 folded to one pattern, as <code>np.array_equal(..., equal_nan=True)</code> compares them – summed over the unit. The rule then reads only the index, digests each unit the same way, and compares. A unit whose digests differ, that either side could not decode, or whose index is wrong on its own (Z and SE missing apart, a mask that is no mask) is compared cell by cell by the comparison it always used, in the order it always walked, so the finding, its words and the unit it comes from are unchanged. The pass also hands each ride the release’s exception table, page by page, of which it keeps the subset’s cells, and the subset’s share of <code>eaf_baseline</code> and <code>eaf_reference</code>.</p>
+<p><strong>The cost is a collision, so the guarantee is probabilistic.</strong> Each step of a cell’s digest is a bijection, so a change to one value of one cell always changes its unit’s sum and is always found. A unit in which several cells or planes differ is missed only if the two sums are equal, about 2^-64 per unit for an accidental corruption. MurmurHash3’s finaliser is public and invertible, so under a fixed key a colliding corruption could be built in advance (the review built a two-cell one in 13 s); the key is therefore drawn at random once per run (<code>run_key</code>), and no finding depends on it. <strong>The owner ruled on 12 Nov 2026 to keep the full digest</strong>: every subset cell stays covered by its unit’s digest, with no sampling and no exact hold of the index, keyed per run, and the comparison logs, per subset, how many units it compared cell by cell and why, so a digest that never matches shows as a number rather than only as lost time. That was weighed against the two exact designs:</p>
+<ul>
+<li><em>Hold one side.</em> The index is Analysis-major in inner chunks of <code>[1, 65,536]</code>, and the scan reads primary bands of a few thousand rows across every Analysis, so pairing cells exactly means holding a whole index chunk-column for every Analysis: 2,514 x 65,536 cells x 5 bytes of codes, 824 MB, on OGS-00009, and 1.04 GB on OGS-00011’s Dense Component, beside a decoded band of 1 GiB.</li>
+<li><em>Re-read the index per band.</em> Every index chunk would be decoded once per band its slots fall in, about 150 times on OGS-00009.</li>
+</ul>
+<p><strong>The table is read once a pass</strong> (<code>TablePages</code>). Each block takes its span of the sorted table as it decodes – every entry its cells can name, read a page of 262,144 entries at a time – in place of the per-band lookup, which also read the two 200,000- entry inner chunks it bisected to. This supersedes the #387 amendment’s ruling above that the scan’s per-band consult stays. <code>side_tables.eaf_exceptions</code> reconciles the block against that span, and <code>encoding.eaf</code> and every subset’s ride watch the pages go by; the entries past the last block are read for them once the blocks are.</p>
+<p><strong><code>encoding.eaf</code> waits for the pass.</strong> It is registered before the scan’s first fold and decides whether the value folds run, so where the table is there to walk it is decided when the read ends, before any fold is judged. A fold standing on it is judged as if it had been decided first: one it would have stopped measures provisionally and is skipped behind it with every reason it would have named, in the order of its <code>after</code>, and nothing the fold met in the read is reported; one already stopped by another prerequisite, or whose <code>when</code> declines or raises, is recorded once it is decided, as it would have been. On a target no fold reads, its own read is the same page walk.</p>
+<p><strong>Measured</strong>, base <code>723cac0</code> against head <code>a3c7355</code>, each pair started at the same moment on a shared host, <code>uptime</code> sampled every five minutes and each process’s own <code>VmHWM</code> every 30 seconds. OGS-00009’s pair ran from 04:32 to 07:58 UTC, inside the nightly backup window (load average 1.5 to 83 in its five-minute samples), so its absolute times are inflated by that load; base and head ran side by side and saw the same load, so their ratio stands, and #322 re-measures validation end to end:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th></th>
+<th>base</th>
+<th>head</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>OGS-00009 (11,191,070 variants x 2,514 Analyses), a full <code>validate</code></td>
+<td>12,342 s</td>
+<td>4,836 s</td>
+</tr>
+<tr class="even">
+<td>its <code>subsets.indexed</code></td>
+<td>8,230.2 s</td>
+<td>621.4 s</td>
+</tr>
+<tr class="odd">
+<td>its Dense association scan</td>
+<td>4,069.8 s</td>
+<td>4,149.7 s</td>
+</tr>
+<tr class="even">
+<td>its peak RSS</td>
+<td>2.61 GiB</td>
+<td>2.58 GiB</td>
+</tr>
+<tr class="odd">
+<td>OGS-00015 (11,650,615 x 241), a full <code>validate</code></td>
+<td>1,243 s</td>
+<td>407 s</td>
+</tr>
+<tr class="even">
+<td>its <code>subsets.indexed</code></td>
+<td>896.0 s</td>
+<td>63.1 s</td>
+</tr>
+<tr class="odd">
+<td>its Dense association scan</td>
+<td>310.2 s</td>
+<td>306.9 s</td>
+</tr>
+<tr class="even">
+<td>its EAF exception table, bytes read in the pass</td>
+<td>191,843,168 in 1,525 reads</td>
+<td>375,672 in 2 reads</td>
+</tr>
+</tbody>
+</table>
+<p>Head’s <code>subsets.indexed</code> is the read of the index alone; the planes are read once, by the scan, which the digests cost 2% on OGS-00009. OGS-00015’s 31,306-entry table is one inner chunk, so base’s per-band lookups read it whole for every band: 511 times its size. Head reads each entry once, as it reads OGS-00009’s 8,621 (103,452 bytes). Both peaks are the association scan’s working set, reached in its first half hour. <code>validate --format json</code> is the same to the byte on both Stores, on the seven published Stores #387 compared (OGS-00001 to -00006 and -00008, text and JSON), and on #387’s ten Indexed Variant Subset fixtures, clean and corrupted, Dense and Hybrid.</p>
+<p>Measured again once the key was drawn per run, head <code>05d1f52</code> against the integration tip <code>b49c1cb</code>, side by side from 14:09 UTC on 12 Nov (load average 4 to 43), sampled as above, with a counter of every read of the release’s EAF exception table:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th></th>
+<th>tip</th>
+<th>head</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>OGS-00016 (27,929,380 x 1,691), a full <code>validate</code></td>
+<td>18,080 s</td>
+<td>8,951 s</td>
+</tr>
+<tr class="even">
+<td>its <code>subsets.indexed</code></td>
+<td>9,313.6 s</td>
+<td>318.8 s</td>
+</tr>
+<tr class="odd">
+<td>its Dense association scan</td>
+<td>8,650.8 s</td>
+<td>8,526.2 s</td>
+</tr>
+<tr class="even">
+<td>its peak RSS</td>
+<td>3.03 GiB</td>
+<td>3.01 GiB</td>
+</tr>
+<tr class="odd">
+<td>its EAF exception table, bytes read in the pass</td>
+<td>35,615,471,496 in 32,796 reads</td>
+<td>2,844,330,264 in 1,810 reads</td>
+</tr>
+<tr class="even">
+<td>OGS-00011’s Dense Component (14,267,257 x 3,169), head alone</td>
+<td></td>
+<td>16,250 s</td>
+</tr>
+<tr class="odd">
+<td>its <code>subsets.indexed</code></td>
+<td>16,904.3 s at #387’s head</td>
+<td>874.6 s</td>
+</tr>
+<tr class="even">
+<td>its Dense association scan</td>
+<td>14,677.1 s at #387’s head</td>
+<td>14,497.2 s</td>
+</tr>
+<tr class="odd">
+<td>its peak RSS</td>
+<td>8.30 GiB at #387’s head</td>
+<td>8.24 GiB</td>
+</tr>
+<tr class="even">
+<td>its EAF exception table, bytes read in the pass</td>
+<td></td>
+<td>13,643,892,492 in 8,676 reads</td>
+</tr>
+</tbody>
+</table>
+<p>OGS-00016’s table, 237,027,522 entries, is read once in 905 pages, where the tip read it 12.5 times over; OGS-00011’s 1,136,991,041 are read once in 4,338. On both, every unit’s digests agreed (0 of 1,128 and 0 of 2,114 compared cell by cell). OGS-00011’s ride keeps its HapMap3 subset’s 21,157,534 exception cells, about 254 MB, through the whole scan rather than after it, and its peak, reached as the scan ends, is #387’s. Both JSON reports are byte-identical: OGS-00016’s tip and head (661 bytes), OGS-00011’s head and #387’s (1,687 bytes). On OGS-00011’s Overflow the pass reads its 124,961,622-entry table once too; <code>by_variant.sample</code> still looks entries up in it for its sample, outside the pass.</p>
+<p>A corrupted real subset is found as before: in scratch copies of OGS-00015, one Z cell of <code>hm3</code> bumped by a code, at a slot whose primary row the scan reads in its 138th band, and separately two Z cells of one unit exchanged, each give the tip’s finding, its JSON byte-identical; head compares one of the three units it reaches cell by cell, the one whose digests disagreed.</p>
+</section>
+<section id="amendment-a-dense-grids-band-pass-is-spread-across-forked-workers-issue-315" class="level2">
+<h2 class="anchored" data-anchor-id="amendment-a-dense-grids-band-pass-is-spread-across-forked-workers-issue-315">Amendment: a Dense grid’s band pass is spread across forked workers (issue #315)</h2>
+<p>With the planes read once (#314), the association scan was 86% of OGS-00009’s validation, one process decoding 2,798 bands in turn. <code>validate --n-workers N</code> spreads those bands over the shared ordered fork pool the SE and Top-Hit Index phases use (#221), and the report is the one a single process makes.</p>
+<p><strong>One band a task, added in band order.</strong> Every block is measured by one function wherever it is read (<code>_measured</code>), into what it adds to the pass: each fold’s measure, or its failure, or a plane it could not read, each worded where the exception was raised; and each riding check’s part. The driver adds those in band order through the same code a single process adds them with, so a fold’s total is the same sum in the same order, the first failure reported is the first in band order, a plane reported undecodable is reported by the fold that meets it first in band order, and a read that stops part-way stops at the same band, with every band before it added. Workers do not know which folds the driver has stopped since it submitted their band; what they measure past a fold’s failure is discarded.</p>
+<p><strong>The driver reads the first band.</strong> What the folds load on their first block – a Top-Hit Index’s tiers, the most of what a full-size pass holds (#387) – is then loaded once, before the pool forks, and every worker inherits it rather than loading a copy of its own.</p>
+<p><strong>A riding check rides in two steps</strong> (<code>Rider</code>): <code>part</code>, where the block is read, says what the block adds without changing the check; <code>join</code>, in band order where the pass is driven, adds it. <code>subsets.indexed</code>’s ride makes each band’s unit sums in the worker, under the key the driver drew once for the run (<code>run_key</code>) when it boarded the ride, and the join refuses rows that do not follow the last it added. A ride a part breaks, on either side, leaves the pass and reads for itself, as before.</p>
+<p><strong>The EAF exception table stays read once a pass.</strong> The driver cuts each band’s span from its one paged read of the table as it hands the band out (<code>GridSplit.units</code>), so <code>encoding.eaf</code> and every subset’s ride still watch each page go by there, in order, and a worker is handed its band’s span and nothing else. A worker reading its own span would first have to find where the span starts – a search of the index – and would read the page at each band’s edge twice.</p>
+<p><strong>Workers open what they read after the fork.</strong> A worker opens the grid’s group again (<code>Target.reopen</code>), and through it the planes and the side tables its codecs look exceptions up in – the SE exceptions, the Z overflow, the EAF exceptions where a band has no span – so no read in a worker goes through a handle the driver opened. Reopening is not what keeps a forked reader from hanging: the hazard is process-wide. With the fused pipeline’s thread pool on, a worker whose first read spans no more shards than the driver’s reads left idle permits in the inherited pool queues its chunks to threads the fork did not copy, and never returns, whatever handle it reads through. The array seam’s <code>max_workers = 1</code> (ADR 0056) is what prevents it. Reproduced at three workers on 4,000 x 2 cells in shards of 2,000 x 1, whose bands, like OGS-00009’s, read two shards side by side within one shard row: finished in 1.3 s and 1.8 s at <code>max_workers</code> 1, killed at 45 s, twice, at 8. One shard a band, or bands crossing a shard row, finish either way, so the test’s fixture is shaped like the real one.</p>
+<p><strong>A failure of the pool fails the run.</strong> A worker that fails to read its own band reports it as that band’s outcome, a finding like any other. Anything that escapes the pool itself is the run’s failure, not the Store’s (<code>PoolFailure</code>): a worker killed mid-band – for memory, say – breaks the pool (<code>WorkerLost</code>), and a host out of processes refuses the fork. The pass names the band whose result it was waiting for – the oldest still out, not necessarily the one a dead worker held – and how many more were in flight, and <code>validate</code> ends with that error. It does not report a Store finding about a read that never finished.</p>
+<p><strong>Memory.</strong> A worker holds one band at a time: the decoded-band budget (#254), at 96 bytes a cell, and 512 MiB beside it, the fork’s floor every pool shares (<code>encoding.memory.FORK_FLOOR_BYTES</code>). The pool is sized by <code>encoding.memory.pool_workers</code> (#321): no more workers than a quarter of the host’s available memory holds beside the driver and the outcomes it holds in flight, no more than the bands left, and one on a host whose memory cannot be read.</p>
+<p>A worker’s budget is held against its private memory, with its PSS beside it (ruled on 13 Nov 2026). Its <code>VmHWM</code> is not its own cost: it counts every page the worker maps, and a forked worker maps the driver’s – the Top-Hit tiers above all, 1.8 to 2.2 GiB on OGS-00009 and 6.5 to 6.9 GiB on OGS-00011 – which it shares with the driver rather than holds, and which the pool’s sizing counts once, as the driver’s.</p>
+<p>The budget holds with a margin because of a fix. On OGS-00011 a worker first reached 1.81 GiB (PSS) beside a band budgeted at 0.85 GiB, and that was not the band. <code>Block.locate</code> searched a Top-Hit tier’s <code>uint32</code> rows with Python-int bounds, so numpy copied the whole tier to <code>int64</code> on every call: 1.12 GB for OGS-00011’s 140,478,063-cell tier, several times a band, in the serial pass as well. The bounds now take the rows’ own dtype. Measured band by band under tracemalloc, every fold in turn, the Top-Hit folds had reached 137.2 bytes a cell on OGS-00011 and 56.2 on OGS-00009; with the fix a band peaks in its own read, at 54.7 on OGS-00011 and 52.9 on OGS-00009, and between bands a worker holds 0.25 to 0.27 GiB of its own.</p>
+<p><strong>Still one process:</strong> an association sequence’s scan – a Ragged release’s, a Hybrid’s Overflow – whose windows each carry the cell before them; the Store Variant Table’s and <code>by_variant</code>’s scans; and every check of <code>analyses.tsv</code>, the envelope and the side tables. <code>--n-workers 1</code> reads every band in process.</p>
+<p><strong>Measured</strong> at the head, OGS-00009 at one worker and at 32 started at the same moment, side by side, from 00:35 to 01:40 UTC on 13 Nov 2026 (load average 4.8 to 17.9, available memory never below 913 GB; from 01:06 the runs were inside the hours of the backup window recorded on 22 Oct, whether or not it still runs). Each round read every process’s <code>/proc/&lt;pid&gt;/status</code> and <code>smaps_rollup</code>: each driver about every 1.1 s, and each worker every 1.96 s on average. OGS-00011 ran at 32 workers the night before with the same code path (<code>c4402e7</code>; the head adds only the pool-failure handling), each worker sampled every 2.79 s on average:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th></th>
+<th>OGS-00009, 1 worker</th>
+<th>OGS-00009, 32 workers</th>
+<th>OGS-00011, 32 workers</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>a full <code>validate</code></td>
+<td>3,857 s</td>
+<td>942 s</td>
+<td>1,955 s</td>
+</tr>
+<tr class="even">
+<td>its Dense association scan</td>
+<td>2,904.6 s, 2,798 bands</td>
+<td>140.9 s</td>
+<td>274.9 s, 4,756 bands</td>
+</tr>
+<tr class="odd">
+<td>its <code>subsets.indexed</code>, read in the driver</td>
+<td>905.3 s</td>
+<td>757.8 s</td>
+<td>906.3 s</td>
+</tr>
+<tr class="even">
+<td>the driver’s peak <code>VmHWM</code></td>
+<td>2.55 GiB</td>
+<td>2.24 GiB</td>
+<td>7.32 GiB</td>
+</tr>
+<tr class="odd">
+<td>a worker’s budget</td>
+<td></td>
+<td>1,432 MiB</td>
+<td>1,382 MiB</td>
+</tr>
+<tr class="even">
+<td>a worker’s largest private memory, the budget’s measure</td>
+<td></td>
+<td>0.66 GiB</td>
+<td>0.77 GiB</td>
+</tr>
+<tr class="odd">
+<td>a worker’s largest PSS</td>
+<td></td>
+<td>0.71 GiB</td>
+<td>0.95 GiB</td>
+</tr>
+<tr class="even">
+<td>a worker’s largest <code>VmHWM</code>, the driver’s pages included</td>
+<td></td>
+<td>2.29 GiB</td>
+<td>7.03 GiB</td>
+</tr>
+</tbody>
+</table>
+<p>OGS-00009’s two reports are byte-identical to each other and to #314’s head’s, and OGS-00011’s to #314’s; 0 of their 1,676 and 2,114 subset units were compared cell by cell, and the driver read OGS-00011’s 1,136,991,041-entry EAF exception table once, in 4,338 pages. #314’s runs of OGS-00011 at one worker took 16,250 s, its Dense scan 14,497.2 s. At 32 workers <code>subsets.indexed</code> is 757.8 s of OGS-00009’s 942 s.</p>
+<p>Before the <code>locate</code> fix (<code>fef3914</code>, 12 Nov from 20:06 UTC, sampled every 30 s), OGS-00016 ran at 32 workers in 745 s, its Dense scan 351.0 s against #314’s 8,526.2 s at one, its 237,027,522-entry table read once in 905 pages, and its report byte-identical to #314’s. #314’s two corrupted copies of OGS-00015 – one Z cell of <code>hm3</code> bumped where the scan reads its 138th band, and two cells of one unit exchanged – each gave #314’s finding at 32 workers, their reports byte-identical. Those runs also found OGS-00011’s workers over budget, which led to the <code>locate</code> fix above.</p>
+</section>
+<section id="alternatives-considered" class="level2">
+<h2 class="anchored" data-anchor-id="alternatives-considered">Alternatives considered</h2>
+<ul>
+<li><strong><code>check(release)</code> over a caching release</strong> (the ticket’s sketch). Simple rules, but whole decoded planes cached, about 25 GB resident on OGS-00011’s 1.75 billion-cell Overflow, or a summary struct every Dense rule edits. Rejected for memory.</li>
+<li><strong>Rule identity on today’s seams.</strong> A <code>report.error(rule, message)</code> in place of the error list, and the orchestrators kept. Cheap, but a rule stays welded to its traversal, a selection only filters findings after all the work, and the repeated reads stay. Rejected: it names the rules and fixes nothing else.</li>
+</ul>
+
+
+</section>
+</section>
+
+<a onclick="window.scrollTo(0, 0); return false;" role="button" id="quarto-back-to-top"><i class="bi bi-arrow-up"></i> Back to top</a></main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/blog\.opengwas\.io\/og-dev-hub\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../opengwasdb/adr/0072-association-admission.html" class="pagination-link" aria-label="Association Admission: one rule set, one gate, one record">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Association Admission: one rule set, one gate, one record</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../opengwasdb/adr/0075-alleles-are-upper-cased-before-identity-assignment.html" class="pagination-link" aria-label="Alleles are upper-cased before identity assignment">
+        <span class="nav-page-text">Alleles are upper-cased before identity assignment</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+    <div class="nav-footer-left">
+<p>OpenGWASDB · rendered from the commit that names it</p>
+</div>   
+    <div class="nav-footer-center">
+      &nbsp;
+    </div>
+    <div class="nav-footer-right">
+<p><a href="https://github.com/opengwas/og-dev-hub/issues">Report a problem</a></p>
+</div>
+  </div>
+</footer>
+
+
+
+
+</body></html>

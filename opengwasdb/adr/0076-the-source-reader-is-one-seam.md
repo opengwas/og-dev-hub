@@ -1,0 +1,283 @@
+# The Source Reader is one seam
+
+Issue [#56](https://github.com/opengwas/opengwasdb/issues/56), part of epic #58.
+Records where a source becomes rows, which code orients them, and how every
+builder and annotation stage reaches a source. It builds on ADR 0071 (Variant
+Routing reads sources only through `open_source`) and ADR 0072 (Association
+Admission judges what a reader yields).
+
+## Context
+
+Twelve of the 16 published builds read their sources through `open_source`.
+The other four (Ragged SSF, OGS-00006 and -07; Ragged BESD, OGS-00001 and -27)
+had a parser of their own. Around them, the rules every reader must agree on
+had been written more than once:
+
+- negating z on a flip: five copies;
+- complementing the frequency on a flip: ten;
+- "A1 is the lesser allele": five, one of them GWAS-VCF's own comparison;
+- `z = beta / se`: four;
+- a GWAS-SSF row: two parsers, with two rsid rules;
+- a `.esi`: two readings, with two lifts;
+- site extraction: three;
+- the list of capabilities: three, plus two `isinstance` checks that lifted a
+  GWAS-VCF reader.
+
+GWAS-VCF read its associations with one bcftools query, its metrics with a
+second and its sites with a third. Of those, only the metrics query checked
+bcftools' exit status. The resolver could not read FinnGen at all, because only
+two readers had a metrics projection.
+
+## Decision
+
+**Every Source Format is read into rows, and one module presents and orients
+them.**
+
+- **`opengwasdb.readers.orientation`** is the only code that signs a statistic
+  by an allele swap:
+  - `swap_one` is the per-row form, for Pass 2's association stream;
+  - `swap` and `a1_frequencies` are the array forms.
+
+  It never decides whether a row is flipped. That is `variants.normalise`'s
+  identity rule; `oriented_alid` is its form for an identity already judged.
+- **`opengwasdb.readers.rows`** presents a reader's `SourceRow`s as every
+  projection, each oriented by that module:
+  - associations;
+  - `ReaderBatch`es: the associations as columns, with each row's ALID, its
+    alleles as the source spells them (`ref` and `alt`, as its association
+    carries them), its place in the source, its flip and its rsid. The ALID
+    upper-cases the alleles (ADR 0075). The spelling is there so that a
+    builder's rsid harvest can compare the names a site's spellings carry, as
+    ADR 0066 requires of every harvest (#379);
+  - variants;
+  - the resolver's `MetricsChunk`s;
+  - sites.
+
+  A reader keeps any faster path it has for one projection, such as a
+  column-projected scan or GWAS-VCF's identity-only query. A parity test holds
+  that path to the rows.
+- **The `SourceReader` protocol has five projections**: `stream_variants`,
+  `stream_associations`, `stream_batches`, `stream_metric_chunks` and
+  `extract_at_sites` (which takes `region` and `regions_file`). Every
+  registered reader implements all five.
+- **A reader may also offer its associations as columns** (#318, added 10
+  Nov 2026). `stream_association_batches` yields `AssociationBatch`es:
+  `stream_associations`' rows, in order and bit for bit, with the same rows
+  dropped and the same tally filled. The method is optional (`BatchedReader`).
+  Pass 2 routes a reader's batches where it offers them
+  (`RouteTable.route_reader`), and otherwise reads its associations one at a
+  time into batches of the same type. Both go through one `route_batches`, so
+  the routed column and the Admission record cannot depend on which was read.
+  - The per-row stream stays the reference. A reader that offers batches is
+    held to it by an identity test over its fixtures.
+  - An `AssociationBatch` names no ALID and no rsid, which a Ragged build's
+    `ReaderBatch` carries: Pass 2 matches a row by its Routing Key and needs
+    neither, and forming them is most of what a per-row reader costs.
+  - FinnGen R13's reader offers them first: pandas parses 32 MiB of the
+    decompressed file at a time, and a block, or a row, that the columns
+    cannot show they read as `csv` and the per-row rules do is read by the
+    per-row rules themselves. On a 21,326,102-row R13 file it reads in 40.1 s
+    against 220.7 s one association at a time, beside a 24.7 s parse floor.
+    Rebuilding the FinnGen pilot OGS-00003, Pass 2 takes about 50 s an
+    Analysis against about 271 s, and the Store and Admission record are
+    identical.
+  - A batch's memory is a block's. R13's 21,326,102-row file reads as 63
+    batches, the largest of 346,947 rows. Reading it alone peaks at 501 MiB
+    resident, sampled every 0.2 s, and at 906 MiB by `ru_maxrss` in that run,
+    which started under `pixi run`; the reader A/B's readers, started
+    directly, peaked at 506 to 518 MiB by `ru_maxrss`.
+  - In an OGS-00003 rebuild each Pass 2 worker held about 0.27 GiB more
+    private memory than when it read rows: 0.89 and 1.00 GiB, mean, against
+    0.62 and 0.74, and at most 1.58 GiB. A build of the full FinnGen Store
+    (OGS-00017) at its 32 workers therefore needs about 32 × 1.58 GiB beside a
+    19.6 GiB parent, about 70 GiB. By the rule that a build takes at most a
+    quarter of available memory, it may start wherever about 280 GiB is
+    available.
+  - Where a source is read by the per-row rules, the first place is logged
+    with the byte it starts at and why. Once the source is read, one more line
+    gives how many of its blocks were read row by row, of how many, and how
+    many rows of the column-parsed blocks were read from their own line.
+    Those rows read the same, about five times slower.
+  - The issue listed FinnGen's first-rsid rule among what a batch covers. It
+    is left out deliberately: Pass 2 names no rsid, as `ReaderAssociation`
+    named none before, and Pass 1 still applies the rule, so a rebuild's
+    `variants.tsv.gz` is byte-identical.
+  - GWAS-SSF's reader offers them too (#319, 10 Nov 2026), and `ColumnMapReader`
+    names the method itself and delegates, since a reader offers batches only
+    if it has the method. Both share FinnGen's engine (`readers/columnar.py`).
+    - A row is decided by its columns when its identity passes and any indel is
+      one its layout declares the reference of (ADR 0079: `hm_code` 10 or 11 in
+      the main-columns layout, every row of a Column Map by its convention). Its
+      effect and SE are those `row_statistics` gives: the plain cases as arrays,
+      and every other row (the second effect column, an interval or a p-value for
+      the SE, an infinite effect) by `row_statistics` itself on the cells already
+      parsed. A row the rules refuse, whose fault the tally names, is read by
+      `_tabular_row` from its own line.
+    - A GWAS Catalog file ends every line in CR LF, so GWAS-SSF reads a carriage
+      return that ends its line as the plain text `csv` reads it, and falls back
+      on one that ends no line. FinnGen keeps its rule. The first rebuild of
+      OGS-00004 missed this: all nine sources fell back and the build was no
+      faster.
+    - A declared imputation score is read in columns, with
+      `parse_imputation_score`'s rules: a missing token is MISSING, an infinity
+      NONFINITE, any other number USABLE inside [0, 1] and OUT_OF_RANGE outside
+      it. A score pandas cannot read as `float()` reads it (`bogus`, `1_0`
+      beside a padded token) leaves that block's rows to the per-row rules,
+      which log how many; the source is not read row by row throughout.
+      605 of OGS-00011's 3,169 Analyses (19%) declare one.
+      Five OGS-00011 sources read both ways with their declarations (103,471 to
+      10,764,138 rows; `info`, `INFO`, `imputed_r2`, 999 missing scores, 1,633,075
+      out of range) are identical, log no fallback, and read 6.0 to 8.7 times
+      faster in batches.
+    - Pass 2 names no rsid, so the batch path never reads one: the rsid rules,
+      compound and listed ids among them, are Pass 1's, as FinnGen's first-rsid
+      rule is. The compound-id fixture is parse coverage only.
+    - On the largest OGS-00004 source (GCST009324, 17,343,104 rows, about 130
+      bytes a line) the reader reads in 35.2 s against 186.9 s one association
+      at a time, beside a 21.1 s parse floor (6 rounds, p = 0.031): 0.187 of
+      the time, and 1.66 times the floor.
+    - A batch's memory is a block's bytes, so narrower lines mean more rows. A
+      block is 32 MiB of decompressed text, and the read holds one block, the
+      line the read before it split, and the columns built from them.
+      Measured, reading each source alone in a fresh process, sampled every
+      0.2 s (the same as `ru_maxrss`):
+
+      | Source | Bytes a line | Rows | Batches | Largest batch | Peak resident |
+      |---|---|---|---|---|---|
+      | GCST90205183 (OGS-00011's narrowest) | 66 | 8,312,193 | 17 | 492,330 rows | 601 MiB |
+      | GCST009926 (OGS-00004's narrowest) | 81 | 6,799,463 | 17 | 405,314 rows | 604 MiB |
+      | GCST009324 (OGS-00004's largest) | 130 | 17,343,104 | 70 | 252,697 rows | 553 MiB |
+
+      Each started from 155 MiB, and the per-row reader peaks at 161 MiB on
+      GCST009324. The most a worker held more than when it read rows is
+      604 − 161 = 443 MiB, 0.43 GiB. OGS-00011 builds at 24 workers
+      (`records/build.json`), which is 10.4 GiB more (5.8% of the 179 GiB a
+      quarter of the host's available memory allowed when measured), and
+      OGS-00012 to -16 at 16, 6.9 GiB (3.9%). The bound is the block, not the
+      source: narrower lines raise a batch's rows (492,330 here) and leave its
+      bytes where they were.
+    - Rebuilding OGS-00004, Pass 2 takes about 21 s an Analysis against about
+      124 s (two pairs, side by side), and the Store, the Admission record and
+      every dropped-row log are identical.
+- **The registry is the only way in.**
+  - `open_source(spec, alignment=)` and `resolve_reader(..., liftover=)` open a
+    reader lifted onto the reference build, and a capability that cannot lift
+    refuses a lift. The registry, not the caller, knows which capabilities can
+    lift, and `assembly_plan` asks it.
+  - `opengwasdb.besd` is registered. `SourceSpec.probe_id` names the `.epi`
+    probe a BESD Analysis is; it is required there and refused elsewhere.
+  - A file set's `.esi` is read once per process and lift, and every probe's
+    reader shares it.
+- **What a reader yields.** Every row whose identity it can read, in file
+  order, in the declared assembly:
+  - z and the frequency are on A1;
+  - z follows the format's rule: GWAS-VCF's `EZ`, else `ES/SE`; GWAS-SSF's
+    `row_statistics`; FinnGen's and BESD's `beta/se`;
+  - the SE is the one reported, or recovered where the format recovers one.
+
+  **A missing declared capability is not a missing row** (added 2026-11-18,
+  issue #363). A GWAS-VCF whose header declares no FORMAT tag from which any
+  record's z can be formed -- neither `EZ`, nor `ES` with `SE` -- is refused by
+  the projections that form an association or a metric block, naming the file
+  and the tags it found. Read as a file with no rows, it was an Analysis stored
+  with 0 associations and nothing to say why. The refusal is on the *header*:
+  a declared tag whose record holds `.` is unchanged, because that record's
+  association is missing rather than the file broken. Site extraction
+  (`extract_at_sites`, ADR 0044's AF+SE ancestry rule) and the identity-only
+  variant scan are not subject to the check, and need not be: neither reads an
+  effect, and a file whose records report no AF or SE leaves the ancestry rule
+  nothing to read, which is a fact about the records rather than the header.
+
+  Association Admission judges everything else. A reader declares, once per
+  format, whether its rows name the genome's reference allele, and spells
+  each indel's ALID by that declaration as it reads the row (ADR 0079). No
+  projection carries it. (Each association and batch carried it, and a batch
+  the `REFERENCE_*` codes #357's reversed-indel rule read, until #316 removed
+  the rule; nothing read the field after that, and #318 removed it.)
+- **The Ragged builders read through readers.**
+  - `build-ragged-ssf` reads each Analysis with the GWAS-SSF reader's
+    `stream_batches`.
+  - `build-ragged-besd` reads each probe with the BESD reader's. It keeps its
+    own lift for its axis; the resolver keeps refusing an ambiguous mapping or
+    a lifted indel. The two readings agree on every row of both published
+    `.esi` files.
+  - A BESD row is oriented in the file set's declared assembly. Where the
+    axis's lift makes the other allele A1, it is re-oriented by `swap`, as
+    routing re-orients a reverse-strand lift. This one model now holds for
+    every layout (spec §5). On OGS-00027, 9,309 rows change orientation across
+    the lift, and the twice-complemented frequency is identical in float32 on
+    every one.
+
+### What this changes in a Store
+
+The owner's rulings on the unifications, issue #56:
+
+| | Unification | Published Stores |
+|---|---|---|
+| O1 | Ragged SSF takes the GWAS-SSF reader's rsid rule: the first of `rsid` and `variant_id` that is an rs identifier | OGS-00006 gains 21 rsids; none is lost or replaced. OGS-00007 is unchanged |
+| O2 | Ragged SSF takes the reader's effect and SE rules (`odds_ratio`, signed z, CI and p recovery) and its refusals | 0 of OGS-00006's and -07's 58,257,233 rows change; 0 of their 1,410 files are refused |
+| O3 | Ragged SSF refused a declared build other than GRCh38, until #386 lifted it (superseded: see the note below) | 0 of 1,410 manifest rows |
+| O4 | Ragged BESD orients in the declared assembly and re-orients after the lift | 0 bytes |
+| O5 | The two `.esi` lifts stay until routing owns them | none |
+| O6 | GWAS-VCF orients by the identity rule, as every format does | 0 rows (#360's census) |
+| O7 | Ragged SSF refuses a row that declares no build, where it read one as GRCh38: a Ragged SSF Store is one build, and every source declares its own | 0 of the 4,453 rows of the published manifests of OGS-00006, -07, -24, -25 and -26, and 0 of the 1,410 rows of OGS-00006's and -07's build manifests. `opengwasdb-stores`' test fixtures declare none (#429) |
+
+## Consequences
+
+- One place answers "why is this z negative": the orientation module. One
+  place answers "what does this source say": its reader's rows.
+- A new Source Format is one row parser. Its projections, orientation and
+  site extraction come with it.
+- GWAS-VCF reads its records with one header-probed, exit-checked query. A
+  VCF with other than one sample column is refused by every projection, and
+  a failing query raises instead of ending the stream; both failures name the
+  file they were reading, and a header declaring neither `EZ` nor both `ES`
+  and `SE` is refused before a record is read (issue #363). A record with an
+  unparseable position or one allele spelt twice is left out, as every
+  reader leaves it out. All 2,514 GWAS-VCF sources under
+  `/data/opengwasdb/raw/gwas-vcf/` declare `EZ` with `ES` and `SE`, each
+  header read, so no published Store's source is refused.
+  `build.vcf_source` is removed.
+- The resolver reads FinnGen. Ancestry assignment restricts a tabular
+  reader's extraction to the region it asks for, where before it silently
+  read every chromosome.
+- The Ragged BESD build reads each probe's `.besd` slice by seeking instead
+  of loading the whole file.
+- A BESD reader opened lifted keeps both orientations. Its variants,
+  associations and batches stay in the file set's declared assembly; its
+  metric blocks and sites come from the file set lifted onto the reference
+  build. Each projection's z is therefore on the A1 of the alleles it reports.
+  The resolver reads only the lifted metric blocks, and no builder opens a
+  BESD reader lifted.
+- `build-ragged-ssf` lifts a source declaring another build (issue #386), which
+  supersedes O3's refusal. The lift is the builder's, after the read, through
+  Variant Routing's `place_sites`: the GWAS-SSF reader stays in its declared
+  assembly and is not registered as a lifting reader, since the resolver and
+  ancestry assignment, which would then open it lifted, have no use for one.
+  A row that declares no build is still refused (O7). A build with any
+  non-GRCh38 source holds every Analysis's admitted rows until the lift has
+  placed them; a GRCh38-only build reads one Analysis at a time.
+- `build-dense` reads through the registry (issue #385). Its association TSV was
+  deferred from this change: its own parser refused an unreadable row where
+  every registered reader drops one, and carried each Analysis's metadata on
+  every row, which a reader's associations have no field for. It is now
+  `opengwasdb.association-tsv`, an ordinary reader: one file per Analysis,
+  associations only, its format declaring no reference allele. What the rows once
+  repeated (the Analysis id, its label, Trait Ontology, attribution, effect
+  scale, and MAF and INFO filters) is the build manifest's, as for every other
+  builder, and a header that still names one of those columns is refused. An
+  unreadable row still refuses the run; a malformed identity is dropped and
+  logged, like any reader's (#365).
+- A Ragged SSF build costs more per row. The GWAS-SSF reader's row parser
+  applies every rule the old Ragged parser skipped. It was timed on one of
+  OGS-00006's 1,400 sources, GCST90199621.filtered.tsv.gz, with 77,825 rows
+  (the largest, GCST90200541, has 7,036,338). There it takes 9.3 µs a row
+  against the old parser's 4.6 µs (2.0×). The whole per-Analysis read loop,
+  from parsing to the duplicate rule, takes 11.3 µs against 7.6 µs (1.48×).
+  These figures are the median of four interleaved pairs, one process each,
+  best of seven reads. Over OGS-00006's 58,054,430 rows, those 3.67 µs a row
+  are about 213 s of the 271 s by which its build grew (774 s to 1,045 s).
+  The parser is most of the cost. A column-projected batch scan, like the
+  resolver's metrics projection, is the follow-up that would recover it. The
+  same reader's association stream, which Dense and Hybrid GWAS-SSF builds
+  read, got faster.

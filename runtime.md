@@ -1,0 +1,426 @@
+# The release runtime: pinned, current-format, and gated before writes
+
+This document records the one `opengwasdb` runtime the supported release
+workflow uses (stores#218, adopting the runtime portion of stores#197), what it
+provides, and what upgrading it does **not** do.
+
+## The pin
+
+| Fact | Where it is written |
+|---|---|
+| Repository | `https://github.com/opengwas/opengwasdb` |
+| Branch followed | `main`, in `pixi.toml`'s `[feature.store-build.pypi-dependencies]` |
+| Commit, and the package version | `pixi.lock`, and nowhere else (#253). `pixi run env-check` prints both, beside the installed engine's |
+| Writers' Store `format_version` | `0.2.3` from every builder and every completion (`ogstores.runtime.REQUIRED_FORMAT_VERSION`). `WRITABLE_FORMAT_VERSIONS` is the set completion may consume, `0.2.2` and `0.2.3`: a `0.2.2` source completes to `0.2.3`. The converter writes `0.2.0` |
+| Python floor | 3.12 |
+| Zarr / numcodecs | `zarr>=3.4,<4`, `numcodecs>=0.17` (Zarr v3 with the sharding codec) |
+
+`pixi.toml` follows opengwasdb's `main`. Every merge there has been a tagged
+release since `v0.3.0` (epic #385), so the tip of `main` is always a version,
+and the installed version names the release it was built from. `pixi.lock`
+records the exact commit the solve resolved, and that is the only place the
+commit is written: the release guard, Manifest Generation's resolve stage
+and `env-check` read it from there (`ogstores.engine.locked_commit`). Each proves the engine it runs from that
+executable's own install metadata (`ogstores.engine.identify`) and refuses one
+that is not the locked commit, in the same words. The Python 3.12 / zarr 3.4 /
+numcodecs 0.17 floors are not preferences: the engine requires them, and a
+zarr 2.x environment cannot open a format-0.2.0 Store.
+
+### Moving the engine
+
+```bash
+pixi run engine-update     # relock to the followed branch's tip, install it, check it
+git commit pixi.lock -m "Move opengwasdb to <version> (<commit>)"
+```
+
+Run it at the start of a working session, and commit the lock on its own, never
+inside a feature change. `engine-update` refuses, and puts the previous lock
+back, when the lock does not resolve exactly one commit, when an environment
+installs another, or when the new engine's baseline Store format is not
+`REQUIRED_FORMAT_VERSION`: a format change is a deliberate repository change,
+not an update. That baseline is `0.2.3` since opengwasdb#338 (ADR 0068; it was
+`0.2.2` from opengwasdb#381, ADR 0079): an engine that writes `0.2.0`, `0.2.1` or
+`0.2.2` is refused. `pixi run engine-update --check` checks without moving anything.
+
+### Engines within a phase
+
+Only a step that continues another engine's output is held to that engine. An
+interrupted `complete-dense` resumes only under the engine that started it, as
+`complete.started.json` names it. A start record written before #410 names
+none: its checkpoint resumes only when every step record of its phase names one
+engine and that engine is installed, and is otherwise refused, naming both.
+
+Every other step may run under a newer engine that writes the same Store
+format: re-running `validate`, adding an Indexed Variant Subset, `rho` or the
+overview after `engine-update` needs neither the old engine nor a rebuild. The
+format checks are unchanged: `engine-update` refuses an engine that writes
+another `format_version`, and the guard a completion parent in another format.
+`register` records every engine a phase used, from its step records rather than
+whichever `opengwasdb` is on `PATH` when it runs, in `validation.yaml`'s
+`build_environment.engines`, and keeps `opengwasdb_commit` for the engine that
+wrote the Store. The pin history these sections used to carry is in git
+history.
+
+## What the pin provides
+
+- **Format-0.2.0 builders** (opengwas/opengwasdb#247): Zarr v3 with the
+  sharding codec; Dense inner chunk `[1000, 64]` and shard `[100000, 1024]`.
+  `build-dense-vcf`, `build-hybrid`, `build-ragged-ssf` and `build-ragged-besd`
+  all write it, and the converter writes the same layout from a 0.1.0 source.
+- **Format 0.2.2: indel ALIDs spell the reference allele first**
+  (opengwas/opengwasdb#381, ADR 0079, `docs/store-format-compatibility.md` in the
+  engine). Every builder and every completion stamps `0.2.2`, with or without a
+  Ragged release's `regions.tsv` (which the released engine 0.9.0 stamped `0.2.1`,
+  opengwas/opengwasdb#430). The arrays and encodings are 0.2.0's. **Completion
+  consumes `0.2.2` and `0.2.3`**: it refuses a `0.2.1`, `0.2.0` or `0.1.0` source,
+  and says to rebuild it. The converter still writes `0.2.0`, so a converted
+  parent is not completable either.
+- **Format 0.2.3: an SE above 65,504 is not stored, and each Analysis counts the
+  ones left out** (opengwas/opengwasdb#338, ADR 0068). `analyses.tsv` gains the
+  store-only column `n_missing_se_out_of_range`, a non-negative integer on every
+  row from 0.2.3 (a Hybrid root's included), and `format_version` moves to
+  `0.2.3`. 65,504 is the largest value a `float16` plane holds; an SE above it,
+  `+inf` included, is almost certainly an error in its source. A writer leaves
+  the association out under every plan, z, SE and EAF together, so **from 0.2.3
+  no query returns a `+inf` SE**. `validate` fails a 0.2.3 release holding one
+  (`associations.se_out_of_range`) and warns on a `+inf` below 0.2.3
+  (`associations.se_infinite`). Every builder and every completion stamps `0.2.3`,
+  so a `0.2.2` source completes to `0.2.3`; arrays and `index.sqlite` are not
+  re-encoded. The converter writes `0.2.0` and refuses a source holding such an
+  SE. On OGS-00011's three Analyses with an SE above the bound, a rebuild counts
+  `1`, `5` and `2` at the root (`0`, `2` and `2` in the Dense Component);
+  stores#403 is that rebuild. No published Store changes: a Store built at
+  `0.2.2` or below keeps its `format_version`, with no column and, where one
+  held a `+inf`, that value.
+- **The required Ragged/Overflow `by_variant/` index**
+  (opengwas/opengwasdb#252/#268). Every Ragged and Hybrid builder writes it
+  inline; `opengwasdb validate` fails without it. It is part of the format
+  contract, **not** an optional enhancement, and the registry plans no separate
+  step for it.
+- **Indexed Variant Subset support** (opengwas/opengwasdb#264/#269/#271),
+  including Dense, completed-Dense and Hybrid Dense components:
+  `build-indexed-subset`, audited by `validate` and reported by `overview`.
+- The shared HM3 benchmark seam (opengwas/opengwasdb#272).
+- **One strand-aware hg19 lift** (opengwas/opengwasdb#288, core #284; moved here
+  for stores #312's OGS-00009 rebuild). The resolver and the Dense, Hybrid and
+  BESD builders share it, so signed statistics and EAF follow the projected
+  allele pair on a reverse-strand variant. A single-pass Hybrid build whose
+  off-reference rows lift onto the reverse strand is refused.
+- **A policy for the Hybrid build's rsid harvest** (opengwas/opengwasdb#306,
+  moved here for stores #225's OGS-00011 rebuild). `build-hybrid
+  --on-rsid-conflict {refuse,drop}` decides what a routing key its sources name
+  differently stores, and the build always reports what it compared as
+  `rsid_conflicts`. See "Coordination with core #306".
+- **A policy for a Hybrid subset's Overflow-only ALIDs**
+  (opengwas/opengwasdb#324, moved here for the same rebuild).
+  `build-indexed-subset --overflow-only {refuse,skip}` decides a requested ALID
+  only the Hybrid's shared axis carries, and a `skip` build records how many.
+  See "Coordination with core #324".
+- **One policy for a post-lift variant collision** (opengwas/opengwasdb#304;
+  moved here for stores #314's OGS-00027). A chain set need not be injective: two
+  hg19 loci can map into one hg38 position, and when their projected alleles
+  agree they become one canonical variant. `build-ragged-besd` now drops every
+  ESI entry in such a colliding group, with its associations, exactly as a
+  liftover failure is, and records the counts in `provenance.lift`; a Ragged CSR
+  cannot hold one `variant_index` twice in one Analysis's segment. `validate`
+  requires each Analysis's `variant_index` slice to be **strictly increasing**,
+  on every release, and reports a repeat separately from a decrease.
+- **Per-association sample size, and the `.esi` allele frequency on request**
+  (opengwas/opengwasdb#302, ADR 0067; moved here for the OGS-00027
+  replacement, stores #314 in epic #282). `build-ragged-besd
+  --sample-size-table` stores each stored pair's published sample size in an
+  opt-in `uint32` `n` plane and its by-variant copy, and never estimates one the
+  table omits; `--store-esi-eaf` stores the `.esi` frequency per association,
+  oriented to the effect allele and checked once against `--eaf-reference`. A
+  Store holding an `n` plane keeps `se` in float16, the loader and `validate`
+  refuse an `n` plane beside residual-coded `se`, every Ragged query result then
+  carries `n`, and `info` reports `n=uint32`.
+- **A lifting `build-ragged-ssf`** (opengwas/opengwasdb#386, v0.6.0). A manifest
+  row declaring GRCh37 was refused; it is now lifted to GRCh38 with
+  `--chain-file`, which such a row requires, and the build fails when more than
+  `--liftover-failure-threshold` (default 0.01) of the lifted sites have no
+  place on the chain. Both are Build Recipe options, rendered verbatim like any
+  other (ADR 0023): `plan()` composes neither. The Admission record counts the
+  lift's drops as `lift_unmapped` and `lift_ambiguous`, under rules
+  `admission/11`, and a lifted Store records `provenance.lift`, as a BESD build
+  does. A build whose rows are all GRCh38 streams as before and writes the same
+  Store but for `created_at` and the record's `rules`; all 4,453 rows of the
+  five committed Ragged SSF bundles declare GRCh38.
+
+## The pre-write gate
+
+Before the entry point snapshots anything or a build writes a Store,
+`ogstores.runtime.verify_runtime_for_releases` (called from
+`workflow/release.py`, and from the Snakefile `onstart` for a direct
+`snakemake` run) refuses a run when:
+
+1. no `opengwasdb` executable resolves on `PATH`;
+2. the revision cannot be proven from the executed install's own metadata, or
+   is a known revision other than the tracked pin -- an unprovable identity is
+   refused, not assumed, so an ad-hoc executable substituted onto `PATH` cannot
+   silently become the factory runtime;
+3. the runtime does not provide every subcommand the *scheduled* jobs will run
+   (probed with `--help`); or
+4. a **scheduled** `complete` job would consume an existing parent Store whose
+   declared `format_version` the pinned builders do not write: anything but
+   `0.2.2` or `0.2.3` (`ogstores.runtime.WRITABLE_FORMAT_VERSIONS`). The refusal says to
+   rebuild the parent with the pinned engine.
+
+The gate is scheduled-step-aware, because an id appearing in the dry run is not
+proof that the Store is rebuilt. `workflow/release.py` and the Snakefile
+`onstart` pass `(artifact_root, store_id, step)` for every dry-run job, so:
+
+* the parent format is gated only when the child's own `complete` job will run;
+  an enhancement-only rerun of an existing completed Store (build its HM3
+  subset, validate, overview) never consults its unused completion recipe;
+* a same-run `build` or `complete` job for the parent produces a fresh
+  0.2.3 Store, so the stale on-disk artifact is not consumed and is not gated;
+* a parent that is neither on disk nor scheduled to be produced is refused
+  loudly before Snakemake starts.
+
+The parent's declared format is read through `opengwasdb info --format json` --
+the core's supported reporting interface -- not by opening the Store in this
+repository. The run prints the resolved identity it will use, and every Step's
+durable record already carries the exact `opengwasdb` revision and executable
+that ran.
+
+The format-0.2.3 and required-`by_variant` guarantees rest on the **verified
+pin identity**, not on the `--help` probes: the subcommand probe only proves the
+CLI surface a scheduled step calls exists. That is why an unprovable revision is
+refused even when the commands answer.
+
+The ordinary invocation therefore uses the pinned runtime with no `PATH`
+overlay:
+
+```text
+pixi run release OGS-00016
+```
+
+The HM3 pipeline proof's temporary explicit `--opengwasdb-checkout` remains a
+proof tool, not the supported release entry point.
+
+## Rebuilding a parent below format 0.2.2
+
+A parent below `0.2.2` is readable but not completable by the pinned engine
+(opengwas/opengwasdb ADR 0038 §4, ADR 0079): completion writes into the source's
+arrays and never re-encodes them, and a pre-`0.2.2` source spells its deletions
+the way an insertion is spelt, so completing it would sort the panel's indels
+beside them. **The remedy is a rebuild of the parent with this engine, then the
+completion**: a fresh `pixi run release <parent>` writes a new `0.2.3` observed
+Store. Converting is no remedy: the converter
+(`scripts/convert_store_to_0_2_0.py`) writes `0.2.0`, which completion refuses.
+The runtime gate refuses the wrong order before any write and directs the
+operator here; it does not itself invoke a converter. Rebuilding or replacing a
+*registered* release is a catalogue action with its own gates, not a side effect
+of a completion run.
+
+**Published Stores this affects.** Nothing is changed in any release's data: a
+published Store stays what its records say. But none of these can be the parent
+of a completion at this engine until it is rebuilt:
+
+- the five that the released engine 0.9.0 built at `0.2.1`, Ragged releases
+  carrying `regions.tsv`: **OGS-00006, OGS-00007, OGS-00024, OGS-00025 and
+  OGS-00026**;
+- the **0.2.0** Stores, read from their `manifest.json` in `/data/opengwasdb/stores`
+  on 13 Nov 2026: **OGS-00001, -02, -09, -11, -12, -13, -14, -15, -16, -17 and -27**;
+- the **0.1.0** Stores (Zarr v2, which completion refused before this pin too):
+  **OGS-00003, -04, -05 and -08**.
+
+OGS-00022 and -23 have no Store under the Artifact Root, and OGS-00032 and -33 are candidates with none built.
+Any release rebuilt or completed after this is `0.2.3` as it is written.
+
+A two-id completion from one of them is refused by this repository's guard
+before any write; a single-id completion of one (the Store completes itself) is
+refused by the engine's own `complete-*` command, which reads the format. Either
+stays refused until the Store is rebuilt. Reading, querying and validating them with this engine is
+unchanged. A `0.2.0` or `0.2.1` Store is read and validated as before and is
+never rewritten.
+
+## Upgrading does not convert or requalify anything
+
+Bumping the pin changes what a **new** build is. It does not rebuild, convert,
+revalidate or requalify any published Store. Every registered Store built before
+the pin keeps the format it was built at (`0.1.0`, `0.2.0` or `0.2.1`), remains
+readable, and stays exactly as it was.
+
+Consequences a build ticket must handle explicitly:
+
+- A Reference Completion of a parent below 0.2.2 is refused at the gate above and
+  by the core builder itself. Rebuild the parent at the pinned runtime, then
+  complete the rebuilt release; converting does not help, and a completion never
+  re-encodes its source. See "Rebuilding a parent below format 0.2.2" above.
+- Each build ticket must therefore supply a compatible observed parent before
+  it can register a completed descendant. The existence of a published 0.1.0
+  parent is not that parent.
+- The required `by_variant/` index is part of every 0.2.x build; a converted or
+  older working copy that predates its required status still needs current
+  validation.
+
+## Coordination with core #254
+
+Core opengwas/opengwasdb#254 (bounded Dense-validation memory) was not on `dev`
+when this pin was first taken (`1be2a15`). It has since merged (PR #276) and this
+pin was re-coordinated to `4e922566`, which carries the same format and
+capability set plus the reduced validation memory bound (full-run peak RSS on
+OGS-00009 33.7 → 2.35 GiB, OGS-00010 36.5 → 3.01 GiB, validate clean). The
+earlier prohibition stands: do not install an uncommitted core checkout as the
+chosen runtime, and treat any future repin as a deliberate coordinated change.
+
+## Coordination with core #289
+
+Core opengwas/opengwasdb#289 adds `opengwasdb check-observed-view`, the
+Observed-View Check that gates a single-id completion's swap (stores #306,
+ADR 0037). The pin was raised to `023774a7`, the head of its PR #291, so the
+tracked runtime has the command. That PR merged into core `dev` as `d405de0`
+(second parent `023774a7`), and stores #312 then moved the pin to `d405de0`
+itself, because the OGS-00009 rebuild needs core #288's strand-aware hg19 lift,
+its first parent's merge. A release that completes its own Store
+(ADR 0037) on a runtime without the command is refused before anything is
+written, by
+`resources.verify_observed_view_check_for_releases`, which the entry point calls
+in its dry run and its run, and the Snakefile in `onstart`, beside the Indexed
+Variant Subset guard.
+
+## Coordination with core #295
+
+Core opengwas/opengwasdb#295 extends `check-observed-view` from Dense pairs to
+Hybrid pairs: the Dense Components, every crossover (a source Overflow association
+whose ALID becomes a Dense row on completion), and a seeded sample of
+whole Overflow Analyses with exhaustive per-Analysis counts. Stores #333 moved
+the pin to `eb4c749b`, #295's merge into the core integration branch
+`orch/232-observed-view` (core PR #303), so that a Hybrid release can complete
+its own Store (ADR 0037). That revision is not yet on core `dev`. The pin
+has since moved to the merge of core `dev` into that branch, which carries
+`dev`'s #304 and #298 as well (the pin table above); the branch itself has not
+merged into `dev` yet.
+
+`--help` shows the same `check-observed-view` command on revisions that compare
+only Dense pairs, so the capability probe above cannot tell them apart. The
+exact-pin check is what refuses an older runtime for a Hybrid or Ragged
+single-id release: any revision other than the pin is refused before anything
+is written.
+
+## Coordination with core #296
+
+Core opengwas/opengwasdb#296 extends `check-observed-view` to Ragged pairs. A
+Ragged Store has no chunk-rows, so the check samples whole Analyses
+(`--n-random` of them, from the same seed) and, for each, rebuilds the regions
+completion retained from the LD panel: every observed association must come
+back identical and not imputed, and every imputed association must lie inside
+a retained region. That rebuild needs the panel completion used, so the
+check refuses a Ragged pair without `--ld-panel` (exit 2); `--ancestry`
+defaults to the one the completed Store records and, when given, must match
+it. The planner passes both from the bundle's `complete` options. Stores #336
+moved the pin to `32f47b3b`, #296's merge into the same integration branch, so
+that a Ragged release can complete its own Store (ADR 0037). Like `eb4c749b`,
+it is not yet on core `dev`.
+
+The capability probe cannot tell `32f47b3b` from `eb4c749b` either: it asks
+only whether `check-observed-view --help` succeeds, and on both it does. Here
+too the exact-pin check, not the probe, is what refuses an older runtime for a
+Ragged single-id release.
+
+The check compares observed SE exactly. Before opengwasdb `v0.6.2`,
+`complete-ragged` refit and re-quantised SE stored as `int8_residual`, which on
+real data moved every observed SE slightly, so a Ragged Store whose builder
+chose that encoding, as OGS-00006's did, failed the check. `v0.6.2` keeps the
+source's `se_coefficients` and carries each observed SE exactly
+(opengwas/opengwasdb#301, its ADR 0078), and the check passes on the three
+Chen 2023 Analyses #301 was measured on.
+
+## Coordination with core #304
+
+Core opengwas/opengwasdb#304 is the fix for the collision class the full eQTLGen
+cis Store (OGS-00027, stores #314) hit: 13 of its hg19 SNPs land on one hg38
+variant after the lift, so `d405de0`'s `validate` passed a Store whose CSR held a
+`variant_index` twice in one Analysis's segment. The pin moved to `d8896e4`, the
+`dev` merge of PR #305, whose range from `d405de0` is #304's three commits and
+its merge plus a docs-only merge (#293). The tightened ordering rule is a
+validation rule, so it applies to every release, not only to new builds: it
+reads each registered Ragged and Hybrid Store's full `variant_index` and finds
+no repeat, so no published Store becomes invalid at this pin. A Store built
+before it that does carry a repeat must be rebuilt, not revalidated.
+## Coordination with core #306
+
+A single-pass Hybrid build whose variant reference names no rsids harvests a
+name for each source site, and two sites that case-fold to one routing key can
+disagree: the EBI GWAS-SSF Sources spell some alleles in lower case and carry a
+compound `variant_id` as their name. Refusing that was what stopped the
+OGS-00011 rebuild of 2026-10-22, at `1:905:C:T`, and no option resolved it.
+
+Core opengwas/opengwasdb#306 adds `build-hybrid --on-rsid-conflict {refuse,drop}`,
+default `refuse`, which is the behaviour it had. Under `drop` the disputed
+routing key gives no rsid to the variants it reaches: the table cell is `.` and
+the key is absent from the rsid index, which is how a Store already records a
+variant it can name no other way. The build always reports what its harvest
+compared as `rsid_conflicts: {policy, n_keys, n_variants, sample}` in its stdout
+JSON, with both counts `0` when nothing was disputed and `null` when no names
+were compared across sources, which is now only a reference that names its own
+rsids. From opengwasdb v0.6.0 (opengwas/opengwasdb#379) a `--reference-panel`
+build harvests names with the same test, accepts `drop`, and reports counts
+where it reported `null`: where its sources spell one site in different case
+and name it differently, it kept the first source's name before. The other
+builders apply the same test with no option: `build-dense-vcf`,
+`build-ragged-ssf` and `extract-variant-reference` refuse such a site, naming
+it and both rsids, and report no `rsid_conflicts`.
+
+What was measured, all read-only. The engine (opengwas/opengwasdb#379) routed
+OGS-00003, -00004 and -00008's recorded sources and harvested OGS-00006's and
+-00007's admitted rows, and found no disputed key; the other two-pass Stores
+(OGS-00009, OGS-00012 to -00017) hold no lower-case allele. It did not measure
+the other three `build-ragged-ssf` Stores, OGS-00024, -00025 and -00026 (3,043
+Analyses), which a rebuild would now refuse at a disputed key. A routing key
+only upper-cases a site's alleles, so a disputed key needs one site spelt in
+two cases, and on 2026-11-07 none of the 46,020,914 rows of those three Stores'
+source files spelt an allele in lower case (the same scan counts OGS-00006's
+58,054,430 rows, all upper-case, as the engine's harvest did). Every variant of
+the three carries an rs identifier, so `build-ragged-ssf`'s naming by the first
+non-empty rsid, which differs from its old first-row rule only for a variant
+that rule left unnamed, renames none of them either.
+The same change normalises a compound `rsN:pos:a:b` id and the first item of a
+`;` list in the readers, so a name that is really one rsid is compared as that
+rsid.
+
+The policy is per Build Recipe, so it is the recipe that declares it; stores
+#225 adds `on-rsid-conflict: drop` to OGS-00011's, as a Release Erratum, and
+`register` copies the counts into the Validation Record's
+`observed.rsid_conflicts`. A release that completes its own Store carries them
+from its build phase, because `complete-hybrid` reports none: the counts
+describe the completed Store too. A checkpoint records the policy, so a build
+checkpointed before the option existed reads as `refuse`: resuming it under
+`drop` is refused, as resuming under any other changed parameter is.
+
+## Coordination with core #324
+
+A subset build on a Hybrid root indexes the release's nested Dense Component,
+not the whole release: an ALID the release carries only on the shared/Overflow
+axis has a Variant Index there that this index cannot address. Resolving it
+against the Dense Component alone would count it absent and leave it out
+silently, so the builder refused the whole request and named the ALIDs. That is
+what stopped the OGS-00011 rebuild of 2026-10-23: 17,151 of the 1,206,903 HM3
+ALIDs it requested were Overflow-only, and 149 were absent from the release
+altogether.
+
+Core opengwas/opengwasdb#324 adds `build-indexed-subset --overflow-only
+{refuse,skip}`, default `refuse`, which is the behaviour it had and names the
+`skip` remedy when it refuses. Under `skip` the Overflow-only ALIDs stay out of
+the index, and the group records `overflow_only_count` -- always written, `0`
+when there were none -- beside the first 20 skipped ALIDs as
+`overflow_only_sample`, in variant-list order. The count is never folded into
+`absent_count`, which keeps its meaning: the release does not carry the ALID at
+all. The recorded counts must sum `requested_count = resolved_count +
+absent_count + overflow_only_count`, and both the read seam and `validate`
+enforce it. A group written before the option records neither attribute and is
+read as `0`, because the builder that wrote it could only refuse such a
+request; a Dense root has no Overflow axis, so it accepts the flag with no
+effect.
+
+The policy is per declared subset, so it is the declaration that carries it:
+stores #225 gives OGS-00011's `hm3` declaration `options: {overflow-only:
+skip}`, and the planner passes the whole `options` mapping through to both
+phases' `build-indexed-subset` argv. The build prints the human counts and a
+JSON summary whose `overflow_only` block holds `policy`, `n_overflow_only` and
+the sample. `register` harvests no subset output -- it reads the Store's build
+or completion step -- so the counts of a subset built here live in that step's
+record, `records/<phase>indexed-subset-<name>.json`, and nowhere in the
+Validation Record.

@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.38">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Epic: Cut Store Release Build, validation and Reference Completion wall time by removing repeated and single-process work – OpenGWASDB</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-b46a788e9dbe025090d634cacd4b6238.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script src="../site_libs/quarto-diagram/mermaid.min.js"></script>
+<script src="../site_libs/quarto-diagram/mermaid-init.js"></script>
+<link href="../site_libs/quarto-diagram/mermaid.css" rel="stylesheet">
+
+
+</head>
+
+<body class="nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../index.html">
+    <span class="navbar-title">OpenGWASDB</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="../index.html"> 
+<span class="menu-text">Overview</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../stores.html"> 
+<span class="menu-text">Stores</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../epics.html"> 
+<span class="menu-text">Epics</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../trends.html"> 
+<span class="menu-text">Trends</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../changelog.html"> 
+<span class="menu-text">Changelog</span></a>
+  </li>  
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-architecture" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Architecture</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-architecture">    
+        <li>
+    <a class="dropdown-item" href="../architecture.html">
+ <span class="dropdown-text">Pipeline</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../architecture-work.html">
+ <span class="dropdown-text">Work map</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../architecture-structure.html">
+ <span class="dropdown-text">Structure and health</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="../reports.html"> 
+<span class="menu-text">Reports</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../reference.html"> 
+<span class="menu-text">Registry</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../opengwasdb/index.html"> 
+<span class="menu-text">Engine</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/opengwas/opengwasdb-stores"> <i class="bi bi-github" role="img" aria-label="opengwasdb-stores on GitHub">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#purpose" id="toc-purpose" class="nav-link active" data-scroll-target="#purpose">Purpose</a></li>
+  <li><a href="#where-it-stands" id="toc-where-it-stands" class="nav-link" data-scroll-target="#where-it-stands">Where it stands</a></li>
+  <li><a href="#tickets" id="toc-tickets" class="nav-link" data-scroll-target="#tickets">Tickets</a></li>
+  <li><a href="#decisions" id="toc-decisions" class="nav-link" data-scroll-target="#decisions">Decisions</a></li>
+  <li><a href="#versions-shipped" id="toc-versions-shipped" class="nav-link" data-scroll-target="#versions-shipped">Versions shipped</a></li>
+  <li><a href="#before-and-after" id="toc-before-and-after" class="nav-link" data-scroll-target="#before-and-after">Before and after</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Epic: Cut Store Release Build, validation and Reference Completion wall time by removing repeated and single-process work</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- generated by src/project_site/pages.py (#391): edit that module, not this page -->
+<section id="purpose" class="level2">
+<h2 class="anchored" data-anchor-id="purpose">Purpose</h2>
+<p>A full Store Release takes about a day of wall time, even outside the nightly backup window. OGS-00009 (2,514 Analyses × 9.85M variants), together with its Reference Completion, needs about **27 hours**. Most of that time goes to work that is either:</p>
+<p>Epic #307 removed repeated full-plane work, parallelised validation, encoding, Top-Hit scanning and completion writes, and replaced row-wise Pass 2 bottlenecks with exact columnar paths while retaining the Python reference implementations. The final OGS-00009 scratch release completed in 7h50m34.998s, 23.228% faster than the prior run and 1h09m25.002s inside the nine-hour gate, with clean validation and zero observed-view mismatches across 2.681 billion cells. Engine v0.10.0 and the matching stores contracts are released; value-changing completion work remains separately specified in #423, and no production reference regeneration was part of this epic.</p>
+</section>
+<section id="where-it-stands" class="level2">
+<h2 class="anchored" data-anchor-id="where-it-stands">Where it stands</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Issue</td>
+<td><a href="https://github.com/opengwas/opengwasdb/issues/307">opengwasdb#307 on GitHub</a></td>
+</tr>
+<tr class="even">
+<td>State</td>
+<td>CLOSED</td>
+</tr>
+<tr class="odd">
+<td>Status</td>
+<td>Done</td>
+</tr>
+<tr class="even">
+<td>Workstream</td>
+<td>Data architecture</td>
+</tr>
+<tr class="odd">
+<td>Priority</td>
+<td>P2 · Medium</td>
+</tr>
+<tr class="even">
+<td>Sub-issues</td>
+<td>24 of 24 completed</td>
+</tr>
+<tr class="odd">
+<td>Next</td>
+<td>29/29 merged on PR #411 · Complete 17 Nov: all 24 in-scope native sub-issues and all 29 orchestration tickets merged; engine v0.10.0 at 511f2537 passed the independently reviewed 7h50m OGS-00009 proof, stores PRs #457/#470/#473 released as v0.24.1/v0.25.0/v0.25.1, the reviewed epic record and yardstick merged in #474 and released as v0.25.2, and epic #307 is closed; production reference regeneration remains owner-gated and #423 is a detached new-method follow-up</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="tickets" class="level2">
+<h2 class="anchored" data-anchor-id="tickets">Tickets</h2>
+<div class="cell" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class="figure"><p></p>
+<div>
+<pre class="mermaid mermaid-js">flowchart LR
+  classDef open fill:#fff8e1,stroke:#8d6e00,color:#000
+  classDef closed fill:#e6f4ea,stroke:#2e6b2e,color:#000
+  n0["opengwasdb#35;308 — Validation logs each check as a timed phase"]:::closed
+  n1["opengwasdb#35;309 — Attribute Reference Completion's wall time to its phases"]:::closed
+  n2["opengwasdb#35;310 — Attribute the EAF survey and orientation check's wall time"]:::closed
+  n3["opengwasdb#35;311 — A committed harness reproduces the epic's timing evidence"]:::closed
+  n4["opengwasdb#35;312 — Prove a Dense build's inline Top-Hit Index equals a standalone rebuild"]:::closed
+  n5["opengwasdb#35;313 — build-dense-top-hits accepts --n-workers"]:::closed
+  n6["opengwasdb#35;314 — Validation reads each statistic plane once"]:::closed
+  n7["opengwasdb#35;315 — Validation spreads bands across --n-workers"]:::closed
+  n8["opengwasdb#35;316 — Dense Pass 2 matches associations with an integer key join"]:::closed
+  n9["opengwasdb#35;317 — Hybrid Pass 2 uses the integer key join"]:::closed
+  n10["opengwasdb#35;318 — FinnGen sources stream to Pass 2 as columns"]:::closed
+  n11["opengwasdb#35;319 — GWAS-SSF sources stream to Pass 2 as columns"]:::closed
+  n12["opengwasdb#35;320 — The residual EAF encode runs across workers"]:::closed
+  n13["opengwasdb#35;321 — Completion's post-block band write uses more than one process"]:::closed
+  n14["opengwasdb-stores#35;357 — A Dense build meets its declared top_hits itself"]:::closed
+  n15["opengwasdb-stores#35;358 — The Store Release Build passes a worker count to validate"]:::closed
+  n16["opengwasdb#35;322 — Re-measure OGS-00009 end to end and record the second-language decision"]:::closed
+  n17["opengwasdb#35;383 — Forked build workers may pay GC on inherited memory; try gc.freeze() in fork_pool"]:::closed
+  n18["opengwasdb#35;387 — Read the Dense EAF exception table once per validation pass, not once per band"]:::closed
+  n19["opengwasdb#35;422 — Reference Completion forms an LD block's fills as arrays"]:::closed
+  n20["opengwasdb-stores#35;455 — Rescued swap_alleles copies rewrite statistics, not allele labels"]:::closed
+  n21["opengwasdb-stores#35;472 — Variant Reference producers declare reference-first indels"]:::closed
+  n22["opengwasdb#35;435 — Reference Completion forwards its worker count to the Dense Top-Hit scan"]:::closed
+  n23["opengwasdb#35;436 — Epic evidence parsing depends on the parser machine's timezone"]:::closed
+  x1["opengwasdb#35;381"]:::open
+  x2["opengwasdb#35;424"]:::closed
+  n18 --&gt; n6
+  n0 --&gt; n6
+  n6 --&gt; n7
+  x1 --&gt; n8
+  n8 --&gt; n9
+  n8 --&gt; n10
+  n10 --&gt; n11
+  x2 --&gt; n13
+  n1 --&gt; n13
+  n4 --&gt; n14
+  n7 --&gt; n15
+  n13 --&gt; n16
+  n12 --&gt; n16
+  n11 --&gt; n16
+  n9 --&gt; n16
+  n15 --&gt; n16
+  n14 --&gt; n16
+  n3 --&gt; n16
+  n2 --&gt; n16
+  n15 --&gt; n21
+  n14 --&gt; n21
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Ticket</th>
+<th>State</th>
+<th>Merge commit</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/308">Validation logs each check as a timed phase</a> (<code>opengwasdb#308</code>)</td>
+<td>CLOSED</td>
+<td>ff0da89</td>
+</tr>
+<tr class="even">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/309">Attribute Reference Completion’s wall time to its phases</a> (<code>opengwasdb#309</code>)</td>
+<td>CLOSED</td>
+<td>703fb07</td>
+</tr>
+<tr class="odd">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/310">Attribute the EAF survey and orientation check’s wall time</a> (<code>opengwasdb#310</code>)</td>
+<td>CLOSED</td>
+<td>df000b4</td>
+</tr>
+<tr class="even">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/311">A committed harness reproduces the epic’s timing evidence</a> (<code>opengwasdb#311</code>)</td>
+<td>CLOSED</td>
+<td>39c74f2</td>
+</tr>
+<tr class="odd">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/312">Prove a Dense build’s inline Top-Hit Index equals a standalone rebuild</a> (<code>opengwasdb#312</code>)</td>
+<td>CLOSED</td>
+<td>28f48d3</td>
+</tr>
+<tr class="even">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/313">build-dense-top-hits accepts –n-workers</a> (<code>opengwasdb#313</code>)</td>
+<td>CLOSED</td>
+<td>79a130e</td>
+</tr>
+<tr class="odd">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/314">Validation reads each statistic plane once</a> (<code>opengwasdb#314</code>)</td>
+<td>CLOSED</td>
+<td>f78fe81</td>
+</tr>
+<tr class="even">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/315">Validation spreads bands across –n-workers</a> (<code>opengwasdb#315</code>)</td>
+<td>CLOSED</td>
+<td>8acd22b</td>
+</tr>
+<tr class="odd">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/316">Dense Pass 2 matches associations with an integer key join</a> (<code>opengwasdb#316</code>)</td>
+<td>CLOSED</td>
+<td>70e37e8</td>
+</tr>
+<tr class="even">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/317">Hybrid Pass 2 uses the integer key join</a> (<code>opengwasdb#317</code>)</td>
+<td>CLOSED</td>
+<td>a054406</td>
+</tr>
+<tr class="odd">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/318">FinnGen sources stream to Pass 2 as columns</a> (<code>opengwasdb#318</code>)</td>
+<td>CLOSED</td>
+<td>f7c2974</td>
+</tr>
+<tr class="even">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/319">GWAS-SSF sources stream to Pass 2 as columns</a> (<code>opengwasdb#319</code>)</td>
+<td>CLOSED</td>
+<td>242d05b</td>
+</tr>
+<tr class="odd">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/320">The residual EAF encode runs across workers</a> (<code>opengwasdb#320</code>)</td>
+<td>CLOSED</td>
+<td>259516a</td>
+</tr>
+<tr class="even">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/321">Completion’s post-block band write uses more than one process</a> (<code>opengwasdb#321</code>)</td>
+<td>CLOSED</td>
+<td>f62f8ff</td>
+</tr>
+<tr class="odd">
+<td><a href="https://github.com/opengwas/opengwasdb-stores/issues/357">A Dense build meets its declared top_hits itself</a> (<code>opengwasdb-stores#357</code>)</td>
+<td>CLOSED</td>
+<td>4e61ebe403c816cf35eb3d9e197b0ec2f6d8ca54</td>
+</tr>
+<tr class="even">
+<td><a href="https://github.com/opengwas/opengwasdb-stores/issues/358">The Store Release Build passes a worker count to validate</a> (<code>opengwasdb-stores#358</code>)</td>
+<td>CLOSED</td>
+<td>4e61ebe403c816cf35eb3d9e197b0ec2f6d8ca54</td>
+</tr>
+<tr class="odd">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/322">Re-measure OGS-00009 end to end and record the second-language decision</a> (<code>opengwasdb#322</code>)</td>
+<td>CLOSED</td>
+<td>b0ceafd</td>
+</tr>
+<tr class="even">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/383">Forked build workers may pay GC on inherited memory; try gc.freeze() in fork_pool</a> (<code>opengwasdb#383</code>)</td>
+<td>CLOSED</td>
+<td><em>not reported</em></td>
+</tr>
+<tr class="odd">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/387">Read the Dense EAF exception table once per validation pass, not once per band</a> (<code>opengwasdb#387</code>)</td>
+<td>CLOSED</td>
+<td>723cac0</td>
+</tr>
+<tr class="even">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/422">Reference Completion forms an LD block’s fills as arrays</a> (<code>opengwasdb#422</code>)</td>
+<td>CLOSED</td>
+<td>0b0e44d3</td>
+</tr>
+<tr class="odd">
+<td><a href="https://github.com/opengwas/opengwasdb-stores/issues/455">Rescued swap_alleles copies rewrite statistics, not allele labels</a> (<code>opengwasdb-stores#455</code>)</td>
+<td>CLOSED</td>
+<td>59d666cf1f6b1b94068eca8822de2dc21dade9b5</td>
+</tr>
+<tr class="even">
+<td><a href="https://github.com/opengwas/opengwasdb-stores/issues/472">Variant Reference producers declare reference-first indels</a> (<code>opengwasdb-stores#472</code>)</td>
+<td>CLOSED</td>
+<td>aab9fb4fbdde736d4aeb57c883daa3b508cf7a2c</td>
+</tr>
+<tr class="odd">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/435">Reference Completion forwards its worker count to the Dense Top-Hit scan</a> (<code>opengwasdb#435</code>)</td>
+<td>CLOSED</td>
+<td>9a470fb2</td>
+</tr>
+<tr class="even">
+<td><a href="https://github.com/opengwas/opengwasdb/issues/436">Epic evidence parsing depends on the parser machine’s timezone</a> (<code>opengwasdb#436</code>)</td>
+<td>CLOSED</td>
+<td>60b72172</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="decisions" class="level2">
+<h2 class="anchored" data-anchor-id="decisions">Decisions</h2>
+<ul>
+<li><strong>2026-11-07</strong> — Owner: run #307 starting with #381. #316 keys follow #381’s ALID (its body and 4 Nov comment), so #381 blocks #316 and, through it, #317-#319.</li>
+<li><strong>2026-11-07</strong> — #381 is tracked as `381-build` so the run never closes it: milestone #388 says each ‘builds that are right’ issue stays open for its published Releases’ repair under #367, and #381’s own last box (a migrate-or-rebuild plan) was deferred to #367 by the owner on 4 Nov.</li>
+<li><strong>2026-11-07</strong> — format_version steps to 0.2.1 with #381; #338 takes 0.2.2 if it lands after. After an hg19 lift, ‘ref’ is GRCh38’s reference allele; equal-length multi-base substitutions stay sorted like SNPs.</li>
+<li><strong>2026-11-07</strong> — Preflight STOP on #381, #308, #309, #312: launch anyway. Only #381 meets PR #389 (#301) at file level (spec and compatibility page, different sections), resolved at merge keeping both; the other meets are component-level (#338’s frozen reference branch, #363 without a branch).</li>
+<li><strong>2026-11-07</strong> — #387 before #314: both edit indexed_subsets.py’s `_compare_indexed_band` and `_DecodeContext`. #308 first too (it times the scans #314 restructures).</li>
+<li><strong>2026-11-07</strong> — Lanes run real-data timings under a shared flock ($RD/timing.lock) and record uptime; the Veeam backup no longer touches /data/opengwasdb (since 2 Nov), so there is no time-of-day window.</li>
+<li><strong>2026-11-07</strong> — Owner (via the /board sync session): add the code fixes for #355, #361 and #376 to this run as 355-build, 361-build and 376-build, tracked like 381-build so the run never closes the #367 issues. They are milestone #388 lines, and #307 already edits their components (#361: completion, beside #309/#321; #355: Dense encoding, beside #320; #376: the lift and Pass 2, beside #316-#319), so a second run beside this one would conflict. Edges are set conservatively on 381-build (each is a format or ALID-path change after it); the orchestrator refines them when 381-build merges.</li>
+<li><strong>2026-11-07</strong> — #312’s lane found build-dense-top-hits writes a Zarr v3 zarr.json into a 0.1.0 (v2) release and leaves it unreadable. Small and in #313’s command: fold it into #313 (refuse a release whose format isn’t writable) rather than file a ticket.</li>
+<li><strong>2026-11-07</strong> — Standing rule: a preflight STOP whose only meet is #338’s frozen reference branch (orch/347/338) launches, recorded on the ticket and the dashboard. Any other meet comes to the owner.</li>
+<li><strong>2026-11-07</strong> — #314’s ‘three passes become one’ reads ‘two become one’: Top-Hit Index verification already shares the association scan (ADR 0074), as #308’s spec review found. Commented on #314.</li>
+<li><strong>2026-11-07</strong> — The ‘outside the backup window’ criterion no longer binds: the nightly backup has skipped /data/opengwasdb since 2 Nov.&nbsp;OGS-00009’s validation started at 10:45 (load 132) is kept as attribution; #314 measures its own before/after under the timing lock.</li>
+<li><strong>2026-11-07</strong> — Code merged, ticket kept open (waiting-external) for the full-size comparison its criteria require; stores#357 stays blocked until then. Column bands (&gt;1,024 Analyses) are covered only by that comparison: a fixture reaching them costs ~150 s per run.</li>
+<li><strong>2026-11-07</strong> — Baselines are the harness’s own step and phase timings for OGS-00009, one full-size FinnGen and one full-size GWAS-SSF Store, not reused validation verdicts (a 23 Oct verdict predates OGS-00009’s 25 Oct re-encode). One command writes one artifact. The nightly backup window is applied to every night the records span, up to 2 Nov.</li>
+<li><strong>2026-11-07</strong> — GWAS-SSF newer layout: other_allele is the reference for hm_code 10 and 11 (pooled 97.4-99.6%; residual per-file error accepted). Older layout: all indels dropped (code-11 deletions 87.42%). Rescued swap_alleles copies read effect_allele, from a declared signal only.</li>
+<li><strong>2026-11-07</strong> — LD-panel indels: AMR’s REF column; other panels take REF from GRCh38 evidence (HGDP pvars, FinnGen ref) at one-way keys, via a per-panel table beside the panel; both-ways, disagreeing and unmatched keys dropped and counted.</li>
+<li><strong>2026-11-07</strong> — Completing a 0.2.0 source is refused (spec 21.4); the pilot’s SE requantisation (&lt;=1 int8_residual step, coefficient refit) accepted; converter writes 0.2.0; the reversed-indel machinery is removed under #316.</li>
+<li><strong>2026-11-07</strong> — No extra band slice: OGS-00009’s complete.json stderr gives the full-run figures to check the slice’s scaling. The global active timer goes; #321 is blocked on #309, so _stream_completed_arrays takes two explicit phase blocks. EAF/SE band-write speed-ups go to #321, not new tickets.</li>
+<li><strong>2026-11-07</strong> — The 32-worker OOM is fixed in #313: the standalone top-hits scan sizes its row band from validation’s one-GiB decoded working-set budget (one helper), keeping the narrow-store row cap. Host-memory rule added to _finish.md for every lane.</li>
+<li><strong>2026-11-07</strong> — Accepted: a rule whose body returns Skip keeps its start line, closed by its skip line (no elapsed line, no row); log_progress_unknown as new timing API for a pass whose count failed.</li>
+<li><strong>2026-11-07</strong> — EAF survey attributed from records: Sept 1h55m was the serial survey (f8125322, before #219), Oct 3h32m lay wholly in the backup window; today’s parallel phase ~2.5 min for 2,514 Analyses. No full-size run now (#322 measures it); the dict-to-index fix (&lt;=33 s) is below the filing bar. #310 may edit hybrid/build.py’s _verify_eaf_orientation.</li>
+<li><strong>2026-11-07</strong> — A GWAS-SSF file with no hm_ column is unharmonised and its indels are dropped (indel_ssf_unharmonised), per the owner’s 4 Nov rule; a mixed header is refused.</li>
+<li><strong>2026-11-07</strong> — Rescued swap_alleles copies: opengwasdb-stores’ rescue rewrites statistics (negate beta, invert OR and CIs, complement EAF) instead of exchanging allele labels, and regenerates the 58 copies; other_allele stays the reference; the engine needs no signal.</li>
+<li><strong>2026-11-07</strong> — Before/after band-write time on OGS-00009 is measured with #309’s band-slice profiler (scaling matched the record to 2%); the full 14 h completion is #322’s end-to-end rebuild.</li>
+<li><strong>2026-11-07</strong> — Escalated #311 to Claude Sonnet after three review rounds each found new silent defaults. A/B verdicts use a paired sign/Wilcoxon test with &gt;=6 alternating rounds (p&lt;0.05), not a min/max rule.</li>
+<li><strong>2026-11-07</strong> — #321 waits for #424: Ragged completion first gets Dense completion’s functionality (shared fill shards, one CSR writer), then the band write’s parallelisation is built on the shared implementation.</li>
+<li><strong>2026-11-07</strong> — Nightly window assumed from 14 Oct (first night of the October records), stated in the artifact’s basis. No fourth review: round-3 fixes each carry a failing-first test; orchestrator verifies and merges.</li>
+<li><strong>2026-11-07</strong> — 361-build waits for #424 like #321: #424 rewrites the Ragged checkpoint merge the fix would touch and may bump CHECKPOINT_FORMAT; widen ALID_DTYPE once on the shared code. 355-build needs no format bump (spec 6a already says exact), so #338 keeps 0.2.2.</li>
+<li><strong>2026-11-08</strong> — Standing rule extended: a preflight STOP whose only meets are this run’s own lanes (split by function in their briefs) and #338 launches, recorded on the ticket and the dashboard. Meets with work outside this run still come to the owner.</li>
+<li><strong>2026-11-08</strong> — The residual EAF encode’s pool is capped by memory in #320: effective workers = min(n_workers, quarter of MemAvailable // per-band bytes), bands stay shard-aligned, max_in_flight=effective; unreadable meminfo runs one worker and says so.</li>
+<li><strong>2026-11-08</strong> — A Store-level Validation Rule flags SE exception tables whose float16-exact share is far above chance: an error at format_version &gt;= 0.2.1 (fixed builder), a warning for earlier Stores (published, owned by #367).</li>
+<li><strong>2026-11-08</strong> — variant_table.lifted_contig is an error at format_version &gt;= 0.2.1 and a warning for earlier (published) Stores, as with 355-build’s float16-exact rule.</li>
+<li><strong>2026-11-09</strong> — Run paused for Claude usage. stores#455’s replacement and the GCST90275159/60 question are deferred; status recorded on stores#455.</li>
+<li><strong>2026-11-10</strong> — Run resumed (/orchestrate 307). main (#415, #421) merged into integration as ff65955; a new mypy finding from 376-build fixed in 0055dd6.</li>
+<li><strong>2026-11-10</strong> — The float32 SE band buffer (about 49 GB in the parent on OGS-00009’s shape, inside the host-memory rule) is left unblocked; row-blocking the SE pass isn’t this ticket’s.</li>
+<li><strong>2026-11-10</strong> — Closed #383 as not planned: four interleaved pairs on post-#316 Pass 2 show no consistent gain and 2-3 ms of GC per run.</li>
+<li><strong>2026-11-10</strong> — side_tables.eaf_exceptions’ whole-table read (12.7 GiB on OGS-00011, the actual peak) is in #387’s scope: check marked positions per band against the scan’s span. The association scan’s per-band consult stays (one contiguous span).</li>
+<li><strong>2026-11-10</strong> — #317 merged as tests only: #316 already moved Hybrid routing to the shared RouteTable and the fold’s off-reference keys are lossless. The remaining ~1 us per off-reference row (routing_key string then encode_keys parse) goes to #318’s batch rework.</li>
+<li><strong>2026-11-10</strong> — Approved: replace the 56 regenerated rescued copies in /data/opengwasdb/derived/ebi-gwas-catalog via tools/replace_rescued_copies.sh; GCST90275159/60 (dummy effects) excluded from the rescue.</li>
+<li><strong>2026-11-10</strong> — Ran the owner-approved replacement: 56 copies + manifest, rc=0, live checksums 56/56; draft PR opengwasdb-stores#457 opened, merging after the run’s final review per that repo’s AGENTS.md.</li>
+<li><strong>2026-11-10</strong> — First-rsid stays out of the batch: Pass 2 names no rsid, Pass 1 applies _first_rsid; recorded in ADR 0076. Hybrid Pass 2 takes batches in #318 (#319’s GWAS Catalog pilots are Hybrid). Columnar engine extracted by #319.</li>
+<li><strong>2026-11-10</strong> — Worker memory: the full GWAS Catalog Store is OGS-00011 (build-hybrid, 24 workers); +0.43 GiB per worker is about +10 GiB, within the quarter-of-available rule. No owner question needed.</li>
+<li><strong>2026-11-10</strong> — A declared imputation score is read in columns in #319, not a follow-up: 605 of OGS-00011’s 3,169 Analyses declare one, which would halve Pass 2’s gain there. Compound ids as rsids: Pass 1’s rule, as #318’s first-rsid ruling.</li>
+<li><strong>2026-11-11</strong> — encoding.eaf’s whole EAF-table read is bounded in #387 (it is now validate’s peak: 18.15 GiB on OGS-00011). ‘Read once per pass’ is restated as ‘never read whole’; #314 merges the remaining streamed reads (scan consult, _Spans, encoding.eaf, subsets.indexed) into its one pass.</li>
+<li><strong>2026-11-11</strong> — Main (#424 and #430, which merged during the preflight question) merged into the integration branch once, by a merger lane on Opus; completion identity pins re-pinned only where an intended integration change explains the difference.</li>
+<li><strong>2026-11-11</strong> — Keep 2986ba7 (per-process indel-table handle, a #381 defect) in the main merge: #321 and 361-build hit it next. completion_n_missing_total keeps counting in-region panel indels without an ALID as missing (the older rule); changing it would move Dense quality counts.</li>
+<li><strong>2026-11-11</strong> — completion_quality counts only rows the Store holds (ADR 0039 over ADR 0079 s6): unnamed in-region panel indels are not missing; they stay in the manifest’s panel_indels placement record. New 0.2.1 Stores only.</li>
+<li><strong>2026-11-11</strong> — Main’s #432 (ea81c4a) folded into the same merger lane as a second merge commit, reviewed once with the rest.</li>
+<li><strong>2026-11-11</strong> — format_version: main’s v0.9.0 (#432) defines 0.2.1 as a Ragged release with regions.tsv; #381’s reference-first indels move to 0.2.2 and every rule gated at 0.2.1 re-gates at 0.2.2. Epic #347’s #338 must then take 0.2.3, not 0.2.2.</li>
+<li><strong>2026-11-11</strong> — A disordered, duplicated or unpaired EAF exception table is reported as findings rather than aborting validate (new wording); kept, and disclosed in the changelog and ADR 0074.</li>
+<li><strong>2026-11-12</strong> — CURRENT_FORMAT_VERSION is 0.2.2 on the integration branch (every builder and completion write 0.2.2; the converter writes 0.2.0). opengwasdb-stores accepts 0.2.2 in the pin-move PR at the run’s finish.</li>
+<li><strong>2026-11-12</strong> — A release stamped newer than this build writes gets an upgrade warning from manifest.format_stamp (not a Skip), so the text report shows it.</li>
+<li><strong>2026-11-12</strong> — wip/430-infer treated as superseded by #432 (owner). #321 and 361-build run side by side; 361-build merges first; #321 merges the tip before touching _resolved_fills.</li>
+<li><strong>2026-11-12</strong> — A 64-byte ALID equal to a longer ALID’s first 64 bytes was mis-routed at base by the same S64 collision; head corrects it. Kept as part of the fix, disclosed and tested. Representation stays two arrays (integer keys not tried). Pilot re-run against the HGDP EUR panel, since UKB’s has no ALID over 58 bytes.</li>
+<li><strong>2026-11-12</strong> — Indexed Variant Subsets keep full coverage through a per-unit 64-bit digest keyed per run; no sampling, no exact index hold. The guarantee is stated as probabilistic (one-value change always found; multi-cell miss ~2^-64 per unit), and the cell-by-cell fallback count is logged. The OGS-00009 timing pair’s backup-window load is waived (side by side; #322 re-measures).</li>
+<li><strong>2026-11-12</strong> — ADR 0080 superseding part of ADR 0023 is within #321’s criteria (no separate owner question; the PR shows it). The band memory budget (4 GiB + 24 B/cell) stays until #322 measures full size.</li>
+<li><strong>2026-11-12</strong> — The pool keeps counting the parent at its resident set (a deliberate margin: 13 band workers where 14 fit). Write scaling beyond 4 workers is measured by #322’s full-size rebuild. #200’s 93.3 -&gt; 93.5 B/imputed cell is #361’s checkpoint change; the 16 B target is #200’s open work.</li>
+<li><strong>2026-11-12</strong> — No scheduled OGS-00009 build exists, so #322 rebuilds it into scratch at the integration tip after #315 merges, running the engine steps as the planner will after stores-357/358, with one standalone Top-Hit step timed apart as #312’s full-size proof. stores-357 merges after that proof. Breaks the 322 &lt;- stores-357 &lt;- 312 &lt;- full-size build loop.</li>
+<li><strong>2026-11-12</strong> — Validation’s per-worker allowance raised from 512 MiB to 1 GiB (OGS-00011’s workers reached 1.81 GiB PSS against a 0.85 GiB band budget); kept until #322 re-measures. Spreading subsets.indexed’s digests across workers (now ~73% of OGS-00009’s 893 s) is left as a remaining lever, not widened into #315.</li>
+<li><strong>2026-11-12</strong> — Workers reopen every array they read after the fork (the issue’s wording), with max_workers=1 still the hang guard. The per-worker bound is met by sizing bands from the Store’s measured decoded bytes per cell, with a margin, not by raising the floor to fit OGS-00011’s overrun.</li>
+<li><strong>2026-11-13</strong> — Keep #254’s 96 B/cell band sizing (a 1.7x margin over the measured 54.7-56.2 B/cell): the overrun was Block.locate’s tier copy, fixed, not exception density.</li>
+<li><strong>2026-11-13</strong> — A validation worker’s memory budget is measured as its private memory (PSS beside it); VmHWM counts pages shared with the driver after the fork.</li>
+<li><strong>2026-11-13</strong> — OGS-00009 rebuilt once, at the integration tip; the before side is #311’s baseline from the published records. No single-worker re-validations. The standalone Top-Hit comparison for #312 stays.</li>
+<li><strong>2026-11-13</strong> — No new top_hits value: post stays boolean; a Dense build step meets top_hits; an amendment with no build step plans the standalone build-dense-top-hits. The stores LD-panel tooling follows ADR 0079 s6 (an unreferenced panel indel has no ALID) in this lane.</li>
+<li><strong>2026-11-13</strong> — A top-hits amendment is a plan-level API (plan(bundle, build_runs=False)) with no workflow caller: a published release already refuses re-runs, so amendments were applied by hand before #357 too. No new operator command or ticket.</li>
+<li><strong>2026-11-13</strong> — stores#357’s amendment criterion is met by documentation: a Top-Hit Index is added to an existing Dense Store by running opengwasdb build-dense-top-hits –n-workers N by hand (the workflow refuses re-runs over a published release); the plan-level amendment API is dropped.</li>
+<li><strong>2026-11-13</strong> — Final review findings go to one fix lane (Opus): pool rule, silent defaults, the forked-worker threadpoolctl abort, one format gate, dead code, docs, test cost, and a validate rule for #361’s class (completion_quality agrees with the imputed plane). completion_quality also leaves out unnamed SNVs: consistent with the owner’s ‘only rows the Store holds’ principle.</li>
+<li><strong>2026-11-16</strong> — Owner accepted proposed ADR 0081: build no compiled extension after epic #307; keep the Python implementation and reconsider only if later profiling after the columnar GWAS-VCF reader and column-major band-write work identifies a dominant non-vectorisable interpreted kernel.</li>
+<li><strong>2026-11-16</strong> — Owner chose the recommended completion-quality boundary: validate only cases the current persisted metadata can prove, skip ambiguous multi-block/overlap reconciliation, retain the independent ancestry and crossover corrections, and defer ownership/duplicate-outcome metadata.</li>
+<li><strong>2026-11-16</strong> — Owner chose a declared reference-first input marker and fail-closed handling: newly regenerated references carry the marker; an unmarked indel-bearing reference is refused; no content heuristic or automatic allele swap is allowed.</li>
+<li><strong>2026-11-16</strong> — Launch after preflight STOP: #338 is covered by the owner’s standing launch rule, and wip/430-infer was explicitly marked superseded by merged #432. #422 is bit-identical work under #307 and is the remaining measured path toward the unwaived 9-hour criterion; #423 remains out of scope pending a new method spec and owner decision.</li>
+<li><strong>2026-11-16</strong> — Launch after the same preflight STOP already ruled for #422: #338 is covered by the owner’s standing launch rule, and wip/430-infer is superseded by merged #432. #435 only forwards an existing runtime knob through Reference Completion and remains outside #423’s value-changing fit method.</li>
+<li><strong>2026-11-16</strong> — Owner authorized a second scratch OGS-00009 whole-release build to establish the unwaived nine-hour criterion, overriding the earlier rebuild-once limit. Run the current integration tip (60b72172, including #422 and #435) with 32 workers, no registration or publication, and preserve the existing memory, disk, timing-lock and stop gates.</li>
+<li><strong>2026-11-17</strong> — Detached #423 from epic #307 at finish and left it open: its own accepted scope changes imputed values and requires a separately approved Reference Completion Method spec, while #307 permits only bit-identical completion speed-ups.</li>
+</ul>
+</section>
+<section id="versions-shipped" class="level2">
+<h2 class="anchored" data-anchor-id="versions-shipped">Versions shipped</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Version</th>
+<th>Release notes</th>
+<th>Published</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>v0.10.0</code></td>
+<td><a href="https://github.com/opengwas/opengwasdb/releases/tag/v0.10.0">v0.10.0</a></td>
+<td>2026-11-17T10:24:56Z</td>
+</tr>
+<tr class="even">
+<td><code>v0.24.1</code></td>
+<td><em>no Release carries this tag</em></td>
+<td><em>not reported</em></td>
+</tr>
+<tr class="odd">
+<td><code>v0.25.0</code></td>
+<td><em>no Release carries this tag</em></td>
+<td><em>not reported</em></td>
+</tr>
+<tr class="even">
+<td><code>v0.25.1</code></td>
+<td><em>no Release carries this tag</em></td>
+<td><em>not reported</em></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="before-and-after" class="level2">
+<h2 class="anchored" data-anchor-id="before-and-after">Before and after</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>What</th>
+<th>Before</th>
+<th>After</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Catalog Analyses</td>
+<td><em>not reported</em></td>
+<td><em>not reported</em></td>
+</tr>
+<tr class="even">
+<td>Catalog Stores</td>
+<td><em>not reported</em></td>
+<td><em>not reported</em></td>
+</tr>
+<tr class="odd">
+<td>Test time (wall)</td>
+<td>160.7 s at <code>ca8fa47</code></td>
+<td><em>not reported</em></td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>open</code> on OGS-00009</td>
+<td><em>not reported</em></td>
+<td>161.361 ms (p95 177.767 ms)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>phewas_rsid</code> on OGS-00009</td>
+<td><em>not reported</em></td>
+<td>82.692 ms (p95 86.844 ms)</td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>phewas_alid</code> on OGS-00009</td>
+<td><em>not reported</em></td>
+<td>79.925 ms (p95 81.56 ms)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>phewas_position</code> on OGS-00009</td>
+<td><em>not reported</em></td>
+<td>77.176 ms (p95 80.872 ms)</td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>region</code> on OGS-00009</td>
+<td><em>not reported</em></td>
+<td>1745.7 ms (p95 2549.23 ms)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>analysis_full</code> on OGS-00009</td>
+<td><em>not reported</em></td>
+<td>7433.64 ms (p95 8127.79 ms)</td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>analysis_hm3</code> on OGS-00009</td>
+<td><em>not reported</em></td>
+<td>381.463 ms (p95 416.22 ms)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>bytes_on_disk</code> on OGS-00009</td>
+<td><em>not reported</em></td>
+<td>61,882,085,184 bytes (walk)</td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>peak_rss</code> on OGS-00009</td>
+<td><em>not reported</em></td>
+<td>1037 MB peak (baseline 183.4 MB)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>open</code> on OGS-00027</td>
+<td><em>not reported</em></td>
+<td>247.06 ms (p95 298.359 ms)</td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>phewas_rsid</code> on OGS-00027</td>
+<td><em>not reported</em></td>
+<td>20.915 ms (p95 24.796 ms)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>phewas_alid</code> on OGS-00027</td>
+<td><em>not reported</em></td>
+<td>20.233 ms (p95 20.502 ms)</td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>phewas_position</code> on OGS-00027</td>
+<td><em>not reported</em></td>
+<td>20.244 ms (p95 20.617 ms)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>region</code> on OGS-00027</td>
+<td><em>not reported</em></td>
+<td>51.089 ms (p95 58.945 ms)</td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>analysis_full</code> on OGS-00027</td>
+<td><em>not reported</em></td>
+<td>21.937 ms (p95 22.173 ms)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>bytes_on_disk</code> on OGS-00027</td>
+<td><em>not reported</em></td>
+<td>2,632,389,815 bytes (walk)</td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>peak_rss</code> on OGS-00027</td>
+<td><em>not reported</em></td>
+<td>240.7 MB peak (baseline 231.8 MB)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>open</code> on OGS-00006</td>
+<td><em>not reported</em></td>
+<td>142.267 ms (p95 165.891 ms)</td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>phewas_rsid</code> on OGS-00006</td>
+<td><em>not reported</em></td>
+<td>24.492 ms (p95 26.662 ms)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>phewas_alid</code> on OGS-00006</td>
+<td><em>not reported</em></td>
+<td>24.013 ms (p95 24.71 ms)</td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>phewas_position</code> on OGS-00006</td>
+<td><em>not reported</em></td>
+<td>24.141 ms (p95 24.458 ms)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>region</code> on OGS-00006</td>
+<td><em>not reported</em></td>
+<td>50.433 ms (p95 51.152 ms)</td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>analysis_full</code> on OGS-00006</td>
+<td><em>not reported</em></td>
+<td>116.344 ms (p95 122.885 ms)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>bytes_on_disk</code> on OGS-00006</td>
+<td><em>not reported</em></td>
+<td>1,584,802,717 bytes (walk)</td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>peak_rss</code> on OGS-00006</td>
+<td><em>not reported</em></td>
+<td>231.2 MB peak (baseline 179.3 MB)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>open</code> on OGS-00011</td>
+<td><em>not reported</em></td>
+<td>312.382 ms (p95 366.933 ms)</td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>phewas_rsid</code> on OGS-00011</td>
+<td><em>not reported</em></td>
+<td>32.719 ms (p95 34.671 ms)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>phewas_alid</code> on OGS-00011</td>
+<td><em>not reported</em></td>
+<td>94.209 ms (p95 96.673 ms)</td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>phewas_position</code> on OGS-00011</td>
+<td><em>not reported</em></td>
+<td>33.618 ms (p95 34.293 ms)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>region</code> on OGS-00011</td>
+<td><em>not reported</em></td>
+<td>1787.04 ms (p95 1798.09 ms)</td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>analysis_full</code> on OGS-00011</td>
+<td><em>not reported</em></td>
+<td>25494.9 ms (p95 25593.3 ms)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>analysis_hm3</code> on OGS-00011</td>
+<td><em>not reported</em></td>
+<td>813.298 ms (p95 855.109 ms)</td>
+</tr>
+<tr class="even">
+<td>Yardstick <code>bytes_on_disk</code> on OGS-00011</td>
+<td><em>not reported</em></td>
+<td>166,555,414,528 bytes (walk)</td>
+</tr>
+<tr class="odd">
+<td>Yardstick <code>peak_rss</code> on OGS-00011</td>
+<td><em>not reported</em></td>
+<td>1388.3 MB peak (baseline 268.3 MB)</td>
+</tr>
+</tbody>
+</table>
+
+
+</section>
+
+<a onclick="window.scrollTo(0, 0); return false;" role="button" id="quarto-back-to-top"><i class="bi bi-arrow-up"></i> Back to top</a></main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/blog\.opengwas\.io\/og-dev-hub\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+    <div class="nav-footer-left">
+<p>OpenGWASDB · rendered from the commit that names it</p>
+</div>   
+    <div class="nav-footer-center">
+      &nbsp;
+    </div>
+    <div class="nav-footer-right">
+<p><a href="https://github.com/opengwas/og-dev-hub/issues">Report a problem</a></p>
+</div>
+  </div>
+</footer>
+
+
+
+
+</body></html>
