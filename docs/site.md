@@ -12,7 +12,7 @@ no `/data`, no private repository and no board. It is published at
 | --- | --- |
 | `pixi run site` | Collect from public git, then write the site into `_site/`. `--out DIR` writes it elsewhere, `--registry PATH` reads that opengwasdb-stores checkout instead of its clone, and `--no-refresh` reads the clones as they are. |
 | `pixi run site-preview` | Serve the built `_site/` at <http://localhost:4200/og-dev-hub/>, the sub-path it is published at (`--port N` for another port). |
-| `pixi run site-data` | Run every collector, the board and the private repositories included, into `docs/_data/`: the collection `pixi run architecture --data` reads. The site does not read it. |
+| `pixi run site-data` | Run every collector, the board and the private repositories included, into `docs/_data/`. The site does not read it; it stays because `pixi run architecture check\|conflicts --data DIR` reads that collection. |
 
 ## The views
 
@@ -32,15 +32,17 @@ operations dashboard's).
 (`collect.__main__.run(public_only=True)`):
 
 - every repository `system.yaml` lists as `public` is cloned anonymously from
-  GitHub into the work root and read at `main`, one fetch each per run;
+  GitHub into the site's work root and read at `main`, one fetch each per run;
 - a `private` one is listed and drawn as its container from `system.yaml`, and
   is never cloned;
 - a planned one (`visibility: null`) is drawn as planned;
 - the board is not read.
 
-The work root is `$OPENGWASDB_SITE_ROOT`, else `/data/opengwasdb/work/site` on a
-host that has `/data/opengwasdb/work`, else `.work/` in the checkout. The
-collection goes to `docs/_data/` (`$OPENGWASDB_SITE_DATA` or `--data-dir` names
+The site's work root is `$OPENGWASDB_SITE_ROOT`, else `.work/site` in the
+checkout, the same on every machine; it only ever holds public repositories.
+(`pixi run architecture` keeps its own, the build host's
+`/data/opengwasdb/work/site`, where it also clones the private repositories it
+reads.) The collection goes to `docs/_data/` (`$OPENGWASDB_SITE_DATA` or `--data-dir` names
 another), and the site to `_site/`; both are git-ignored.
 
 A repository that cannot be read, or has no model, is a gap the page draws, and

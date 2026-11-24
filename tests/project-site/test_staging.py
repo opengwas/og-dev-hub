@@ -136,11 +136,11 @@ class CloneOwnerTest(unittest.TestCase):
         self.assertIn("opengwasdb-stores", result["error"], "git's own message, naming the origin it could not reach")
         self.assertEqual(git(self.clone, "rev-parse", "main"), self.first)
 
-    def test_the_engine_clone_can_still_be_named_by_its_variable(self) -> None:
-        named = self.hub.root / "elsewhere.git"
-        with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ENGINE_CLONE": str(named)}):
-            self.assertEqual(paths.clone_dir("opengwasdb"), named)
-        self.assertEqual(paths.clone_dir("opengwasdb"), self.hub.work / "opengwasdb.git")
+    def test_a_run_given_a_root_clones_under_it(self) -> None:
+        root = self.hub.root / "site-work"
+        handle = staging.Repositories(root=root).get("opengwasdb-stores")
+        self.assertEqual(handle.git_dir, root / "opengwasdb-stores.git")
+        self.assertEqual(handle.commit, self.first)
 
 
 class RegistryTreeTest(unittest.TestCase):
@@ -149,6 +149,7 @@ class RegistryTreeTest(unittest.TestCase):
     FILES = {
         "stores/OGS-00001/release.yaml": "store_id: OGS-00001\n",
         "docs/_epics/opengwasdb-stores-1.yaml": "repo: opengwasdb-stores\n",
+        "docs/_yardstick/2026-11-01.json": "{}\n",
         "docs/a.md": "# A\n",
         "CONTEXT.md": "# Glossary\n",
         "pixi.lock": "packages: []\n",
@@ -169,19 +170,21 @@ class RegistryTreeTest(unittest.TestCase):
 
         self.assertEqual(commit, self.commit)
         self.assertTrue((self.tree / "stores" / "OGS-00001" / "release.yaml").is_file())
-        self.assertTrue((self.tree / "docs" / "_epics" / "opengwasdb-stores-1.yaml").is_file())
-        self.assertFalse((self.tree / "CONTEXT.md").exists(), "only the Stores' readers' files are extracted")
+        self.assertTrue((self.tree / "docs" / "_yardstick" / "2026-11-01.json").is_file())
+        self.assertFalse((self.tree / "docs" / "_epics").exists(), "only the Stores' readers' files are extracted")
+        self.assertFalse((self.tree / "docs" / "a.md").exists())
+        self.assertFalse((self.tree / "CONTEXT.md").exists())
         self.assertFalse((self.tree / "pixi.lock").exists())
 
     def test_a_second_extraction_replaces_the_first(self) -> None:
         clone = paths.clone_dir("opengwasdb-stores")
         staging.ensure_clone(clone, url=paths.clone_url("opengwasdb-stores"))
         staging.extract_tree(clone, "main", self.tree)
-        (self.tree / "docs" / "left-behind.md").write_text("# Gone\n", encoding="utf-8")
+        (self.tree / "docs" / "_yardstick" / "left-behind.json").write_text("{}\n", encoding="utf-8")
 
         staging.extract_tree(clone, "main", self.tree)
 
-        self.assertFalse((self.tree / "docs" / "left-behind.md").exists())
+        self.assertFalse((self.tree / "docs" / "_yardstick" / "left-behind.json").exists())
 
     def test_without_a_checkout_the_registry_is_its_clones_main(self) -> None:
         registry = staging.Repositories(tree=self.tree).get("opengwasdb-stores", files=True)
@@ -190,7 +193,7 @@ class RegistryTreeTest(unittest.TestCase):
         self.assertEqual(registry.git_dir, self.hub.work / "opengwasdb-stores.git")
         self.assertEqual((registry.ref, registry.commit), ("main", self.commit))
         self.assertTrue(registry.clone)
-        self.assertTrue((self.tree / "docs" / "_epics" / "opengwasdb-stores-1.yaml").is_file())
+        self.assertTrue((self.tree / "stores" / "OGS-00001" / "release.yaml").is_file())
         self.assertFalse((self.tree / "src").exists(), "only what the site reads is extracted")
 
     def test_reading_the_registry_fetches_only_when_a_refresh_is_asked_for(self) -> None:

@@ -40,9 +40,7 @@ def describe(result: dict[str, Any]) -> str:
         return f"stores: {len(result['stores'])} stores"
     if source == "architecture":
         return _describe_architecture(result)
-    if source == "work":
-        return _describe_work(result)
-    return f"{source}: collected"
+    return _describe_work(result)
 
 
 def _describe_architecture(result: dict[str, Any]) -> str:

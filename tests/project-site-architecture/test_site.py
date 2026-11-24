@@ -27,7 +27,7 @@ import architecture_fixtures as fx
 from test_architecture_repositories import OGQUERY_FILES, World
 
 from project_site import site, staging
-from project_site.collect import common
+from project_site.collect import __main__ as command, common
 
 CONTEXT = """\
 # OpenGWAS
@@ -304,6 +304,35 @@ class UnavailableTests(unittest.TestCase):
         self.assertEqual(read(out, "architecture.json")["error"], "architecture.json was not collected")
 
 
+class WorkRootTests(unittest.TestCase):
+    """The site's clones live in `$OPENGWASDB_SITE_ROOT`, else `<checkout>/.work/site`, on every machine (og-dev-hub#15)."""
+
+    def test_the_sites_work_root_is_the_checkouts_unless_the_variable_names_another(self) -> None:
+        from project_site import paths
+
+        with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": ""}):
+            self.assertEqual(paths.site_work_root(), paths.repo_root() / ".work" / "site")
+            # `pixi run architecture` keeps its own: the build host's.
+            self.assertEqual(paths.work_root(), paths.WORK_ROOT)
+        with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": "/x/y"}):
+            self.assertEqual(paths.site_work_root(), Path("/x/y"))
+
+    def test_a_build_clones_into_the_sites_work_root_and_reads_public_git_alone(self) -> None:
+        from project_site import paths
+        from project_site.collect import __main__ as command
+
+        root = Path(tempfile.mkdtemp(prefix="site-main-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": ""}), \
+                mock.patch.object(command, "run", return_value=[]) as run, mock.patch.object(site, "build") as build:
+            self.assertEqual(site.main(["--data-dir", str(root / "data"), "--out", str(root / "_site"), "--no-refresh"]), 0)
+        kwargs = run.call_args.kwargs
+        self.assertTrue(kwargs["public_only"])
+        self.assertEqual(kwargs["repositories"].root, paths.repo_root() / ".work" / "site")
+        self.assertFalse(kwargs["repositories"].refresh)
+        build.assert_called_once_with(root / "data", root / "_site")
+
+
 class PublicGitOnlyTests(unittest.TestCase):
     """Seam 5: the site's collection reads no private repository and never the board."""
 
@@ -319,7 +348,8 @@ class PublicGitOnlyTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": str(work_root)}), \
                 mock.patch("project_site.collect.board.collect", refuse), \
                 mock.patch.object(common, "gh_runner", refuse):
-            results = site.collect(data, repositories=repositories, system_file=world.system, out=lambda line: None)
+            results = command.run(data, repositories=repositories, system_file=world.system, out=lambda line: None,
+                                  public_only=True)
         self.assertEqual([r["source"] for r in results], ["architecture"])
         self.assertNotIn("ogld", repositories.handles)
         self.assertFalse((work_root / "ogld.git").exists())

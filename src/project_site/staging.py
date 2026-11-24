@@ -5,7 +5,7 @@
 - whether a ref resolves, and to which commit (`resolve_ref`);
 - a repository's files at a commit, read by object id (`Tree`);
 - opengwasdb-stores' files extracted from its clone (`extract_tree`), for the
-  readers that need files on disk (the Stores collector).
+  readers that need files on disk (the Stores collector, and og-dev-hub#16's yardstick results).
 
 `git archive` is what extracts a revision, so the tree is exactly that commit's,
 not whatever a working checkout happens to hold.
@@ -87,8 +87,8 @@ def _recorded(command: list[str]) -> dict[str, Any]:
 
 
 # What is read from the registry's files, as opposed to through git: the Release
-# Bundles (the Stores collector) and the yardstick results under `docs/` (og-dev-hub#16).
-REGISTRY_TREE = ("stores", "docs")
+# Bundles (the Stores collector) and the yardstick's results (og-dev-hub#16).
+REGISTRY_TREE = ("stores", "docs/_yardstick")
 
 
 def extract_tree(clone: Path, ref: str, dest: Path) -> str:
@@ -158,7 +158,7 @@ class Repositories:
     """The one owner of where the site reads every repository from (og-dev-hub#7, og-dev-hub#9).
 
     `get(name)` is a repository's read handle. Each repository is cloned the
-    first time (bare, under the work root, `paths.clone_dir`) and fetched at
+    first time (bare, under `root`, by default `paths.work_root()`; `paths.clone_dir`) and fetched at
     most once per run, on a `refresh`. Every later `get` of it is the same
     handle, so every reader of one run (the architecture, the work, the Stores)
     reads the same commit. A clone or fetch that fails never raises: it is in the handle,
@@ -169,8 +169,8 @@ class Repositories:
     only. `git_dirs` names another git directory to read a repository from,
     never cloned into, and `refs` another ref than `main` (a caller's, such as
     a test's fixture repositories). `tree` is where opengwasdb-stores' files are extracted, by
-    default under the work root (`paths.registry_tree_dir`): only its readers need files
-    (`stores/`, `docs/`).
+    default under `root` (`paths.registry_tree_dir`): only its readers need files
+    (`REGISTRY_TREE`).
     """
 
     def __init__(
@@ -181,8 +181,10 @@ class Repositories:
         git_dirs: Mapping[str, Path | None] | None = None,
         refs: Mapping[str, str | None] | None = None,
         tree: Path | None = None,
+        root: Path | None = None,
     ) -> None:
         self.refresh = refresh
+        self.root = root
         self.checkouts = {name: Path(path).resolve() for name, path in (checkouts or {}).items() if path is not None}
         self.git_dirs = {name: Path(path) for name, path in (git_dirs or {}).items() if path is not None}
         self.refs = {name: ref for name, ref in (refs or {}).items() if ref}
@@ -198,7 +200,7 @@ class Repositories:
         if handle is None:
             handle = self.handles[name] = self._read(name)
         if files and handle.root is None and handle.readable:
-            root = Path(self.tree) if self.tree is not None else paths.registry_tree_dir()
+            root = Path(self.tree) if self.tree is not None else paths.registry_tree_dir(self.root)
             extract_tree(handle.git_dir, str(handle.commit), root)
             handle = self.handles[name] = replace(handle, root=root)
         return handle
@@ -217,7 +219,7 @@ class Repositories:
             return Repository(name=name, git_dir=checkout, ref="HEAD", commit=commit, root=checkout, clone=False,
                               fetch=fetched, error=None if commit else f"{name} cannot be read from {checkout}: {why}")
         named = name in self.git_dirs
-        git_dir = self.git_dirs.get(name) or paths.clone_dir(name)
+        git_dir = self.git_dirs.get(name) or paths.clone_dir(name, self.root)
         ref = self.refs.get(name, "main")
         url = None if named else paths.clone_url(name)
         fetched = self._fetch(name, git_dir, url=url, fetch=self.refresh)

@@ -11,7 +11,7 @@ docs/_data/
 # path (opengwasdb-stores' `dev` does, for its architecture checks).
 build/
 
-# The site (og-dev-hub#15): `pixi run site` writes it here, and clones into .work/
-# on a machine without /data.
+# The site (og-dev-hub#15): `pixi run site` writes it here, and clones public
+# repositories into .work/site.
 _site/
 .work/

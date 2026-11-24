@@ -16,9 +16,13 @@ registry root it reads, because an installed package knows no checkout.
 og-dev-hub's `system.yaml` lists in `repos` is read from `main` of the site's
 bare clone of it under the work root, `<work root>/<name>.git`, cloned the first
 time it is needed and fetched only by `pixi run site` and by `--refresh`
-(`site-data`, `architecture`), **once per run**. The work root is
-`$OPENGWASDB_SITE_ROOT`, else `/data/opengwasdb/work/site` on the host that has
-`/data/opengwasdb/work`, else `.work/` in the checkout (`paths.work_root`). One
+(`site-data`, `architecture`), **once per run**. There are two work roots, and
+`$OPENGWASDB_SITE_ROOT` names either. The site's is `.work/site` in the
+og-dev-hub checkout, the same on every machine, and holds public repositories
+only (`paths.site_work_root`, given to the run's `Repositories` as `root`).
+`site-data`'s and `pixi run architecture`'s is the build host's
+`/data/opengwasdb/work/site` (`paths.work_root`), where the private repositories
+they read are cloned too. One
 read handle per repository per run is the one owner of this
 (`project_site.staging.Repositories`: given a name, the handle's clone, ref,
 commit and fetch record), so the architecture, the work and the Stores read the
@@ -27,7 +31,7 @@ same commit of each. A repository with
 one way, through its handle (`Repository.read(paths, at=...)`, or `tree()` for
 all of them, both by object id through git, at the commit read unless another is
 named). Only opengwasdb-stores also has its files extracted (`stores/` and
-`docs/`, by `git archive` at that commit), because only its readers need files
+`docs/_yardstick/`, by `git archive` at that commit), because only its readers need files
 on disk: the Stores collector is given paths under the run's own extraction
 (`staging.registry_files(repositories)`), never one of its own. `--registry
 PATH` reads that checkout instead, at its `HEAD`. Whether a ref resolves, and to

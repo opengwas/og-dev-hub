@@ -10,9 +10,10 @@ Stores, which og-dev-hub#16 fills), `style.css`, one plain-JS file per view unde
 bundler, no CDN, and every path relative, so the page works from any sub-path
 (`/og-dev-hub/`).
 
-**Public git only.** The collection is `collect.__main__.run(public_only=True)`:
-every repository `system.yaml` lists as `public` is cloned anonymously and read
-at `main`; a `private` one is drawn as its container from `system.yaml` and is
+**Public git only.** The collection is `collect.__main__.run(public_only=True)`,
+over clones in the site's own work root (`paths.site_work_root`): every
+repository `system.yaml` lists as `public` is cloned anonymously and read at
+`main`; a `private` one is drawn as its container from `system.yaml` and is
 never cloned; the board is not read. `pixi run architecture` still reads private
 repositories and the board, locally; only the site does not.
 
@@ -35,9 +36,10 @@ import sys
 from collections import defaultdict
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Mapping
 
-from project_site import architecture_public, diagrams, markdown, paths
+from project_site import architecture_public, diagrams, markdown, paths, staging
+from project_site.collect import __main__ as command
 from project_site.collect import architecture_model, common
 
 STATIC = Path(__file__).with_name("static")
@@ -46,27 +48,6 @@ SOURCES = ("architecture",)
 PREFIX = "og-dev-hub"
 
 Document = Mapping[str, Any]
-
-
-# ---------------------------------------------------------------------------
-# Collecting: public git only
-# ---------------------------------------------------------------------------
-
-
-def collect(
-    data_dir: Path,
-    *,
-    repositories: Any = None,
-    refresh: bool = True,
-    registry: Path | None = None,
-    system_file: Path | None = None,
-    out: Callable[[str], Any] = print,
-) -> list[dict[str, Any]]:
-    """Collect what the site draws into `data_dir`, from public git alone; return each source's result."""
-    from project_site.collect import __main__ as command
-
-    return command.run(data_dir, repositories=repositories, refresh=refresh, checkout=registry,
-                       system_file=system_file, out=out, public_only=True)
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +319,10 @@ def main(argv: list[str] | None = None) -> int:
         serve(args.out, args.port)
         return 0
     data_dir = args.data_dir or common.data_dir()
-    collect(data_dir, refresh=not args.no_refresh, registry=args.registry)
+    # Public git alone, in the site's own work root: a private repository is never cloned, the board never read.
+    repositories = staging.Repositories(refresh=not args.no_refresh, checkouts={paths.REGISTRY: args.registry},
+                                        root=paths.site_work_root())
+    command.run(data_dir, repositories=repositories, public_only=True)
     build(data_dir, args.out)
     print(f"site: {args.out}")
     return 0

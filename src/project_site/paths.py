@@ -2,9 +2,13 @@
 
 Every repository og-dev-hub's `system.yaml` lists is read from a bare clone under
 the work root, `<work root>/<name>.git`, through one read handle per run
-(`staging.Repositories`), which `staging.ensure_clone` clones and fetches. The
-work root is `$OPENGWASDB_SITE_ROOT`, else `/data/opengwasdb/work/site` on the
-host that has `/data`, else `.work/` in this checkout.
+(`staging.Repositories`), which `staging.ensure_clone` clones and fetches.
+
+There are two work roots, and `$OPENGWASDB_SITE_ROOT` names either. The site's
+(`site_work_root`) is `.work/site` in this checkout, the same on every machine,
+and only ever holds public repositories. `pixi run architecture`'s
+(`work_root`) is the build host's `/data/opengwasdb/work/site`, where it also
+keeps the private repositories it reads.
 """
 
 from __future__ import annotations
@@ -20,12 +24,11 @@ HUB = "og-dev-hub"
 REGISTRY = "opengwasdb-stores"
 ENGINE = "opengwasdb"
 
-# The build host's default: `git clone` keeps each repository's history here.
+# `pixi run architecture`'s default: the build host's, where `git clone` keeps each repository's history.
 WORK_ROOT = Path("/data/opengwasdb/work/site")
 WORK_ROOT_ENV = "OPENGWASDB_SITE_ROOT"
-CLONE_ENV = "OPENGWASDB_SITE_ENGINE_CLONE"
-# A clone named here is used instead of `<work root>/<name>.git`.
-CLONE_ENVS = {ENGINE: CLONE_ENV, REGISTRY: "OPENGWASDB_SITE_REGISTRY_CLONE"}
+# The site's default, under this checkout (git-ignored).
+SITE_WORK_ROOT = Path(".work") / "site"
 
 
 # og-dev-hub's system model (#8), read from this checkout's working tree.
@@ -42,35 +45,43 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _configured() -> Path | None:
+    configured = os.environ.get(WORK_ROOT_ENV, "")
+    return Path(configured) if configured.strip() else None
+
+
 def work_root() -> Path:
-    """Where the clones live: `$OPENGWASDB_SITE_ROOT`, else `/data/opengwasdb/work/site` on a host that has
-    `/data/opengwasdb/work`, else `.work/` in this checkout (git-ignored), so a machine without `/data`
-    (CI, a laptop) builds the site too (og-dev-hub#15)."""
-    configured = os.environ.get(WORK_ROOT_ENV)
-    if configured and configured.strip():
-        return Path(configured)
-    return WORK_ROOT if WORK_ROOT.parent.is_dir() else repo_root() / ".work"
+    """`pixi run architecture`'s clones: `$OPENGWASDB_SITE_ROOT`, else `/data/opengwasdb/work/site`."""
+    return _configured() or WORK_ROOT
+
+
+def site_work_root() -> Path:
+    """The site's clones (og-dev-hub#15): `$OPENGWASDB_SITE_ROOT`, else `.work/site` in this checkout, on every machine."""
+    return _configured() or repo_root() / SITE_WORK_ROOT
 
 
 def checkout_name(repo: Path) -> str:
     return repo.resolve().name
 
 
-def clone_dir(name: str) -> Path:
-    """Where the site keeps its bare clone of the opengwas repository `name`.
-
-    `<work root>/<name>.git`, unless the repository's variable in `CLONE_ENVS`
-    names another git directory.
-    """
-    configured = os.environ.get(CLONE_ENVS.get(name, ""), "")
-    return Path(configured) if configured.strip() else work_root() / f"{name}.git"
+def clone_dir(name: str, root: Path | None = None) -> Path:
+    """The bare clone of the opengwas repository `name`: `<root>/<name>.git`, `root` by default `work_root()`."""
+    return (root or work_root()) / f"{name}.git"
 
 
 def clone_url(name: str) -> str:
-    """Where the site clones the opengwas repository `name` from: GitHub."""
+    """Where the opengwas repository `name` is cloned from: GitHub."""
     return f"{GITHUB}/{name}"
 
 
-def registry_tree_dir() -> Path:
-    """Where opengwasdb-stores' files are extracted for this checkout's run: `<work root>/<checkout>-registry`."""
-    return work_root() / f"{checkout_name(repo_root())}-registry"
+def github_url(name: str, commit: object, path: str) -> str:
+    """The one owner of a link to a repository's file or directory on GitHub, at `commit`.
+
+    A path ending in `/` is a directory (`tree`); any other is a file (`blob`).
+    """
+    return f"{clone_url(name)}/{'tree' if path.endswith('/') else 'blob'}/{commit}/{path}"
+
+
+def registry_tree_dir(root: Path | None = None) -> Path:
+    """Where opengwasdb-stores' files are extracted for this checkout's run: `<root>/<checkout>-registry`."""
+    return (root or work_root()) / f"{checkout_name(repo_root())}-registry"
