@@ -331,7 +331,7 @@ def main(argv: Sequence[str] | None = None, *, stdout: TextIO | None = None) -> 
     try:
         if args.registry_root is None and not (args.data and not getattr(args, "local", None)):
             # One read of the registry for the whole command, by its one owner.
-            args.registry_root = staging.registry_root().git_dir
+            args.registry_root = staging.registry_root(files=False).git_dir
         return (check if args.command == "check" else conflicts)(args, out)
     except Unavailable as error:
         print(f"cannot decide: {error}", file=out)

@@ -101,7 +101,7 @@ def collect(
     if registry_root is None:
         from project_site import staging
 
-        registry = staging.registry_root()
+        registry = staging.registry_root(files=False)
         registry_root, registry_ref = registry.git_dir, registry.ref
     engine_git = engine_git or _default_engine_clone()
     registry = Tree(registry_root, registry_ref)

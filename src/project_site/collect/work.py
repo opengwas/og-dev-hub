@@ -400,7 +400,7 @@ def collect(
     if registry_root is None:
         from project_site import staging
 
-        registry_root = staging.registry_root().git_dir
+        registry_root = staging.registry_root(files=False).git_dir
     if engine_git is None:
         from project_site import paths as site_paths
 

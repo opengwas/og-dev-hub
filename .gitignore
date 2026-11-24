@@ -19,3 +19,7 @@ docs/_data/
 # navigation, so committed output would make parallel pull requests conflict.
 site/epics/
 site/stores/
+
+# setuptools' output when another environment installs this repository from a
+# path (opengwasdb-stores' `dev` does, for its architecture checks).
+build/

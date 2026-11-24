@@ -100,7 +100,7 @@ def clone_dir(name: str) -> Path:
 
 def registry_tree_dir(repo: Path) -> Path:
     """Where the registry's files are extracted for a render of `repo`, beside its mirror."""
-    return work_root() / checkout_name(repo) / "_registry"
+    return work_root() / checkout_name(repo) / "_stage-registry"
 
 
 def pinned_opengwasdb_revision(lock: Path) -> str:

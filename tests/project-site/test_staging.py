@@ -408,6 +408,15 @@ class RegistryTreeTest(unittest.TestCase):
         self.assertTrue((tree / "docs" / "_epics" / "opengwasdb-stores-1.yaml").is_file())
         self.assertFalse((tree / "src").exists(), "only what the site reads is extracted")
 
+    def test_a_reader_of_git_alone_extracts_nothing(self) -> None:
+        tree = self.root / "tree"
+
+        registry = staging.registry_root(tree=tree, url=str(self.origin), files=False)
+
+        self.assertIsNone(registry.root)
+        self.assertEqual((registry.git_dir, registry.ref), (self.work / "opengwasdb-stores.git", self.commit))
+        self.assertFalse(tree.exists())
+
     def test_a_named_checkout_is_the_registry_itself(self) -> None:
         registry = staging.registry_root(self.checkout)
 

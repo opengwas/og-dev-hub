@@ -165,25 +165,35 @@ def extract_tree(clone: Path, ref: str, dest: Path, members: tuple[str, ...] = R
 
 @dataclass(frozen=True)
 class Registry:
-    """opengwasdb-stores as the site reads it: files from `root`, history from `git_dir` at `ref`."""
+    """opengwasdb-stores as the site reads it: files from `root`, history from `git_dir` at `ref`.
 
-    root: Path
+    `root` is `None` when only its history was asked for (`registry_root(files=False)`).
+    """
+
+    root: Path | None
     git_dir: Path
     ref: str
 
 
-def registry_root(checkout: Path | None = None, *, tree: Path | None = None, url: str | None = None) -> Registry:
+def registry_root(
+    checkout: Path | None = None, *, tree: Path | None = None, url: str | None = None, files: bool = True
+) -> Registry:
     """The one owner of where the site reads opengwasdb-stores from (og-dev-hub#7).
 
     A named `checkout` (`--registry PATH`) is read as it is: its files, and its
     git at `HEAD`. Otherwise the registry is `main` of the site's bare clone,
     fetched now, with the files the site reads extracted into `tree` (by
     default beside this hub checkout's mirror) and git read at that same commit.
+    A caller that reads only git (the architecture and work collectors, the
+    `architecture` command) passes `files=False`, and nothing is extracted, so it
+    never rewrites a tree a render is reading.
     """
     if checkout is not None:
         checkout = Path(checkout).resolve()
         return Registry(root=checkout, git_dir=checkout, ref="HEAD")
     clone = ensure_clone(paths.REGISTRY, url=url)
+    if not files:
+        return Registry(root=None, git_dir=clone, ref=_git(clone, "rev-parse", "--verify", "main^{commit}").strip())
     tree = Path(tree) if tree is not None else paths.registry_tree_dir(paths.repo_root())
     commit = extract_tree(clone, "main", tree)
     return Registry(root=tree, git_dir=clone, ref=commit)
