@@ -64,12 +64,53 @@ class InventoryTests(Fixture):
 
     def test_n_clumped_is_pending_until_opengwasdb_stores_507(self) -> None:
         for store_id in ("OGS-00001", "OGS-00002", "OGS-00003", "OGS-00004"):
-            self.assertEqual(self.shown[store_id]["n_clumped"], {"text": None, "gap": "pending opengwasdb-stores#507", "detail": None})
+            self.assertEqual(self.shown[store_id]["n_clumped"], {"text": None, "gap": "pending opengwasdb-stores#507", "display": "n/a", "detail": None})
 
     def test_the_row_holds_the_ticket_fields_and_no_others(self) -> None:
         self.assertEqual(sorted(self.shown["OGS-00001"]), sorted([
-            "store_id", "url", "label", "description", "layout", "completion_state", "coverage", "status", "store_bytes",
+            "store_id", "url", "label", "description", "summary", "facts", "why_na", "layout", "completion_state", "coverage", "status", "store_bytes",
             "n_variants", "top_hits", "has_hm3", "has_rho", "n_clumped", "n_analyses", "median_sample_size", "ancestry"]))
+
+
+class TileTests(Fixture):
+    """The tile's data: the short description, and `n/a` for each gap with its reason kept (og-dev-hub#21)."""
+
+    LONG = ("The UK Biobank GWAS of blood biochemistry markers run through the pan-ancestry pipeline with a very long "
+            "first sentence that keeps going past the cut so that it has to be shortened on a word boundary. A second sentence.")
+
+    def test_a_description_longer_than_the_cut_ends_in_an_ellipsis_on_a_word_boundary(self) -> None:
+        short = stores_view.summary(self.LONG)
+        self.assertEqual(short, "The UK Biobank GWAS of blood biochemistry markers run through the pan-ancestry pipeline with a very long "
+                                "first sentence that keeps going past the cut so that it…")
+        self.assertLessEqual(len(short), 161)
+        self.assertNotIn("A second sentence", short)
+
+    def test_a_shorter_description_is_its_first_sentence_alone(self) -> None:
+        self.assertEqual(stores_view.summary("Dense build of UKB. Second sentence."), "Dense build of UKB.")
+        self.assertEqual(stores_view.summary("No full stop here"), "No full stop here")
+        self.assertIsNone(stores_view.summary("  "))
+
+    def test_the_full_description_is_still_written(self) -> None:
+        row = self.shown["OGS-00001"]
+        self.assertEqual(row["description"], "Read at …/ukb-b by the builder.")
+        self.assertTrue(row["summary"] and row["description"].startswith(row["summary"].rstrip("…")))
+
+    def test_a_gap_displays_n_a_and_keeps_its_reason(self) -> None:
+        row = self.shown["OGS-00003"]
+        fact = {f["label"]: f for f in row["facts"]}
+        self.assertEqual((fact["Size on disk"]["display"], fact["Size on disk"]["na"]), ("n/a", True))
+        self.assertEqual(row["store_bytes"]["gap"], "recorded from opengwasdb-stores#502's backfill")
+        self.assertIn({"label": "Size on disk", "reason": "recorded from opengwasdb-stores#502's backfill"}, row["why_na"])
+        self.assertEqual(fact["Layout"]["display"], "ragged")
+
+    def test_a_store_with_no_gap_has_no_reasons(self) -> None:
+        self.assertEqual([w["label"] for w in self.shown["OGS-00001"]["why_na"]], [])
+
+    def test_every_tile_fact_is_n_a_or_a_figure_never_blank(self) -> None:
+        for row in self.shown.values():
+            for f in row["facts"]:
+                self.assertTrue(f["display"], (row["store_id"], f["label"]))
+                self.assertEqual(f["display"] == "n/a", f["na"])
 
 
 class GapTests(Fixture):
@@ -190,7 +231,7 @@ class CauseTests(Fixture):
         self.assertEqual(self.shown["OGS-00007"]["store_bytes"]["gap"], "no Validation Record (Release Status withdrawn)")
 
     def test_an_empty_ancestry_is_a_gap_with_its_reason_never_a_blank_cell(self) -> None:
-        self.assertEqual(self.shown["OGS-00008"]["ancestry"], {"text": None, "detail": None,
+        self.assertEqual(self.shown["OGS-00008"]["ancestry"], {"text": None, "detail": None, "display": "n/a",
                          "gap": "no built row, so there is no ancestry to count"})
         self.assertEqual(self.shown["OGS-00003"]["ancestry"]["gap"], "the manifest has no Assigned Ancestry column")
         self.assertEqual(self.shown["OGS-00008"]["n_analyses"]["text"], "0")

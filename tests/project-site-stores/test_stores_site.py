@@ -89,11 +89,19 @@ class StoresScript(unittest.TestCase):
         self.assertNotIn("could not be drawn", text)
         for expected in ("OGS-00001", "dense-new", "62.1 GB", "AFR 1 · EUR 2 · unassigned 1",
                          "recorded from opengwasdb-stores#502's backfill", "counts come with opengwasdb#488",
-                         "pending opengwasdb-stores#507", "not computed",
+                         "not computed",
                          "not built yet (Release Status candidate)", "withdrawn",
                          "no record says how the HM3 step ended", "LD Stores are not listed yet", "og-dev-hub#10", "unknown, not 0"):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
+
+    def test_one_tile_per_store_is_drawn_and_the_table_is_gone(self) -> None:
+        text = self.drawn(build(self.addCleanup, stores_doc=None))
+        self.assertEqual(text.count("Layout "), 8)  # one tile each; the runner gives the drawn text
+        self.assertIn("Why n/a", text)
+        self.assertIn("Size on disk n/a", text)
+        self.assertNotIn("Inventory", text)
+        self.assertIn("LD Stores are not listed yet", text)
 
     def test_the_benchmarking_tab_is_drawn_with_its_line_and_the_runs(self) -> None:
         self.out_page = build(self.addCleanup, stores_doc=None)

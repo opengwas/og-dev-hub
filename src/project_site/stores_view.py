@@ -18,6 +18,7 @@ wrote has its host paths cut to the last name (`architecture_public.reason`).
 from __future__ import annotations
 
 import html
+import re
 from typing import Any, Mapping
 
 from yardstick import result as yardstick_result
@@ -113,8 +114,33 @@ def _cell(field: Mapping[str, Any] | None, show, *, detail: str | None = None) -
     """`{text, gap, detail}`: the text of a value, or the gap that names what fills it; exactly one of the two."""
     field = mapping(field)
     if field.get("gap") or field.get("value") is None:
-        return {"text": None, "gap": text(field.get("gap") or "not collected"), "detail": None}
-    return {"text": show(field["value"]), "gap": None, "detail": detail}
+        # `display` is what a tile draws: `n/a`. The reason stays in `gap`, for the expanded tile and for the file.
+        return {"text": None, "gap": text(field.get("gap") or "not collected"), "display": NA, "detail": None}
+    shown = show(field["value"])
+    return {"text": shown, "gap": None, "display": shown, "detail": detail}
+
+
+NA = "n/a"
+SUMMARY_CUT = 160  # the short description is cut to about this many characters
+# The facts a tile lists, in order: (cell, label).
+TILE_FACTS = (("layout", "Layout"), ("coverage", "Coverage"), ("store_bytes", "Size on disk"), ("n_variants", "Variants"),
+              ("n_analyses", "Analyses"), ("median_sample_size", "Median sample size"), ("ancestry", "Ancestry"),
+              ("top_hits", "Top hits"), ("has_hm3", "HM3"), ("has_rho", "Rho"))
+_SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+
+
+def summary(description: Any, limit: int = SUMMARY_CUT) -> str | None:
+    """The first sentence of a description, cut to about `limit` characters on a word boundary, ending in `…` when cut."""
+    flat = " ".join(str(description or "").split())
+    if not flat:
+        return None
+    end = _SENTENCE_END.search(flat)
+    first = flat[:end.end()] if end else flat
+    if len(first) <= limit:
+        return first
+    cut = first[:limit + 1]
+    cut = cut[:cut.rfind(" ")] if " " in cut else first[:limit]
+    return cut.rstrip(" ,;:.-") + "…"
 
 
 def _yes_no(value: Any) -> str:
@@ -132,11 +158,12 @@ def _ancestry(value: Mapping[str, int]) -> str:
 def inventory_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
     median = row.get("median_sample_size") or {}
     n_analyses = row.get("n_analyses") or {}
-    return {
+    out = {
         "store_id": row.get("store_id"),
         "url": url,
         "label": text(row.get("label")),
         "description": text((row.get("description") or "").strip() or None),
+        "summary": summary(text(row.get("description"))),
         "layout": _cell(row.get("layout"), str),
         "completion_state": _cell(row.get("completion_state"), str),
         "coverage": _cell(row.get("coverage"), str),
@@ -156,6 +183,11 @@ def inventory_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
                       if median.get("unparseable") else "")),
         "ancestry": _cell(row.get("ancestry"), _ancestry),
     }
+    # What the tile draws: each fact's display (a gap is `n/a`), and the reason behind each `n/a` for the expanded tile.
+    cells = [(label, out[key]) for key, label in TILE_FACTS]
+    out["facts"] = [{"label": label, "display": cell["display"], "detail": cell["detail"], "na": bool(cell["gap"])} for label, cell in cells]
+    out["why_na"] = [{"label": label, "reason": cell["gap"]} for label, cell in cells + [("Release Status", out["status"])] if cell["gap"]]
+    return out
 
 
 # ---------------------------------------------------------------------------

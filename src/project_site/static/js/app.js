@@ -73,7 +73,7 @@
       el("div", { class: "stat-number" }, value), el("div", { class: "stat-label" }, label));
   }
   /* columns: [{label, cell: function (row) -> node|string, count: bool}]; rowId(row) names a row's anchor. */
-  function table(columns, rows, rowId, scrollClass) {
+  function table(columns, rows, rowId) {
     if (!rows.length) return el("p", { class: "none-note" }, "None.");
     var head = el("tr", {}, columns.map(function (c) { return el("th", { class: (c.count ? "count" : "") + (c.cls ? " " + c.cls : "") || null }, c.label); }));
     var body = el("tbody", {}, rows.map(function (row) {
@@ -81,7 +81,7 @@
         return el("td", { class: (c.count ? "count" : "") + (c.cls ? " " + c.cls : "") || null }, c.cell(row));
       }));
     }));
-    return el("div", { class: "scroller" + (scrollClass ? " " + scrollClass : "") }, el("table", {}, el("thead", {}, head), body));
+    return el("div", { class: "scroller" }, el("table", {}, el("thead", {}, head), body));
   }
   /* A <select> of `values` (plus "every repository"), calling `draw` on each change. */
   function repoFilter(id, values, draw) {
