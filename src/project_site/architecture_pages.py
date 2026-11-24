@@ -33,6 +33,7 @@ from itertools import pairwise
 from typing import Any, Mapping
 
 from project_site import architecture_panel, pages
+from project_site.collect import architecture_model as model_rules
 
 Document = Mapping[str, Any]
 
@@ -580,20 +581,9 @@ def _baseline(baseline: Any) -> list[str]:
     ]
 
 
-def _system_gaps(repo: str, found: Mapping[str, Any]) -> list[str]:
-    """What a model file says about the system that `system.yaml` does not back (#8)."""
-    sections, containers = found.get("system_sections") or [], found.get("containers") or []
-    lines = []
-    if sections:
-        lines.append(
-            f"- System sections ignored: {', '.join(pages._code(k) for k in sections)} "
-            "(system sections belong in og-dev-hub's `system.yaml`)"
-        )
-    lines += [
-        f"- Unknown container: {pages._code(g['component'])} names {pages._code(g['container'])}, "
-        "which `system.yaml` does not have"
-        for g in containers
-    ]
+def _system_gap_lines(found: Mapping[str, Any]) -> list[str]:
+    """One repository's system gaps (#8) as list items, each followed by a blank line."""
+    lines = [f"- {sentence[0].upper()}{sentence[1:]}" for sentence in model_rules.describe_system_gaps(found, pages._code)]
     return lines + [""] if lines else []
 
 
@@ -617,7 +607,7 @@ def _health(
         lines += [f"- Stale: {pages._code(c['path'])} (claimed by {pages._code(c['component'])})" for c in stale]
         if unclaimed or stale:
             lines.append("")
-        lines += _system_gaps(repo, found)
+        lines += _system_gap_lines(found)
     by_id = {c["id"]: c for c in components}
     upward = [e for e in edges if e.get("upward")]
     lines += ["### The engine's layering", ""]

@@ -228,7 +228,7 @@ class StructureTests(unittest.TestCase):
         page = render(pages.render_structure, doc)
         self.assertIn("- System sections ignored: `containers`, `people` "
                       "(system sections belong in og-dev-hub's `system.yaml`)", page)
-        self.assertIn("- Unknown container: `yardstick` names `site`, which `system.yaml` does not have", page)
+        self.assertIn("- `yardstick` names container `site`, which `system.yaml` does not have", page)
         self.assertNotIn("System sections ignored", render(pages.render_structure, architecture()))
 
     def test_engine_gaps_are_listed_and_do_not_stop_the_page(self) -> None:

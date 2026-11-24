@@ -60,6 +60,24 @@ class LoadSystemTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "`container_relations`.*\\[from, to, text\\]"):
             model.load_system(broken(container_relations=[["p", "a"]]))
 
+    def test_a_yaml_syntax_error_names_the_file(self) -> None:
+        with self.assertRaisesRegex(ValueError, "system.yaml is not valid YAML"):
+            model.load_system("system: [unclosed\n")
+
+    def test_the_architecture_model_names_what_it_is_when_it_is_not_yaml(self) -> None:
+        with self.assertRaisesRegex(ValueError, "the architecture model is not valid YAML"):
+            model.load_model("components: [unclosed\n")
+
+    def test_what_the_pages_index_is_checked_by_name(self) -> None:
+        with self.assertRaisesRegex(ValueError, "`containers`.*`id` and a `name`"):
+            model.load_system(broken(containers=[{"id": "a", "repo": "r"}]))
+        with self.assertRaisesRegex(ValueError, "`people`.*`id` and a `name`"):
+            model.load_system(broken(people=[{"id": "p"}]))
+        with self.assertRaisesRegex(ValueError, "`external`.*`id` and a `name`"):
+            model.load_system(broken(external=[{"name": "X"}]))
+        with self.assertRaisesRegex(ValueError, "`system`.*`name` and a `summary`"):
+            model.load_system(broken(system={"name": "S"}))
+
     def test_a_duplicate_id_across_people_external_and_containers_is_named(self) -> None:
         with self.assertRaisesRegex(ValueError, "duplicate id 'a'"):
             model.load_system(broken(people=[{"id": "a", "name": "P", "summary": "x"}]))

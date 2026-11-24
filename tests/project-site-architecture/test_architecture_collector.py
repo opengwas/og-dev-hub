@@ -17,7 +17,7 @@ from pathlib import Path
 import architecture_fixtures as fx
 
 from project_site import staging
-from project_site.collect import architecture
+from project_site.collect import __main__ as command, architecture, common
 from project_site.collect.common import CollectError
 
 
@@ -142,11 +142,36 @@ class CombinedModelTests(unittest.TestCase):
 
 
 class SystemModelTests(unittest.TestCase):
-    """og-dev-hub's system.yaml is the only system model (#8)."""
+    """og-dev-hub's system.yaml is the only system model (#8).
+
+    The repositories are built once for the class: every test here only reads them.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.root = Path(tempfile.mkdtemp(prefix="arch-system-"))
+        cls.addClassCleanup(__import__("shutil").rmtree, cls.root, True)
+        cls.engine = cls.root / "engine"
+        fx.make_repo(cls.engine, fx.ENGINE_FILES)
+        cls.system = cls.root / "system.yaml"
+        cls.system.write_text(fx.SYSTEM_YAML, encoding="utf-8")
+        old_sections = fx.REGISTRY_MODEL.replace("stages:", fx.SYSTEM_SECTIONS.replace("OpenGWAS", "OldName").replace(
+            "ld_registry", "old_only") + "stages:", 1)
+        unknown_container = fx.REGISTRY_MODEL.replace("name: Scripts\n    container: generation",
+                                                      "name: Scripts\n    container: site")
+        cls.results = {}
+        for name, model in (("plain", fx.REGISTRY_MODEL), ("sections", old_sections), ("unknown", unknown_container)):
+            registry = cls.root / name
+            fx.make_repo(registry, {**fx.REGISTRY_FILES, "docs/architecture/components.yaml": model}, branch="trunk")
+            cls.results[name] = cls.collect(registry)
+
+    @classmethod
+    def collect(cls, registry: Path, system: Path | None = None) -> dict:
+        return architecture.collect(staging.registry_root(registry), engine_git=cls.engine, engine_ref="main",
+                                    system_file=system or cls.system)
 
     def test_the_models_system_keys_are_systems_yamls_and_the_stages_are_the_registrys(self) -> None:
-        result = Fixture(self).collect()
-        model = result["model"]
+        model = self.results["plain"]["model"]
         self.assertEqual(model["system"], {"name": "OpenGWAS", "summary": "The system."})
         self.assertEqual([c["id"] for c in model["containers"]], ["engine", "generation", "ld_registry"])
         self.assertEqual([p["id"] for p in model["people"]], ["curator"])
@@ -154,35 +179,40 @@ class SystemModelTests(unittest.TestCase):
         self.assertEqual(model["container_relations"][2], ["ld_registry", "sources", "reads"])
         self.assertEqual([s["id"] for s in model["stages"]], ["build", "query"])
 
-    def test_a_broken_system_yaml_makes_the_source_unavailable_naming_the_problem(self) -> None:
-        fixture = Fixture(self)
-        fixture.system.write_text(fx.SYSTEM_YAML.replace('[ld_registry, sources, "reads"]',
-                                                         '[ld_registry, nowhere, "reads"]'), encoding="utf-8")
+    def test_a_broken_system_yaml_raises_naming_the_problem(self) -> None:
+        broken = self.root / "broken.yaml"
+        broken.write_text(fx.SYSTEM_YAML.replace('[ld_registry, sources, "reads"]',
+                                                 '[ld_registry, nowhere, "reads"]'), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "system.yaml.*'nowhere'"):
-            fixture.collect()
+            self.collect(self.root / "plain", broken)
+
+    def test_a_broken_system_yaml_makes_the_architecture_source_unavailable_naming_the_file(self) -> None:
+        for name, text in (("syntax.yaml", "system: [unclosed\n"),
+                           ("noname.yaml", fx.SYSTEM_YAML.replace("name: Engine, ", ""))):
+            broken = self.root / name
+            broken.write_text(text, encoding="utf-8")
+            result = common.collect_source("architecture", lambda: self.collect(self.root / "plain", broken))
+            self.assertIs(result["available"], False)
+            self.assertIn("system.yaml", result["error"])
 
     def test_system_sections_left_in_a_components_file_are_ignored_and_reported(self) -> None:
-        old = fx.REGISTRY_MODEL.replace("stages:", fx.SYSTEM_SECTIONS.replace("OpenGWAS", "OldName").replace(
-            "ld_registry", "old_only") + "stages:", 1)
-        files = {**fx.REGISTRY_FILES, "docs/architecture/components.yaml": old}
-        result = Fixture(self, registry_files=files).collect()
+        result = self.results["sections"]
         self.assertEqual(result["gaps"]["registry"]["system_sections"],
                          ["system", "people", "external", "containers", "container_relations"])
         self.assertEqual(result["model"]["system"]["name"], "OpenGWAS")
         self.assertNotIn("old_only", [c["id"] for c in result["model"]["containers"]])
         self.assertEqual(len(result["components"]), 8)  # the rest is collected
-        from project_site.collect import __main__ as command
-        self.assertIn("SYSTEM GAPS: registry system, people, external, containers, container_relations ignored",
+        self.assertIn("SYSTEM GAPS: registry system sections ignored: system, people, external, containers, "
+                      "container_relations (system sections belong in og-dev-hub's `system.yaml`)",
                       command._describe_architecture(result))
         self.assertEqual(result["gaps"]["engine"]["system_sections"], [])
 
     def test_a_component_naming_a_container_system_yaml_lacks_is_a_gap_naming_both(self) -> None:
-        old = fx.REGISTRY_MODEL.replace("name: Scripts\n    container: generation",
-                                        "name: Scripts\n    container: site")
-        files = {**fx.REGISTRY_FILES, "docs/architecture/components.yaml": old}
-        result = Fixture(self, registry_files=files).collect()
+        result = self.results["unknown"]
         self.assertEqual(result["gaps"]["registry"]["containers"], [{"component": "tools", "container": "site"}])
         self.assertEqual(result["gaps"]["engine"]["containers"], [])
+        self.assertIn("registry tools names container site, which `system.yaml` does not have",
+                      command._describe_architecture(result))
 
 
 class UpwardImportTests(unittest.TestCase):

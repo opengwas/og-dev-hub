@@ -181,7 +181,7 @@ def collect(
             ),
         },
         "model": {
-            key: system[key] for key in ("people", "external", "containers", "container_relations")
+            key: system[key] for key in model_rules.SYSTEM_SECTIONS if key != "system"
         } | {
             "stages": registry_model.get("stages") or [],
             "system": system["system"],
@@ -214,7 +214,7 @@ def _system_gaps(
             for c in components
             if c["repo"] == repo and c["container"] not in container_ids
         ],
-        "system_sections": model_rules.system_sections_in(model or {}),
+        "system_sections": [key for key in model_rules.SYSTEM_SECTIONS if key in (model or {})],
     }
 
 

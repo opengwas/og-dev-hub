@@ -649,7 +649,7 @@ shown as "no plans"; with `plans` empty the page says no ticket carries a block.
 ### The command's output and exit status
 
 One line per source, in this order (the architecture line is longer: components,
-gaps, upward imports, the seam and ADRs placed; `work` runs last, because it reads the
+gaps (with `, SYSTEM GAPS: …` after the counts when a model file still holds a system section or a component names a container `system.yaml` lacks), upward imports, the seam and ADRs placed; `work` runs last, because it reads the
 board and architecture files just written, and adds `BRANCH FETCH FAILED` for a failed fetch), then the files are all written:
 
 ```text
