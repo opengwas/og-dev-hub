@@ -258,7 +258,7 @@ the engine, which have nothing to fill. Its manifest cells still read. Any other
 | `n_clumped` | `observed.n_clumped` | absent or `null`: "pending opengwasdb-stores#507" |
 | `n_analyses` | the built rows (and how many `excluded` rows were left out) | `analyses.tsv` missing or unreadable, naming which |
 | `median_sample_size` | the median of `sample_size` over the built rows that have a number, with `with_sample_size` of `of` and `unparseable` | "the Release Manifest records no sample size for any built row" (and how many values are not numbers) |
-| `ancestry` | a count per `assigned_ancestry`, `unassigned` for an empty one | no `assigned_ancestry` column |
+| `ancestry` | a count per `assigned_ancestry`, `unassigned` for an empty one | the manifest has no Assigned Ancestry column; or no built row, so there is no ancestry to count |
 
 A value the owner refuses (`observed_flag` on `"yes"`) is a gap carrying its message. **`yardstick`**
 (`collect.yardstick_runs`): `available` (`false` with a `reason` when the registry has no
