@@ -18,7 +18,7 @@ jobs:
         with:
           locked: true
 
-      # The suites that need Quarto run here too, because the environment has it;
-      # the one that needs graphviz's `dot` skips without it.
+      # The site's suite draws its diagrams with graphviz's `dot`, which the
+      # environment has.
       - name: Run the suites
         run: pixi run test

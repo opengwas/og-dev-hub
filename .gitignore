@@ -4,21 +4,8 @@
 *.egg-info/
 __pycache__/
 
-# The site build (src/project_site/) renders a mirror under
-# /data/opengwasdb/work/site/ and writes nothing into the checkout, so only
-# Quarto's own cache and a hand-run render's output are ignored here.
-site/.quarto/
-site/_site/
-
-# The project site's collected data (#389): regenerate with `pixi run site-data`.
+# The site data (`pixi run site-data`, and the collection `pixi run site` reads).
 docs/_data/
-
-# The project site's generated pages (#391, src/project_site/pages.py): written by
-# the render's pre-render step into the mirror, and by a hand run into these
-# paths, which a render replaces. Never committed: every page repeats the site's
-# navigation, so committed output would make parallel pull requests conflict.
-site/epics/
-site/stores/
 
 # setuptools' output when another environment installs this repository from a
 # path (opengwasdb-stores' `dev` does, for its architecture checks).

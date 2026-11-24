@@ -12,7 +12,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "og-dev-hub"
 version = "0.1.0"
-description = "The Dev Hub: the site that draws OpenGWAS's built state, the board's plan over it, the epics and the Store inventories"
+description = "The Dev Hub: the static site that draws OpenGWAS's built state"
 requires-python = ">=3.12"
 license = "GPL-3.0-only"
 dependencies = []

@@ -18,9 +18,8 @@ It reports the components of every repository with a model, with their
 measured size, the files nobody claims and the claims that match nothing (gaps,
 reported never raised), the commit read in each repository, the import graph
 within and across them, every ADR, and the baseline of opengwasdb-stores'
-imports of engine modules (#421). The site's *docs* mirror stays at the
-opengwasdb revision `pixi.lock` pins; the map shows current work, so this reads
-`main`.
+imports of engine modules (#421). With `read_private` false (the site's
+collection, og-dev-hub#15) a private repository is never read.
 """
 
 from __future__ import annotations

@@ -203,11 +203,13 @@ class ArchitectureViewTests(BuiltSite):
         self.assertIn('href="#component-cli"', diagrams["opengwasdb"]["svg"])
 
     def test_nothing_of_the_private_repository_reaches_any_file_of_the_site(self) -> None:
+        commit = self.world.architecture["repos"]["ogld"]["commit"]
+        self.assertIn("ld_panels", {c["id"] for c in self.world.architecture["components"]}, "it was collected whole")
         for path in self.out.rglob("*"):
             if not path.is_file():
                 continue
             text = path.read_text(encoding="utf-8")
-            for secret in SECRETS:
+            for secret in (*SECRETS, commit[:12]):
                 with self.subTest(path=path.relative_to(self.out).as_posix(), secret=secret):
                     self.assertNotIn(secret, text)
 
