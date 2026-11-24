@@ -20,14 +20,14 @@ Three rules hold on every page:
 
 `generate` writes into the tree Quarto is about to render, which is the docs
 mirror `project_site.build` stages under `/data/opengwasdb/work/site`, never the
-checkout. `docs/_quarto.yml` runs it as the project's `pre-render` hook, so
+checkout. `site/_quarto.yml` runs it as the project's `pre-render` hook, so
 `pixi run site` and `site-publish` both get the pages from the data of the
 checkout being rendered. Quarto resolves a page's contents at render time, after
 pre-render, which is why a page it already knows may be replaced here and still
 render what this module wrote: the five section pages are committed as short
 "this page is generated" stubs, so their published paths stay, and a render fills
-them in. The per-epic and per-Store pages are git-ignored (`docs/epics/`,
-`docs/stores/`).
+them in. The per-epic and per-Store pages are git-ignored (`site/epics/`,
+`site/stores/`).
 """
 
 from __future__ import annotations

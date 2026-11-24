@@ -3,19 +3,21 @@ title: "The site"
 ---
 
 How this site is built, previewed, published and extended. It is one Quarto
-website over this repository's `docs/` and opengwasdb's docs, rendered on the
-host where the data lives, and published from the `gh-pages` branch at
-<https://blog.opengwas.io/opengwasdb-stores/>.
+website over opengwasdb-stores' `docs/`, opengwasdb's docs and this hub's own,
+rendered on the host where the data lives, and published from og-dev-hub's
+`gh-pages` branch at <https://blog.opengwas.io/og-dev-hub/>. It moved here from
+opengwasdb-stores, with its history, in og-dev-hub#7; the old address was retired
+with no redirect.
 
 ## The commands
 
 | Command | What it does |
 | --- | --- |
-| `pixi run site` | Collect the site's data, stage both repositories' docs, render, and check every served path. The render runs over 24 Quarto processes; `--jobs N` changes that, and `--jobs 1` is Quarto rendering alone. |
+| `pixi run site` | Collect the site's data, stage the repositories' docs, render, and check every served path. The render runs over 24 Quarto processes; `--jobs N` changes that, and `--jobs 1` is Quarto rendering alone. `--registry PATH` reads that opengwasdb-stores checkout instead of its clone's `main`. |
 | `pixi run site-preview` | The same staging, then Quarto's live-reloading preview (on <http://localhost:4200>, or the next free port). |
 | `pixi run site-publish --dry-run` | Render a clean checkout of `origin/main` and commit it to `gh-pages` **without pushing**. It takes `--jobs` too. |
 | `pixi run site-publish` | The same, then push `gh-pages`. The owner runs this. |
-| `pixi run docs` | Refresh a report: render its `.qmd` and copy the HTML to the name the site serves. |
+| `pixi run docs` (in opengwasdb-stores) | Refresh a report: render its `.qmd` and copy the HTML to the name the site serves. |
 
 Nothing is rendered in CI: every page repeats the site's navigation, so committed
 output would make parallel pull requests conflict.
@@ -25,20 +27,30 @@ output would make parallel pull requests conflict.
 | Path | What |
 | --- | --- |
 | `/data/opengwasdb/work/site/<checkout>/_site` | The rendered site (`$OPENGWASDB_SITE_OUT` overrides it). |
-| `/data/opengwasdb/work/site/<checkout>/_stage` | The mirror of `docs/` the render reads, with the collected data and the generated pages in it (`$OPENGWASDB_SITE_ROOT` moves the work root). |
+| `/data/opengwasdb/work/site/<checkout>/_stage` | The mirror the render reads, with the collected data and the generated pages in it (`$OPENGWASDB_SITE_ROOT` moves the work root). |
+| `/data/opengwasdb/work/site/<checkout>/_stage-registry` | opengwasdb-stores' `stores/`, `docs/`, `CONTEXT.md`, `pixi.lock` and `ogstores.yaml` at its clone's `main`, extracted with `git archive`: what the collectors and the mirror read. |
 | `/data/opengwasdb/work/site/<checkout>/_site-workers-*` | Each render worker's copy of the mirror, and what it rendered, while a render runs. Removed when the render ends, whether it succeeded or not. |
 | `/data/opengwasdb/work/site/<checkout>/_preview` | The synced copy `site-preview` serves; Quarto renders inside it. |
 | `/data/opengwasdb/work/site/opengwasdb.git` | The bare clone the engine's docs are staged from (`$OPENGWASDB_SITE_ENGINE_CLONE` overrides it). |
+| `/data/opengwasdb/work/site/opengwasdb-stores.git` | The bare clone the registry is read from, fetched at every render (`$OPENGWASDB_SITE_REGISTRY_CLONE` overrides it). |
 
 Nothing the site build writes goes under `/home` or `/tmp`, and nothing is
 written into the checkout.
 
-The render reads a mirror of `docs/`, not `docs/` itself. That is deliberate:
-the mirror is where the link rewrite, the Mermaid spelling and the staged engine
-docs and glossary live, so no source file is ever edited, `docs/` stays readable
-on GitHub, and two renders — of different checkouts, or of one checkout into two
-outputs — never collide. `docs/opengwasdb/` holds the engine's docs at the pinned
-revision and `docs/glossary.md` is `CONTEXT.md`, both inside the mirror.
+The render reads a mirror, never a checkout. It is staged in this order:
+
+1. opengwasdb-stores' `docs/` at the root, as the site has always served it;
+2. this hub's `site/` over it: `_quarto.yml`, `pre-render.sh` and the section pages;
+3. the engine's docs at `opengwasdb/`, at the revision the registry's `pixi.lock` pins;
+4. this hub's own `docs/` (its ADRs, the consolidation plan, this page and the
+   spec) at `dev-hub/`, so the hub's ADR numbers never meet the registry's `adr/`.
+
+That is deliberate: the mirror is where the link rewrite, the Mermaid spelling
+and the staged docs and glossary live, so no source file is ever edited, each
+`docs/` stays readable on GitHub, and two renders — of different checkouts, or of
+one checkout into two outputs — never collide. `glossary.md` is
+opengwasdb-stores' `CONTEXT.md`. A link out of a page's own tree goes to GitHub,
+in the repository and at the commit the page came from.
 
 ## How a render runs in parallel
 
@@ -83,8 +95,8 @@ flowchart TD
   B -- no --> X["refuse"]
   B -- yes --> C["fetch origin, resolve the source commit"]
   C --> D["clean detached worktree of that commit"]
-  D --> E["stage the engine's docs at the pixi.lock pin"]
-  E --> F["mirror docs/, rewrite outbound links, spell mermaid fences"]
+  D --> E["fetch opengwasdb-stores, extract its main; stage the engine's docs at its pixi.lock pin"]
+  E --> F["mirror the docs, rewrite outbound links, spell mermaid fences"]
   F --> G["quarto render over 24 workers, merged into /data/opengwasdb/work/site/"]
   G --> H["replace the gh-pages worktree contents"]
   H --> I{"--dry-run?"}
@@ -92,24 +104,23 @@ flowchart TD
   I -- no --> K["commit to gh-pages and push"]
 ```
 
-The default ref is `origin/main`: every merge lands there and is a version
-(#386). Before the cutover, name `--ref origin/dev` explicitly.
+The default ref is og-dev-hub's `origin/main`. The registry is always read at
+its own `main`.
 
 ## The data pages
 
 Five pages are generated from the site's own data rather than written by hand:
-the [Overview](index.qmd), [Stores](stores.qmd), [Epics](epics.qmd),
-[Trends](trends.qmd) and [Changelog](changelog.qmd), with one page per epic and
-one per registered Store beside them
+the Overview ([`site/index.qmd`](../site/index.qmd)), Stores, Epics, Trends and
+Changelog, with one page per epic and one per registered Store beside them
 ([`src/project_site/pages.py`](../src/project_site/pages.py), #391).
 
 Three more, under **Architecture** in the navbar, draw how OpenGWASDB fits together
 from both repositories' `docs/architecture/components.yaml` and their code
 ([`src/project_site/architecture_pages.py`](../src/project_site/architecture_pages.py),
-#418): [Pipeline](architecture.qmd) (the stages, their components and ADRs) and
-[Structure and health](architecture-structure.qmd) (context, containers and
+#418): Pipeline (the stages, their components and ADRs) and
+Structure and health (context, containers and
 components, the engine by layer with its upward imports, and the gaps in the
-claims). The third, [Work map](architecture-work.qmd) (#419), shows where live work
+claims). The third, Work map (#419), shows where live work
 meets: which epics', tickets' and branches' files fall on the same component, and
 whether a blocking edge between the specific tickets coordinates it. It shows
 pushed branches and the files tickets cite, says when it was measured, and says
@@ -122,17 +133,17 @@ contract.
 
 - `pixi run site` and `site-publish` **collect the data themselves** before the
   render, into the render's own `_stage/_data`, from the `stores/` and
-  `docs/_epics/` of the checkout being rendered. `$OPENGWASDB_SITE_DATA` names a
+  `docs/_epics/` of the registry being rendered. `$OPENGWASDB_SITE_DATA` names a
   directory collected already, and then nothing is collected.
-- `docs/_quarto.yml` names `docs/pre-render.sh` as the project's `pre-render`
+- `site/_quarto.yml` names `site/pre-render.sh` as the project's `pre-render`
   hook. Quarto runs it inside the mirror before rendering, so the generator
   writes the pages where the render reads them and never into the checkout. The
-  commit being rendered reaches it as `$OPENGWASDB_SITE_COMMIT`, which is what a
-  generated link to a file outside `docs/` names.
+  registry commit being rendered reaches it as `$OPENGWASDB_SITE_COMMIT`, which
+  is what a generated link to a Release Bundle names.
 - The five section pages are committed as short stubs that say they are
   generated: their published paths stay (`index.html`, `stores.html`), and a
   render replaces them. The per-epic and per-Store pages are git-ignored
-  (`docs/epics/`, `docs/stores/`).
+  (`site/epics/`, `site/stores/`).
 - A page never fails because a source is missing: it shows a notice naming the
   source, its error and when it was collected. `docs/spec/project-site.md` is
   the contract between the data and the pages.
@@ -158,12 +169,11 @@ contract.
 
 ## Going live
 
-The first real publish creates `gh-pages`; GitHub Pages keeps serving the legacy
-`main`/`docs` deployment until its source is switched. That switch is the owner's
-step, taken after the first real `pixi run site-publish`:
+The first real publish creates og-dev-hub's `gh-pages`. Turning GitHub Pages on
+for it is the owner's step, taken after the first real `pixi run site-publish`:
 
 ```bash
-gh api -X PUT repos/opengwas/opengwasdb-stores/pages \
+gh api -X POST repos/opengwas/og-dev-hub/pages \
   -f 'source[branch]=gh-pages' -f 'source[path]=/'
 ```
 
@@ -172,9 +182,11 @@ It sets Pages to build from the `gh-pages` branch at `/`, which is where
 
 ## Adding a page
 
-1. Add a Markdown file under `docs/` — `docs/my-page.md` — with a single `#`
-   heading as its title. It is served at `/my-page.html`.
-2. If it belongs to a section, add it to `docs/_quarto.yml`: the navbar for a
+1. A page about the registry goes in opengwasdb-stores' `docs/` —
+   `docs/my-page.md` — with a single `#` heading as its title. It is served at
+   `/my-page.html`. A page about the hub goes in this repository's `docs/`, and is
+   served under `/dev-hub/`.
+2. If it belongs to a section, add it to `site/_quarto.yml`: the navbar for a
    section index, or a `sidebar`'s `contents`. A glob such as `adr/*.md` already
    covers a new ADR, so most pages need no configuration.
 3. Use ` ```mermaid ` for a diagram and it renders as one, as it does on GitHub;
@@ -184,20 +196,21 @@ It sets Pages to build from the `gh-pages` branch at `/`, which is where
    it reach its rendered page. Add it to the sidebar as `<name>.qmd`.
 4. Link to a sibling with its relative path (`../spec/release-config.md`). Link to
    anything outside `docs/` with the relative path you would use on GitHub — the
-   build rewrites it to that file on GitHub at the commit being rendered. A link
-   the build rewrites is reported if the commit does not have the target.
+   build rewrites it to that file on GitHub, in the page's own repository at the
+   commit being rendered. A link the build rewrites is reported if the commit does
+   not have the target.
 5. **Never move or rename a page that is already published.** A reader's link
    would break. If a page must move, keep the old path as an `aliases` entry in
    the new page's YAML front matter; Quarto then writes a redirect page there,
    which the served-path check counts as an alias rather than a missing path.
 6. Historical reports are not rendered: their source `.qmd` lives in
-   `docs/reports/`, and `pixi run docs` renders it and copies the self-contained
+   opengwasdb-stores' `docs/reports/`, and its `pixi run docs` renders it and copies the self-contained
    HTML to the root name the site serves. Do not add `.qmd` files to `docs/`
    outside `reports/` unless the page really must execute code at render time.
 7. A page that is computed from the site's data is not written by hand: add it
    to `src/project_site/pages.py` (`SECTION_PAGES` for a section, or one of the
    per-epic and per-Store writers) and commit a stub with its published path at
-   `docs/`, as the data pages above do. Do not edit a generated page — a
+   `site/`, as the data pages above do. Do not edit a generated page — a
    render replaces it. A page holding a chart is written as a `{=html}` block,
    not an inline SVG in a table cell: Pandoc drops an SVG's children there.
 8. A fact is data, never markup, and that includes a fact in a code span: a
@@ -211,31 +224,22 @@ It sets Pages to build from the `gh-pages` branch at `/`, which is where
 
 `pixi run site` ends with the served-path check: every path in
 `resources/site/legacy-served-paths.txt` must be present or aliased in the
-output, and a missing path fails the build. Run it before opening a pull request
-that touches `docs/`.
+output, and a missing path fails the build.
 
-That baseline is fixed, and deliberately: it is the 90 paths under `docs/` at
-`ff204b6`, the commit the live legacy Pages deployment was built from, so it
-protects the links readers already hold. A page the site generates (an epic, a
-Store, a trend) may come or go without touching it; only a legacy path that a
-reader can still follow is in it, and a path leaves it only when a legacy URL is
-retired deliberately, by a reviewed change to the file. A missing, empty or
-unreadable baseline file fails the check rather than passing an unchecked
-render (`src/project_site/build.py`).
+At og-dev-hub's address that baseline starts fresh. Nothing has been published
+here yet, so no reader holds a link to it, and the file is absent until it is
+written from the first publish: until then the check has nothing to compare
+with, and the summary says `served    not checked`. Once written, it is fixed,
+and deliberately: it protects the links readers hold. A page the site generates
+(an epic, a Store, a trend) may come or go without touching it; a path leaves it
+only when a published URL is retired deliberately, by a reviewed change to the
+file. An empty or unreadable baseline fails the check rather than passing an
+unchecked render (`src/project_site/build.py`).
 
 You can run the check on its own against an existing render:
 
 ```bash
-pixi run -e dev python3 -m project_site.urlcheck \
+pixi run python3 -m project_site.urlcheck \
   --paths-file resources/site/legacy-served-paths.txt \
-  --output /data/opengwasdb/work/site/<checkout>/_site
-```
-
-For an ad-hoc answer to "does this render serve everything `main`'s `docs/`
-held at some revision?", name the revision instead:
-
-```bash
-pixi run -e dev python3 -m project_site.urlcheck \
-  --git-rev ff204b6 \
   --output /data/opengwasdb/work/site/<checkout>/_site
 ```

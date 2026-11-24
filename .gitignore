@@ -11,7 +11,7 @@ site/.quarto/
 site/_site/
 
 # The project site's collected data (#389): regenerate with `pixi run site-data`.
-site/_data/
+docs/_data/
 
 # The project site's generated pages (#391, src/project_site/pages.py): written by
 # the render's pre-render step into the mirror, and by a hand run into these

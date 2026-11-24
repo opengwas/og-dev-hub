@@ -6,21 +6,35 @@ record** an orchestrated epic commits when it finishes, and the **collectors**
 pages themselves (#391) and the site build (#388) are specified elsewhere; this
 file is the contract between the data and them.
 
-The code is `src/project_site/` (ADR 0038). It imports `ogstores.bundle` and
-`ogstores.paths` and nothing else from this repository, and it reads
+The code is og-dev-hub's `src/project_site/`; it moved here from
+opengwasdb-stores with its history in og-dev-hub#7, where "this repository"
+below meant opengwasdb-stores, the **registry**. From opengwasdb-stores, which
+the environment installs as the `ogstores` distribution, it imports
+`ogstores.bundle`, `ogstores.paths`, `ogstores.engine` (the lock's engine pin)
+and `yardstick.result`, and nothing else; every call names the registry root it
+reads, because an installed package knows no checkout. It reads
 `/data/opengwasdb/stores` only through read-only SQLite URIs.
+
+**Where the registry is read from.** `main` of the site's bare clone,
+`/data/opengwasdb/work/site/opengwasdb-stores.git`, fetched at every render, with
+the files the collectors read (`stores/`, `docs/`, `CONTEXT.md`, `pixi.lock`,
+`ogstores.yaml`) extracted at that commit by `git archive`, and git read at the
+same commit. `--registry PATH` reads that checkout instead, at its `HEAD`
+(`project_site.staging.registry_root`, the one owner of this choice).
 
 ## The served-path baseline
 
 The build's served-path check reads one fixed list,
-`resources/site/legacy-served-paths.txt` (#388, #397): the 90 paths under
-`docs/` at `ff204b619ad8a5f671f4f67dd65d234096731102`, the commit the live
-legacy Pages deployment was built from, one per line with `#` for comments. It
-is fixed because it protects the links readers already hold: a page the site
-generates may come and go without being added to it, and a path in it only goes
-when a legacy URL is retired deliberately, by a reviewed change to the file. A
-missing, empty or unreadable file fails the build rather than passing a render
-nothing checked.
+`resources/site/legacy-served-paths.txt` (#388, #397), one path per line with
+`#` for comments. At opengwasdb-stores' address it was the 90 paths under
+`docs/` at `ff204b6`, the commit the legacy Pages deployment was built from. At
+og-dev-hub's address (og-dev-hub#7) it starts fresh: the file is absent until it
+is written from the first publish there, and an absent file checks nothing,
+because no reader holds a link yet. Once written it is fixed, because it protects
+the links readers hold: a page the site generates may come and go without being
+added to it, and a path in it only goes when a published URL is retired
+deliberately, by a reviewed change to the file. An empty or unreadable file fails
+the build rather than passing a render nothing checked.
 
 ## The epic record
 
@@ -110,7 +124,7 @@ pixi run site-data [--data-dir PATH] [--catalog-root PATH] [--registry PATH] [--
 
 `pixi run site-data` runs every collector and prints one line per source. Each
 collector writes `<data dir>/<source>.json`. The data directory is
-`docs/_data/` of the checkout, which git ignores, unless
+`docs/_data/` of the og-dev-hub checkout, which git ignores, unless
 `OPENGWASDB_SITE_DATA` or `--data-dir` names another. Nothing is ever written
 under `/data/opengwasdb/stores`.
 
@@ -245,7 +259,7 @@ Releases are empty, and `opengwasdb` has one tag, `v0.2.0`.
 
 ### Stores (`stores.json`)
 
-Every registered Store Release of the registry of the checkout being rendered
+Every registered Store Release of the registry being rendered
 (`stores/`; `--registry` names another), never `/data`. A registered Store is
 a directory named `OGS-xxxxx`; `by-label/`, `README.md` and `.staging/` are
 not. Each bundle is read with `ogstores.bundle.load`, which never opens a Store.
@@ -289,7 +303,7 @@ takes another validator as an argument, for tests.
 
 The architecture of both repositories (#418, epic #416), from the two
 hand-written model files `docs/architecture/components.yaml` and the code they
-claim. It reads **git, not checkouts**: this repository at `HEAD` (tracked files
+claim. It reads **git, not checkouts**: the registry at the commit its clone's `main` names, or `HEAD` of the checkout `--registry` names (tracked files
 only) and the engine at its `main` through the bare clone the site build already
 keeps (`/data/opengwasdb/work/site/opengwasdb.git`, or `--engine-git`; `--engine-ref`
 names another ref). `pixi run site` fetches `main` into that clone first (`--refresh-engine`);
@@ -326,7 +340,7 @@ Code is a tracked `.py` under `opengwasdb/` in the engine, and a `.py`, `.smk`,
 `.sh`, `.R`, `.r` or `Snakefile` under `src/`, `workflow/` or `tools/` here (R counts for
 ownership and lines, not for the Python import graph). **Gaps never
 fail the build.** The engine's own CI fails on its unclaimed files, and this
-repository's test (`tests/project-site-architecture/test_architecture_ownership.py`)
+repository's test (opengwasdb-stores' `tests/architecture/test_architecture_ownership.py`)
 fails on its own; the collector only reports them, on the page. An engine ref with
 no model file is not an error either: `engine.model` is `false`, `engine.note`
 names the ref and commit, the engine has no components or edges and its gaps are unknown (`null`), and this
@@ -355,7 +369,7 @@ is that count, and it stands whether or not the engine's model is there.
 which the engine's claims resolve, so it is `null` when the engine has no model
 at the ref read — unknown, never 0. `baseline` reports
 `docs/architecture/engine-imports-baseline.yaml`, which lists those imports and
-only shrinks: `tests/project-site-architecture/test_engine_imports_baseline.py`
+only shrinks: opengwasdb-stores' `tests/architecture/test_engine_imports_baseline.py`
 fails on an import the file does not list (naming the file, the name and, when
 the engine was read, the engine component it lands in) and on a listed import
 that is gone. One measurement feeds both the seam counts and the baseline, so
@@ -419,8 +433,9 @@ optional `-slug` after the ticket; `orch/<epic>-...`), looked up in either repos
 **Branches.** A branch counts when it is ahead of `main` and its newest commit
 is within `days` (21) days. Its files are `git diff --name-only -z main...<branch>`.
 The published page reads **pushed** branches only: the engine's bare clone after
-`git fetch origin +refs/heads/*:refs/heads/*`, this repository's checkout as
-`refs/remotes/origin/*` after `git fetch origin`. A failed fetch is recorded in
+`git fetch origin +refs/heads/*:refs/heads/*`, and the registry's bare clone the
+same way; a registry checkout named by `--registry` as `refs/remotes/origin/*`
+after `git fetch origin`. A failed fetch is recorded in
 `branches.sources[].fetch` and shown on the page, and the refs already there are
 read. The `conflicts` command can add the local branches of other git
 directories (`--local`), which the page never shows. A branch read from two clones

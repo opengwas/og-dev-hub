@@ -207,6 +207,11 @@ class ServedResourcesTest(unittest.TestCase):
         self.config = yaml.safe_load((REPO_ROOT / "site" / "_quarto.yml").read_text(encoding="utf-8"))
         self.patterns = self.config["project"]["resources"]
 
+    def test_the_site_is_og_dev_hubs(self) -> None:
+        # og-dev-hub#7: published from og-dev-hub at its own address.
+        self.assertEqual(self.config["website"]["site-url"], "https://blog.opengwas.io/og-dev-hub/")
+        self.assertEqual(self.config["website"]["repo-url"], "https://github.com/opengwas/og-dev-hub")
+
     def test_the_collected_data_is_not_copied_into_the_site(self) -> None:
         self.assertNotIn("**/*.json", self.patterns)
         self.assertFalse([pattern for pattern in self.patterns if "_data" in pattern], self.patterns)

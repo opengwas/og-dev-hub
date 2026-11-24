@@ -1,16 +1,18 @@
-# One Quarto website over the registry's docs/ and the engine's docs (#388).
+# One Quarto website over opengwasdb-stores' docs/, the engine's docs and the
+# Dev Hub's own (#388; moved to og-dev-hub in og-dev-hub#7).
 #
-# It replaces the legacy GitHub Pages deployment, which served `main`'s docs/
-# as it sat on the branch, so the published pages lagged dev by weeks. The site
-# is rendered on the host (`pixi run site`) and published to `gh-pages`
-# (`pixi run site-publish`), and this file is the whole of its configuration.
+# The site is rendered on the host (`pixi run site`) and published to
+# og-dev-hub's `gh-pages` (`pixi run site-publish`), and this file is the whole
+# of its configuration.
 #
-# The render reads a mirror of docs/ built under /data/opengwasdb/work/site,
-# never docs/ itself (src/project_site/build.py): the mirror is where the links
-# that leave docs/ are pointed at GitHub and where a plain ```mermaid fence is
-# spelled the way Quarto renders it. So `quarto render` is always given an
-# --output-dir outside the project, and a hand-run `quarto render docs` is not
-# how the site is built — `pixi run site` is.
+# The render reads a mirror built under /data/opengwasdb/work/site, never a
+# checkout (src/project_site/build.py): opengwasdb-stores' docs/ at its root,
+# this site/ directory over it, the engine's docs at opengwasdb/ and og-dev-hub's
+# docs/ at dev-hub/. The mirror is where the links that leave a docs tree are
+# pointed at GitHub and where a plain ```mermaid fence is spelled the way Quarto
+# renders it. So `quarto render` is always given an --output-dir outside the
+# project, and a hand-run `quarto render site` is not how the site is built —
+# `pixi run site` is.
 #
 # `resources` is what keeps every path the old site served: Quarto renders each
 # .md to .html, and these patterns copy the .md sources and the committed,
@@ -46,8 +48,8 @@ project:
 website:
   title: "OpenGWASDB"
   description: "Where OpenGWASDB stands: the stores, the registry, its reports, and the engine's docs."
-  site-url: "https://blog.opengwas.io/opengwasdb-stores/"
-  repo-url: "https://github.com/opengwas/opengwasdb-stores"
+  site-url: "https://blog.opengwas.io/og-dev-hub/"
+  repo-url: "https://github.com/opengwas/og-dev-hub"
   page-navigation: true
   back-to-top-navigation: true
   navbar:
@@ -94,12 +96,13 @@ website:
         - section: "Benchmarks and reports"
           contents: "benchmark-output/*.md"
         - section: "This site"
-          # site.md is staged as site.qmd: Quarto renders a Mermaid cell only in
-          # a .qmd. A list, not a bare string: a one-name `contents` under a
-          # `section` is dropped without a word. A page that gains or loses a
-          # diagram changes this entry.
+          # og-dev-hub's docs/site.md, staged under dev-hub/ as site.qmd: Quarto
+          # renders a Mermaid cell only in a .qmd. A list, not a bare string: a
+          # one-name `contents` under a `section` is dropped without a word. A
+          # page that gains or loses a diagram changes this entry.
           contents:
-            - "site.qmd"
+            - "dev-hub/site.qmd"
+            - "dev-hub/spec/project-site.md"
     - id: engine
       title: "Engine docs"
       contents:
@@ -117,7 +120,7 @@ website:
           contents: "opengwasdb/reviews/*.md"
   page-footer:
     left: "OpenGWASDB · rendered from the commit that names it"
-    right: "[Report a problem](https://github.com/opengwas/opengwasdb-stores/issues)"
+    right: "[Report a problem](https://github.com/opengwas/og-dev-hub/issues)"
 
 format:
   html:

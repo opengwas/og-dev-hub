@@ -497,7 +497,7 @@ def _sync_tree(source: Path, served: Path) -> int:
         mode = path.stat().st_mode & 0o777
         if target.is_file() and target.read_bytes() == data:
             # The preview tree is what Quarto runs the project's `pre-render`
-            # hook from (`docs/pre-render.sh`, #391), so the mirror's mode is
+            # hook from (`site/pre-render.sh`, #391), so the mirror's mode is
             # part of what `served` matches: a file written fresh is 0644.
             if target.stat().st_mode & 0o777 != mode:
                 os.chmod(target, mode)
