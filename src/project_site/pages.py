@@ -440,9 +440,10 @@ def _milestones_section(documents: Mapping[str, Document | None]) -> list[str]:
         return lines + ["No milestone progress can be shown while the board data is unavailable.", ""]
     milestones = [item for item in board.get("milestones") or [] if isinstance(item, Mapping)]
     if not milestones:
-        return lines + ["The board holds no Milestone.", ""]
+        return lines + private_count(board, "milestones", "milestone") + ["The board holds no Milestone.", ""]
     open_milestones = [item for item in milestones if not _is_closed(item)]
     closed = [item for item in milestones if _is_closed(item)]
+    lines += private_count(board, "milestones", "milestone")
     if not open_milestones:
         lines += ["No Milestone on the board is open.", ""]
     for item in open_milestones:
@@ -460,6 +461,19 @@ def _milestones_section(documents: Mapping[str, Document | None]) -> list[str]:
     if closed:
         lines += ["Closed: " + "; ".join(_closed_milestone(item) for item in closed), ""]
     return lines
+
+
+def _private_sentence(count: int, noun: str) -> str:
+    """How many of the board's items in private repositories a page leaves out (og-dev-hub#9)."""
+    if count == 1:
+        return f"1 {noun} in a private repository is not shown."
+    return f"{count} {noun}s in private repositories are not shown."
+
+
+def private_count(board: Mapping[str, Any], kind: str, noun: str) -> list[str]:
+    """The line counting what the board's public view left out (`private.<kind>`), or nothing."""
+    count = (board.get("private") or {}).get(kind) or 0
+    return [_private_sentence(count, noun), ""] if count else []
 
 
 def _is_closed(item: Mapping[str, Any]) -> bool:
@@ -480,6 +494,7 @@ def _workstreams_section(documents: Mapping[str, Document | None]) -> list[str]:
     if board is None:
         return lines + ["No workstream can be shown while the board data is unavailable.", ""]
     active = [epic for epic in board.get("epics") or [] if (epic.get("status") or "") == "Active"]
+    lines += private_count(board, "active_epics", "epic")
     if not active:
         return lines + ["No epic on the board has Status **Active**.", ""]
     groups: dict[str, list[Mapping[str, Any]]] = {}
@@ -864,6 +879,9 @@ def _tickets_section(
 ) -> list[str]:
     children = epic.get("children") or []
     lines = ["## Tickets", ""]
+    hidden = epic.get("private_children") or 0
+    if hidden:
+        lines += [_private_sentence(hidden, "ticket"), ""]
     if not children:
         return lines + ["The board lists no sub-issue for this epic.", ""]
     merges = {
@@ -1467,6 +1485,7 @@ def render_epics_index(documents: Mapping[str, Document | None]) -> str:
         counts[str(entry.get("status"))] = counts.get(str(entry.get("status")), 0) + 1
     summary = ", ".join(f"{number} {status}" for status, number in sorted(counts.items()))
     lines += [f"The board holds **{len(epics)}** Epics: {summary}.", ""]
+    lines += private_count(board, "epics", "epic")
     groups: dict[str, list[Mapping[str, Any]]] = {}
     for entry in epics:
         groups.setdefault(entry.get("workstream") or NO_WORKSTREAM, []).append(entry)
@@ -1848,7 +1867,10 @@ def generate(*, docs: Path, data_dir: Path | None = None, commit: str | None = N
     docs = Path(docs)
     data_dir = Path(data_dir) if data_dir is not None else default_data_dir(docs)
     commit = commit if commit is not None else (os.environ.get(COMMIT_ENV_VAR) or None)
-    documents = load(data_dir)
+    # The one public view (og-dev-hub#9): nothing of a private repository reaches a page.
+    from project_site import architecture_public
+
+    documents = architecture_public.public_view(load(data_dir))
     written = [
         _write(docs / name, _page(title, render(documents))) for name, title, render in SECTION_PAGES
     ]

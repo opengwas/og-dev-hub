@@ -217,6 +217,15 @@ complete.
 - `tests/project-site-data/fixtures/board-graphql.json` is a response recorded
   once from the real API by `board.fetch`.
 
+
+**Private repositories on the board** (og-dev-hub#9). The board lists issues of
+every repository, private ones too. Its public view (above, *Visibility*) keeps
+an epic, ticket or milestone of a private repository, or of one `system.yaml`
+does not list, only as a count in `private` (`epics`, `active_epics`,
+`tickets`, `milestones`) and an epic's `private_children`: no title, number,
+link or Next text, and no blocked-by edge to it. No page is generated for such
+an epic. The Epics index, the Overview and an epic's page each say how many
+they leave out ("2 epics in private repositories are not shown.").
 ### Citations
 
 One extractor and one resolver serve the tickets (Work) and the ADRs
@@ -440,11 +449,22 @@ that ADR (plain text when that ADR was not collected, or is a private
 repository's).
 
 **Visibility** (og-dev-hub#9). A `private` repository is collected, and drawn on
-the public site as its container only: no component names, paths, files, gaps,
-ADR titles, commits, branches or work items, in the pages or in the component
-panel's embedded JSON. One function makes that view of `architecture.json` and
-`work.json` (`project_site.architecture_public.public_view`), and every
-architecture page and the panel render from it alone. Its container comes from
+the public site as its container only: no component names, paths, files, stages,
+gaps, ADR titles, commits, branches or work items, in the pages or in the
+component panel's embedded JSON, and no epic, ticket or milestone of the board
+(see *Private repositories on the board*, under Board). One function makes the public view of the
+collected files (`project_site.architecture_public.public_view`), and every page
+and the panel render from it alone: `pages.generate` applies it to everything it
+loads, and each architecture page applies it again. It is an **allow-list**: it
+never starts from a collected document, but builds `architecture.json`,
+`work.json` and `board.json` from the fields a page or the panel draws, named in
+that module, so a field a collector adds reaches no page until it is named there.
+`records.json`, committed in a public repository, passes through less any
+private repository's epic, which gets no page. Which repositories are private is
+`system.yaml`'s `visibility`: through the `architecture.json` the same run
+collected, else `work.json`'s record of it, else the file in this checkout; a
+repository the board names that `system.yaml` does not list is treated as
+private, because a fallback must be safe. Its container comes from
 `system.yaml`'s `containers`, which is public. A reason a collector writes in
 text names a repository, never a private repository's commit.
 

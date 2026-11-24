@@ -85,8 +85,8 @@ def architecture(*, engine_model: bool = True) -> dict:
             ],
             "container_relations": [["curator", "generation", "runs"], ["generation", "engine", "builds with"]],
             "stages": [
-                {"id": "build", "name": "Build", "summary": "Build a store"},
-                {"id": "query", "name": "Query", "summary": "Look values up"},
+                {"id": "build", "name": "Build", "summary": "Build a store", "repo": STORES},
+                {"id": "query", "name": "Query", "summary": "Look values up", "repo": STORES},
             ],
             "layers": {ENGINE: [{"layer": 2, "name": "Use"}, {"layer": 1, "name": "Storage"}, {"layer": 0, "name": "Foundations"}]}
             if engine_model else {},

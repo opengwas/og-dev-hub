@@ -38,8 +38,10 @@ OGQUERY_FILES = {
 }
 OGLD_MODEL = """\
 repo: opengwas/ogld
+stages:
+  - {id: ld_secret_stage, name: Secret LD stage, summary: A private stage.}
 components:
-  - {id: ld_panels, name: Panel readers, container: engine, stages: [build], summary: Reads panels., paths: [ogld/genotypes/]}
+  - {id: ld_panels, name: Panel readers, container: engine, stages: [build, ld_secret_stage], summary: Reads panels., paths: [ogld/genotypes/]}
 """
 OGLD_FILES = {
     "docs/architecture/components.yaml": OGLD_MODEL,
@@ -273,6 +275,11 @@ class VisibilityTests(unittest.TestCase):
         cls.world = World(unittest.TestCase())
         architecture_doc = {"source": "architecture", "available": True, "collected_at": "x", "error": None,
                             **cls.world.collect()}
+        # Fields no renderer knows: the public view is an allow-list, so none of them can reach a page.
+        architecture_doc["repos"]["ogld"]["unknown_field"] = "UNKNOWN-REPO-FIELD"
+        next(c for c in architecture_doc["components"] if c["id"] == "ld_panels")["unknown"] = "UNKNOWN-COMPONENT-FIELD"
+        next(st for st in architecture_doc["model"]["stages"] if st["repo"] == "ogld")["unknown"] = "UNKNOWN-STAGE-FIELD"
+        architecture_doc["unknown_top_level"] = "UNKNOWN-TOP-LEVEL"
         ogld = cls.world.root / "ogld"
         fx.git(ogld, "checkout", "-q", "-b", "orch/3/4")
         (ogld / "ogld" / "genotypes" / "read.py").write_text("import os\nimport sys\n", encoding="utf-8")
@@ -293,6 +300,7 @@ class VisibilityTests(unittest.TestCase):
 
     def test_the_private_repository_is_collected_whole(self) -> None:
         self.assertIn("ld_panels", {c["id"] for c in self.architecture["components"]})
+        self.assertIn("ld_secret_stage", {st["id"] for st in self.architecture["model"]["stages"]})
         self.assertIn("ogld:orch/3/4", {f"{b['repo']}:{b['name']}" for b in self.work["branches"]["list"]})
         self.assertIn("ld_panels", {s["component"] for s in self.work["signals"]})
 
@@ -300,7 +308,7 @@ class VisibilityTests(unittest.TestCase):
         commit = self.architecture["repos"]["ogld"]["commit"]
         for name, page in self.pages.items():
             for secret in ("ogld/genotypes", "Secret panel layout", "Panel readers", "ld_panels", "ogld#4", "ogld#3",
-                           "orch/3/4", commit[:12]):
+                           "orch/3/4", commit[:12], "Secret LD stage", "ld_secret_stage", "UNKNOWN-"):
                 with self.subTest(page=name, secret=secret):
                     self.assertNotIn(secret, page)
 
