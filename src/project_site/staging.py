@@ -126,12 +126,12 @@ BRANCHES = "+refs/heads/*:refs/heads/*"
 
 
 def ensure_clone(
-    git_dir: Path, *, url: str | None = None, fetch: bool = True, refspec: str = BRANCHES, remote: str = "origin"
+    git_dir: Path, *, url: str | None = None, fetch: bool = True, refspec: str = BRANCHES
 ) -> dict[str, Any] | None:
     """The one owner of cloning and fetching the repositories the site reads (og-dev-hub#7).
 
     With `url`, a `git_dir` that is not a repository yet is cloned from it,
-    bare. Otherwise, with `fetch`, `refspec` is fetched from `remote`, pruning
+    bare. Otherwise, with `fetch`, `refspec` is fetched from `origin`, pruning
     what the remote no longer has. Returns `{ok, error}` for the clone or fetch
     that ran, with git's own message on failure, or `None` when neither ran.
     It never raises: a failure is recorded, and whatever the git directory
@@ -146,7 +146,7 @@ def ensure_clone(
         return _recorded(["git", "clone", "--bare", "--quiet", url, str(git_dir)])
     if not fetch:
         return None
-    return _recorded(["git", "-C", str(git_dir), "fetch", "--quiet", "--prune", remote, refspec])
+    return _recorded(["git", "-C", str(git_dir), "fetch", "--quiet", "--prune", "origin", refspec])
 
 
 def _recorded(command: list[str]) -> dict[str, Any]:
