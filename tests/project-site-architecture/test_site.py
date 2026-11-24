@@ -112,21 +112,40 @@ class PageTests(BuiltSite):
     """Seam 1: `build` writes the page, a script per view and `data/*.json`, all by relative paths."""
 
     def test_the_page_its_stylesheet_and_a_script_per_view_are_written(self) -> None:
-        for name in ("index.html", "style.css", "js/app.js", "js/architecture.js", "js/decisions.js", "js/context.js", "js/stores.js"):
+        for name in ("index.html", "style.css", "js/app.js", "js/architecture.js", "js/decisions.js", "js/context.js", "js/stores.js", "js/benchmarking.js"):
             with self.subTest(name=name):
                 self.assertTrue((self.out / name).is_file())
         self.assertEqual(sorted(p.name for p in (self.out / "data").iterdir()),
-                         ["architecture.json", "context.json", "decisions.json", "stores.json"])
+                         ["architecture.json", "benchmarking.json", "context.json", "decisions.json", "stores.json"])
 
     def test_the_page_has_a_tab_per_view_and_each_view_has_its_own_content_section(self) -> None:
         page = (self.out / "index.html").read_text(encoding="utf-8")
-        for view in ("architecture", "decisions", "context", "stores"):
+        for view in ("architecture", "decisions", "context", "stores", "benchmarking"):
             with self.subTest(view=view):
                 self.assertIn(f'href="#{view}"', page)
                 self.assertIn(f'id="pane-{view}"', page)
-        for view in ("architecture", "decisions", "context", "stores"):
+        for view in ("architecture", "decisions", "context", "stores", "benchmarking"):
             self.assertIn(f'id="{view}-content"', page)
         self.assertNotIn("coming", page[page.index('id="pane-stores"'):])
+
+    def test_the_fonts_ship_with_their_licence_files_and_the_logo_is_in_the_header(self) -> None:
+        fonts = sorted(p.name for p in (self.out / "fonts").iterdir())
+        self.assertIn("OFL-atkinson-hyperlegible-next.txt", fonts)
+        self.assertIn("OFL-atkinson-hyperlegible-mono.txt", fonts)
+        css = (self.out / "style.css").read_text(encoding="utf-8")
+        for woff in re.findall(r"url\((fonts/[^)]+)\)", css):
+            self.assertTrue((self.out / woff).is_file(), woff)
+        page = (self.out / "index.html").read_text(encoding="utf-8")
+        for asset in ("img/logo.svg", "img/favicon.ico", "img/apple-touch-icon.png"):
+            self.assertIn(asset, page)
+            self.assertTrue((self.out / asset).is_file())
+
+    def test_five_tabs_in_order_and_the_subtitle_is_build_status(self) -> None:
+        page = (self.out / "index.html").read_text(encoding="utf-8")
+        labels = re.findall(r'class="views-link"[^>]*>([^<]+)<', page)
+        self.assertEqual(labels, ["Stores", "Benchmarking", "Architecture", "Decisions", "Context"])
+        self.assertIn("Build status", page)
+        self.assertNotIn("What is built", page)
 
     def test_every_script_stylesheet_and_data_path_is_relative(self) -> None:
         page = (self.out / "index.html").read_text(encoding="utf-8")
@@ -148,7 +167,7 @@ class PageTests(BuiltSite):
         for path in self.out.rglob("*"):
             if path.is_file():
                 with self.subTest(path=path.name):
-                    self.assertNotIn(root, path.read_text(encoding="utf-8"))
+                    self.assertNotIn(root.encode(), path.read_bytes())
 
 
 class ArchitectureViewTests(BuiltSite):
@@ -236,10 +255,10 @@ class ArchitectureViewTests(BuiltSite):
         for path in self.out.rglob("*"):
             if not path.is_file():
                 continue
-            text = path.read_text(encoding="utf-8")
+            raw = path.read_bytes()
             for secret in (*SECRETS, commit[:12]):
                 with self.subTest(path=path.relative_to(self.out).as_posix(), secret=secret):
-                    self.assertNotIn(secret, text)
+                    self.assertNotIn(secret.encode(), raw)
 
 
 class DecisionsViewTests(BuiltSite):

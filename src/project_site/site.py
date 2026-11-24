@@ -86,6 +86,7 @@ def build(data_dir: Path, out: Path, *, context: Path | None = None) -> None:
         ("decisions", decisions_view(architecture)),
         ("context", context_view(glossary.read_text(encoding="utf-8"), architecture)),
         ("stores", stores_view.stores_view(documents["stores"])),
+        ("benchmarking", stores_view.benchmarking_view(documents["stores"])),
     ):
         target = out / "data" / f"{name}.json"
         target.parent.mkdir(parents=True, exist_ok=True)

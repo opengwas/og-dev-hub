@@ -265,7 +265,7 @@ class YardstickTests(Fixture):
     @classmethod
     def setUpClass(cls) -> None:
         super().setUpClass()
-        cls.y = cls.view["yardstick"]
+        cls.y = stores_view.benchmarking_view(cls.doc)["yardstick"]
         cls.latest = {s["store_id"]: s for s in cls.y["stores"]}
 
     def test_every_valid_run_shows_and_the_invalid_one_is_a_gap_naming_its_file(self) -> None:
@@ -371,11 +371,26 @@ class LatestRunTests(Fixture):
         self.assertEqual(stores_view.state("absent")["label"], "not in this run")
 
 
+class SplitTests(Fixture):
+    """Seam 2: the Stores data carries no yardstick panel; the Benchmarking data does."""
+
+    def test_stores_data_has_no_yardstick_and_benchmarking_carries_it(self) -> None:
+        self.assertNotIn("yardstick", self.view)
+        bench = stores_view.benchmarking_view(self.doc)["yardstick"]
+        self.assertIn("trends", bench)
+        self.assertIn("stores", bench)
+
+    def test_an_uncollected_source_is_an_envelope_with_its_reason(self) -> None:
+        bench = stores_view.benchmarking_view({"source": "stores", "available": False, "error": "gone"})
+        self.assertEqual((bench["available"], bench["error"]), (False, "gone"))
+        self.assertNotIn("yardstick", bench)
+
+
 class TopHitsPathTests(Fixture):
     @classmethod
     def setUpClass(cls) -> None:
         super().setUpClass()
-        cls.y = cls.view["yardstick"]
+        cls.y = stores_view.benchmarking_view(cls.doc)["yardstick"]
 
     def test_the_latest_top_hits_row_says_how_it_was_answered(self) -> None:
         dense = next(s for s in self.y["stores"] if s["store_id"] == "OGS-00001")
@@ -415,7 +430,7 @@ class TrendTests(Fixture):
     @classmethod
     def setUpClass(cls) -> None:
         super().setUpClass()
-        cls.trends = {t["measure"]: t for t in cls.view["yardstick"]["trends"]}
+        cls.trends = {t["measure"]: t for t in stores_view.benchmarking_view(cls.doc)["yardstick"]["trends"]}
 
     @staticmethod
     def points(svg: str) -> list[str]:
@@ -464,7 +479,7 @@ class HostPathTests(Fixture):
         self.assertIn("…/ukb-b", self.shown["OGS-00001"]["description"])
 
     def test_no_host_path_is_in_an_error(self) -> None:
-        by_name = {m["name"]: m for m in next(s for s in self.view["yardstick"]["stores"] if s["store_id"] == "OGS-00001")["measures"]}
+        by_name = {m["name"]: m for m in next(s for s in stores_view.benchmarking_view(self.doc)["yardstick"]["stores"] if s["store_id"] == "OGS-00001")["measures"]}
         self.assertNotRegex(by_name["region_100kb"]["note"], HOST_PATH)
 
     def test_the_collected_registry_path_is_not_published(self) -> None:

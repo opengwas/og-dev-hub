@@ -22,7 +22,7 @@ from project_site.collect import common, stores
 
 RUNNER = Path(__file__).resolve().parents[1] / "project-site-architecture" / "view_runner.js"
 # An absolute path under /data on the host that built the site: not a `resources/data/` of a repository.
-HOST_PATH = re.compile(r"(?<![\w.:/~-])/data/")
+HOST_PATH_BYTES = re.compile(rb"(?<![\w.:/~-])/data/")
 
 
 def build(cleanup, *, stores_doc: dict | None) -> Path:
@@ -60,10 +60,10 @@ class BuiltStoresView(unittest.TestCase):
         files = [p for p in self.out.rglob("*") if p.is_file()]
         self.assertTrue(files)
         for path in files:
-            text = path.read_text(encoding="utf-8")
+            raw = path.read_bytes()
             with self.subTest(path=str(path.relative_to(self.out))):
-                self.assertNotRegex(text, HOST_PATH)
-                self.assertNotIn("/data/opengwasdb", text)
+                self.assertIsNone(HOST_PATH_BYTES.search(raw))
+                self.assertNotIn(b"/data/opengwasdb", raw)
 
     def test_the_page_names_the_script_and_the_content_section(self) -> None:
         page = (self.out / "index.html").read_text(encoding="utf-8")
@@ -71,18 +71,18 @@ class BuiltStoresView(unittest.TestCase):
         self.assertIn('id="stores-content"', page)
 
     def test_the_trend_charts_are_in_the_data_as_svg_and_the_site_has_no_chart_library(self) -> None:
-        data = json.loads((self.out / "data" / "stores.json").read_text(encoding="utf-8"))
+        data = json.loads((self.out / "data" / "benchmarking.json").read_text(encoding="utf-8"))
         self.assertTrue(all(t["svg"].startswith("<svg ") for t in data["yardstick"]["trends"]))
         self.assertEqual(sorted(p.name for p in (self.out / "js").iterdir()),
-                         ["app.js", "architecture.js", "context.js", "decisions.js", "stores.js"])
+                         ["app.js", "architecture.js", "benchmarking.js", "context.js", "decisions.js", "stores.js"])
 
 
 class StoresScript(unittest.TestCase):
     """`stores.js` draws the data it is given in `node`, and draws a source that was not collected as a notice."""
 
-    def drawn(self, out: Path) -> str:
+    def drawn(self, out: Path, view: str = "stores") -> str:
         done = subprocess.run(["node", str(RUNNER), str(out)], capture_output=True, text=True, check=True, timeout=60)
-        return json.loads(done.stdout)["stores"]
+        return json.loads(done.stdout)[view]
 
     def test_the_inventory_gaps_and_yardstick_are_drawn(self) -> None:
         text = self.drawn(build(self.addCleanup, stores_doc=None))
@@ -90,18 +90,31 @@ class StoresScript(unittest.TestCase):
         for expected in ("OGS-00001", "dense-new", "62.1 GB", "AFR 1 · EUR 2 · unassigned 1",
                          "recorded from opengwasdb-stores#502's backfill", "counts come with opengwasdb#488",
                          "pending opengwasdb-stores#507", "not computed",
-                         "not applicable", "unavailable", "20261118T000000Z-broken.json is not a valid result",
-                         "Not measured by yardstick", "taken under load: load average 70 over 56",
-                         "not built yet (Release Status candidate)", "withdrawn", "answered by its scan",
+                         "not built yet (Release Status candidate)", "withdrawn",
                          "no record says how the HM3 step ended", "LD Stores are not listed yet", "og-dev-hub#10", "unknown, not 0"):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
+
+    def test_the_benchmarking_tab_is_drawn_with_its_line_and_the_runs(self) -> None:
+        self.out_page = build(self.addCleanup, stores_doc=None)
+        text = self.drawn(self.out_page, "benchmarking")
+        self.assertNotIn("could not be drawn", text)
+        for expected in ("20261118T000000Z-broken.json is not a valid result", "Not measured by yardstick",
+                         "taken under load: load average 70 over 56", "answered by its scan", "not applicable", "unavailable"):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, text)
+        self.assertLess(text.index("Trends across engine versions"), text.index("OGS-00001"))
+        page = (self.out_page / "index.html").read_text(encoding="utf-8")
+        pane = page[page.index('id="pane-benchmarking"'):]
+        self.assertIn("One fixed query workload (the yardstick), run at the finish of every epic that changes the engine.", pane)
+        self.assertNotIn("benchmark ", text.lower().replace("benchmarking", ""))
 
     def test_a_store_source_that_was_not_collected_is_a_notice_and_nothing_throws(self) -> None:
         doc = {"source": "stores", "available": False, "collected_at": None, "error": "CollectError: registry is not a directory"}
         text = self.drawn(build(self.addCleanup, stores_doc=doc))
         self.assertNotIn("could not be drawn", text)
         self.assertIn("The Stores could not be collected", text)
+        self.assertIn("could not be collected", self.drawn(build(self.addCleanup, stores_doc=doc), "benchmarking"))
 
 
 if __name__ == "__main__":
