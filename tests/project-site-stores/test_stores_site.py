@@ -113,8 +113,12 @@ class StoresScript(unittest.TestCase):
                 self.assertTrue(tile["summary"])
                 for label in ("Layout", "Size on disk", "Top hits", "Rho"):
                     self.assertIn(label, tile["summaryText"])
+                self.assertIn("Completion", tile["summaryText"])
                 self.assertFalse(tile["linkInSummary"])
                 self.assertTrue(tile["linkInBody"])
+        by_id = {t["id"]: t["summaryText"] for t in drawn["_tiles"]}
+        self.assertRegex(by_id["store-OGS-00001"], r"Completion\s*reference completed")
+        self.assertRegex(by_id["store-OGS-00003"], r"Completion\s*observed only")
         tags = {t["id"]: t["tagClass"] for t in drawn["_tiles"]}
         self.assertEqual(tags["store-OGS-00001"], "tag tag-ok")        # validated
         self.assertEqual(tags["store-OGS-00005"], "tag")               # candidate

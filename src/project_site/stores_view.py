@@ -123,7 +123,7 @@ def _cell(field: Mapping[str, Any] | None, show, *, detail: str | None = None) -
 NA = "n/a"
 SUMMARY_CUT = 160  # the short description is cut to about this many characters
 # The facts a tile lists, in order: (cell, label).
-TILE_FACTS = (("layout", "Layout"), ("coverage", "Coverage"), ("store_bytes", "Size on disk"), ("n_variants", "Variants"),
+TILE_FACTS = (("layout", "Layout"), ("coverage", "Coverage"), ("completion_state", "Completion"), ("store_bytes", "Size on disk"), ("n_variants", "Variants"),
               ("n_analyses", "Analyses"), ("median_sample_size", "Median sample size"), ("ancestry", "Ancestry"),
               ("top_hits", "Top hits"), ("has_hm3", "HM3"), ("has_rho", "Rho"))
 _SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
@@ -157,6 +157,14 @@ def summary(description: Any, limit: int = SUMMARY_CUT) -> str | None:
     elif len(first) <= limit:
         return first
     return cut.rstrip(" ,;:.-") + "…"
+
+
+COMPLETION = {"reference_completed": "reference completed", "observed_only": "observed only"}
+
+
+def _completion(value: Any) -> str:
+    """A `completion_state` as a person reads it; a value not listed shows as written."""
+    return COMPLETION.get(value, str(value))
 
 
 def _yes_no(value: Any) -> str:
@@ -201,6 +209,8 @@ def inventory_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
     }
     # What the tile draws: each fact's display (a gap is `n/a`), and the reason behind each `n/a` for the expanded tile.
     out["status"]["tone"] = None if out["status"]["gap"] else STATUS_TONE.get(out["status"]["text"])
+    if not out["completion_state"]["gap"]:  # `text` stays the state as recorded; the tile draws it as a phrase
+        out["completion_state"]["display"] = _completion(out["completion_state"]["text"])
     cells = [(label, out[key]) for key, label in TILE_FACTS]
     out["facts"] = [{"label": label, "display": cell["display"], "detail": cell["detail"], "na": bool(cell["gap"])} for label, cell in cells]
     out["why_na"] = [{"label": label, "reason": cell["gap"]} for label, cell in cells + [("Release Status", out["status"])] if cell["gap"]]

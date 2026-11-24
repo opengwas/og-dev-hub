@@ -133,6 +133,22 @@ class TileTests(Fixture):
         self.assertIn({"label": "Size on disk", "reason": "recorded from opengwasdb-stores#502's backfill"}, row["why_na"])
         self.assertEqual(fact["Layout"]["display"], "ragged")
 
+    def test_completion_reads_as_a_phrase_and_a_missing_state_is_n_a(self) -> None:
+        def fact(row: dict) -> dict:
+            shown = stores_view.inventory_row({"store_id": "X", **row}, None)
+            return {"fact": next(f for f in shown["facts"] if f["label"] == "Completion"), "why": shown["why_na"]}
+
+        done = fact({"store_id": "OGS-00009", "completion_state": {"value": "reference_completed"}})
+        self.assertEqual(done["fact"], {"label": "Completion", "display": "reference completed", "detail": None, "na": False})
+        observed = fact({"store_id": "OGS-00027", "completion_state": {"value": "observed_only"}})
+        self.assertEqual(observed["fact"]["display"], "observed only")
+        self.assertEqual(fact({"completion_state": {"value": "in_progress"}})["fact"]["display"], "in_progress")
+        gap = fact({"completion_state": {"gap": "no build.yaml"}})
+        self.assertEqual((gap["fact"]["display"], gap["fact"]["na"]), ("n/a", True))
+        self.assertIn({"label": "Completion", "reason": "no build.yaml"}, gap["why"])
+        labels = [f["label"] for f in self.shown["OGS-00001"]["facts"]]
+        self.assertEqual(labels[:3], ["Layout", "Coverage", "Completion"])
+
     def test_a_store_with_no_gap_has_no_reasons(self) -> None:
         self.assertEqual([w["label"] for w in self.shown["OGS-00001"]["why_na"]], [])
 
