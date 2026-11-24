@@ -365,8 +365,10 @@ system itself (`system`, `people`, `external`, `containers`,
 `container_relations`, `repos`) is og-dev-hub's `system.yaml` (#8), read from
 this checkout's working tree: publishing renders a clean checkout, so the tree
 is the published state. `collect/architecture_model.py`'s `load_system` checks
-the keys and their shapes, that ids are unique across `people`, `external` and
-`containers`, that every relation names one of them, and that each of `repos`
+the keys and their shapes, that each person, external system and container has
+an `id` and a `name` of text (the same check, with the same rule, as a model's
+components: an id that is not text is refused), that ids are unique across
+`people`, `external` and `containers`, that every relation names one of them, and that each of `repos`
 has a unique `name` and a `visibility` of `public`, `private` or `null`; a
 `system.yaml` that fails makes the source unavailable with the error naming the
 problem, and the tests read the real file through it. A components file that

@@ -39,6 +39,26 @@ def _read_yaml(text: str, what: str) -> Any:
         raise ValueError(f"{what} is not valid YAML: {error}") from error
 
 
+def _entities(entries: Any, what: str, seen: set[str], twice: Callable[[str], str]) -> None:
+    """The one check of a list of entities: a model's components, and `system.yaml`'s people, external systems and containers.
+
+    Each is a mapping with an `id` and a `name` of text (an id that is not text is
+    refused, never turned into one), and no id is in `seen` already; `seen` gains
+    each. `what` names the list in the error, and `twice` says a repeated id.
+    """
+    if not isinstance(entries, list):
+        raise ValueError(f"{what} must be a list of mappings, each with an `id` and a `name`")
+    for number, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise ValueError(f"{what} #{number} is not a mapping with an `id` and a `name`")
+        for key in ("id", "name"):
+            if not isinstance(entry.get(key), str) or not entry[key]:
+                raise ValueError(f"{what} #{number} has no `{key}` of text; each needs an `id` and a `name`")
+        if entry["id"] in seen:
+            raise ValueError(twice(entry["id"]))
+        seen.add(entry["id"])
+
+
 def load_model(text: str) -> dict[str, Any]:
     """A model file's content, checked for everything the collector reads of it; anything else is an error.
 
@@ -51,16 +71,8 @@ def load_model(text: str) -> dict[str, Any]:
     model = _read_yaml(text, "the architecture model")
     if not isinstance(model, dict) or not isinstance(model.get("components"), list):
         raise ValueError("the architecture model must be a mapping with a `components` list")
-    seen: set[str] = set()
-    for number, component in enumerate(model["components"]):
-        if not isinstance(component, dict):
-            raise ValueError(f"component #{number} is not a mapping")
-        for key in ("id", "name"):
-            if not isinstance(component.get(key), str) or not component[key]:
-                raise ValueError(f"component #{number} has no `{key}` of text")
-        if component["id"] in seen:
-            raise ValueError(f"component id {component['id']!r} is in the model twice")
-        seen.add(component["id"])
+    _entities(model["components"], "component", set(), lambda cid: f"component id {cid!r} is in the model twice")
+    for component in model["components"]:
         for key in ("paths", "stages"):
             if component.get(key) is not None and not (
                 isinstance(component[key], list) and all(isinstance(v, str) for v in component[key])
@@ -106,13 +118,8 @@ def load_system(text: str) -> dict[str, Any]:
         raise ValueError("system.yaml: `system` must be a mapping with a `name` and a `summary`")
     seen: set[str] = set()
     for key in SYSTEM_ENTITIES:
-        entries = doc[key]
-        if not isinstance(entries, list) or not all(isinstance(e, dict) and e.get("id") and e.get("name") for e in entries):
-            raise ValueError(f"system.yaml: `{key}` must be a list of mappings, each with an `id` and a `name`")
-        for entry in entries:
-            if str(entry["id"]) in seen:
-                raise ValueError(f"system.yaml: duplicate id {str(entry['id'])!r} (in `{key}`)")
-            seen.add(str(entry["id"]))
+        _entities(doc[key], f"system.yaml: `{key}`", seen,
+                  lambda eid, key=key: f"system.yaml: duplicate id {eid!r} (in `{key}`)")
     relations = doc["container_relations"]
     if not isinstance(relations, list) or not all(isinstance(r, list) and len(r) == 3 for r in relations):
         raise ValueError("system.yaml: `container_relations` must be a list of [from, to, text]")
