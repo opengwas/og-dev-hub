@@ -19,6 +19,7 @@ record of it, else from the file in this checkout.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Iterable, Mapping
 
 from project_site import paths
@@ -131,6 +132,28 @@ def _repo_of_key(key: Any) -> str | None:
     return text.split("#", 1)[0] if "#" in text else None
 
 
+# An issue reference in free text: `repo#n`, or `opengwas/repo#n`.
+ISSUE_REFERENCE = re.compile(r"(?<![\w./-])(?:opengwas/)?([a-z][a-z0-9_.-]*)#(\d+)\b")
+PRIVATE_ISSUE = "a private issue"
+
+
+def scrubber(private: Callable[[Any], bool]) -> Callable[[Any], Any]:
+    """A public item's own text with each reference to a private repository's issue replaced by `PRIVATE_ISSUE`.
+
+    A public epic's Next line or an ADR's title may name a private repository's
+    issue; the text is drawn, and the number is not.
+    """
+    def scrub(text: Any) -> Any:
+        if not isinstance(text, str):
+            return text
+        return ISSUE_REFERENCE.sub(lambda m: PRIVATE_ISSUE if private(m.group(1)) else m.group(0), text)
+    return scrub
+
+
+def _scrubbed(source: Mapping[str, Any], keys: Iterable[str], scrub: Callable[[Any], Any]) -> dict[str, Any]:
+    return {k: scrub(v) for k, v in _pick(source, keys).items()}
+
+
 def _hides(private: Callable[[Any], bool]) -> Callable[..., bool]:
     def hide(*keys: Any) -> bool:
         return any((repo := _repo_of_key(k)) is not None and private(repo) for k in keys)
@@ -179,8 +202,9 @@ def _architecture(doc: Document, private: Callable[[Any], bool], hidden: set[str
     out["baseline"] = _pick(baseline, BASELINE_KEYS) if isinstance(baseline, Mapping) and not private(baseline.get("from")) else None
     edges = [_pick(e, EDGE_KEYS) for e in _maps(doc.get("edges")) if e.get("from") not in hidden and e.get("to") not in hidden]
     out["edges"] = edges
+    scrub = scrubber(private)
     adrs = [
-        _pick(a, ADR_KEYS)
+        _scrubbed(a, ADR_KEYS, scrub)
         | {"components": {str(cid): via for cid, via in (a.get("components") or {}).items() if cid not in hidden},
            "cites": [_pick(c, ("repo", "number")) for c in _maps(a.get("cites"))]}
         for a in _maps(doc.get("adrs")) if not private(a.get("repo"))
@@ -217,6 +241,7 @@ def _plan(plan: Any) -> dict[str, Any]:
 
 def _work(doc: Document, private: Callable[[Any], bool], hidden: set[str], private_files: set[str]) -> dict[str, Any]:
     hide = _hides(private)
+    scrub = scrubber(private)
     out = _pick(doc, (*ENVELOPE, "schema_version"))
     inputs = doc.get("inputs") if isinstance(doc.get("inputs"), Mapping) else {}
     recorded = (inputs.get("architecture") or {}) if isinstance(inputs.get("architecture"), Mapping) else {}
@@ -233,7 +258,7 @@ def _work(doc: Document, private: Callable[[Any], bool], hidden: set[str], priva
     ]
     out["signals"] = signals
     with_signals = {s.get("owner") for s in signals}
-    out["owners"] = [_pick(o, OWNER_KEYS) for o in _maps(doc.get("owners")) if o.get("key") in with_signals]
+    out["owners"] = [_scrubbed(o, OWNER_KEYS, scrub) for o in _maps(doc.get("owners")) if o.get("key") in with_signals]
     out["components"] = [_pick(c, ("id", "name", "repo")) for c in _maps(doc.get("components"))
                          if c.get("id") not in hidden and not private(c.get("repo"))]
     meets = []
@@ -268,7 +293,7 @@ def _work(doc: Document, private: Callable[[Any], bool], hidden: set[str], priva
                         if r.get("component") not in hidden and not hide(r.get("owner"), r.get("item"))]
     if isinstance(doc.get("plans"), list):
         out["plans"] = [
-            _pick(p, PLAN_KEYS) | {
+            _scrubbed(p, PLAN_KEYS, scrub) | {
                 "plan": _plan(p.get("plan")),
                 "components": [_pick(c, ("id", "name", "repo", "new")) for c in _maps(p.get("components"))],
                 "checks": [_pick(c, CHECK_KEYS) for c in _maps(p.get("checks"))],
@@ -308,6 +333,7 @@ def _work(doc: Document, private: Callable[[Any], bool], hidden: set[str], priva
 def _board(doc: Document, private: Callable[[Any], bool]) -> dict[str, Any]:
     """The board as the pages draw it; an epic, ticket or milestone of a private repository is only counted (`private`)."""
     hide = _hides(private)
+    scrub = scrubber(private)
     out = _pick(doc, (*ENVELOPE, "project"))
     counts = {"epics": 0, "active_epics": 0, "tickets": 0, "milestones": 0}
     epics = []
@@ -322,10 +348,10 @@ def _board(doc: Document, private: Callable[[Any], bool]) -> dict[str, Any]:
             if hide(ticket.get("key")) or _repo_of_key(ticket.get("key")) is None:
                 hidden_children += 1
                 continue
-            children.append(_pick(ticket, CHILD_KEYS) | {
+            children.append(_scrubbed(ticket, CHILD_KEYS, scrub) | {
                 "blocked_by": [_pick(b, ("key", "state")) for b in _maps(ticket.get("blocked_by")) if not hide(b.get("key"))]})
         counts["tickets"] += hidden_children
-        epics.append(_pick(epic, EPIC_KEYS) | {
+        epics.append(_scrubbed(epic, EPIC_KEYS, scrub) | {
             "sub_issues": _pick(epic.get("sub_issues"), ("total", "completed")),
             "children": children,
             "private_children": hidden_children,
@@ -336,13 +362,13 @@ def _board(doc: Document, private: Callable[[Any], bool]) -> dict[str, Any]:
         if hide(item.get("key")) or _repo_of_key(item.get("key")) is None:
             counts["milestones"] += 1
             continue
-        milestones.append(_pick(item, ISSUE_KEYS) | {
+        milestones.append(_scrubbed(item, ISSUE_KEYS, scrub) | {
             "sub_issues": _pick(item.get("sub_issues"), ("total", "completed")),
-            "lines": [_pick(line, ("checked", "text")) | {"refs": [r for r in _texts(line.get("refs")) if not hide(r)]}
+            "lines": [_scrubbed(line, ("checked", "text"), scrub) | {"refs": [r for r in _texts(line.get("refs")) if not hide(r)]}
                       for line in _maps(item.get("lines"))],
         })
     out["milestones"] = milestones
-    out["items"] = [_pick(item, ISSUE_KEYS) | {"sub_issues": _pick(item.get("sub_issues"), ("total", "completed"))}
+    out["items"] = [_scrubbed(item, ISSUE_KEYS, scrub) | {"sub_issues": _pick(item.get("sub_issues"), ("total", "completed"))}
                     for item in _maps(doc.get("items")) if not hide(item.get("key")) and _repo_of_key(item.get("key"))]
     out["private"] = counts
     return out

@@ -225,7 +225,10 @@ does not list, only as a count in `private` (`epics`, `active_epics`,
 `tickets`, `milestones`) and an epic's `private_children`: no title, number,
 link or Next text, and no blocked-by edge to it. No page is generated for such
 an epic. The Epics index, the Overview and an epic's page each say how many
-they leave out ("2 epics in private repositories are not shown.").
+they leave out ("2 epics in private repositories are not shown."). A public item's
+own text that names a private repository's issue (`ogld#88`, `opengwas/ogld#88`)
+shows "a private issue" in its place: the board's titles, Next lines and
+purposes, the Work map's owner and plan titles, and ADR titles.
 ### Citations
 
 One extractor and one resolver serve the tickets (Work) and the ADRs
