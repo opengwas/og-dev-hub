@@ -26,6 +26,22 @@ no `/data`, no private repository and no board. It is published at
 It shows no planned state (the project board's) and no running state (the
 operations dashboard's).
 
+## How it is published
+
+`.github/workflows/site.yml` builds and publishes the site; nobody publishes by hand.
+
+- **Triggers:** a push to `main`, a nightly run at 05:17 UTC (so the built state
+  follows the other repositories' `main`), and `workflow_dispatch`.
+- **Build job:** `pixi install --locked`, `pixi run site`, then the `_site/` upload
+  (`actions/upload-pages-artifact`). It needs no secret and no token.
+- **Deploy job:** `actions/deploy-pages`, with `pages: write` and `id-token: write`
+  on that job alone, and `concurrency: pages` without cancelling a running deploy.
+- **Pull requests** run the build job only, so a build error fails the check, and
+  the deploy job is skipped. One workflow serves both, so the pull-request build
+  cannot drift from the one that is published.
+
+The repository's Pages source must be **GitHub Actions** for the deploy to take effect.
+
 ## What a build reads
 
 `pixi run site` runs the architecture collector in its public mode
