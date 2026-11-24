@@ -63,7 +63,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.12-9_cp312.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026e-h5d301ff_0.conda
       - pypi: ./
-      - pypi: git+https://github.com/opengwas/opengwasdb-stores?rev=a2cb07692df49991059fe75edff6b42ea32d5d3f#a2cb07692df49991059fe75edff6b42ea32d5d3f
+      - pypi: git+https://github.com/opengwas/opengwasdb-stores?rev=5cab2625f33f2345a153cfb20c473a011935830d#5cab2625f33f2345a153cfb20c473a011935830d
 packages:
 - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
   build_number: 20
@@ -780,7 +780,7 @@ packages:
 - pypi: ./
   name: og-dev-hub
   requires_python: '>=3.12'
-- pypi: git+https://github.com/opengwas/opengwasdb-stores?rev=a2cb07692df49991059fe75edff6b42ea32d5d3f#a2cb07692df49991059fe75edff6b42ea32d5d3f
+- pypi: git+https://github.com/opengwas/opengwasdb-stores?rev=5cab2625f33f2345a153cfb20c473a011935830d#5cab2625f33f2345a153cfb20c473a011935830d
   name: ogstores
-  version: 0.36.1.dev7+ga2cb07692df49991059fe75edff6b42ea32d5d3f
+  version: 0.37.0
   requires_python: '>=3.12'
