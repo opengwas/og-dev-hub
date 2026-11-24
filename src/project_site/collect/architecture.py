@@ -18,9 +18,8 @@ It reports the components of every repository with a model, with their
 measured size, the files nobody claims and the claims that match nothing (gaps,
 reported never raised), the commit read in each repository, the import graph
 within and across them, every ADR, and the baseline of opengwasdb-stores'
-imports of engine modules (#421). The site's *docs* mirror stays at the
-opengwasdb revision `pixi.lock` pins; the map shows current work, so this reads
-`main`.
+imports of engine modules (#421). With `read_private` false (the site's
+collection, og-dev-hub#15) a private repository is never read.
 """
 
 from __future__ import annotations
@@ -35,18 +34,24 @@ from project_site.collect import architecture_adrs, architecture_graph, architec
 from project_site.collect.common import CollectError
 
 MODEL_PATH = "docs/architecture/components.yaml"
+# Each repository's own glossary (og-dev-hub ADR 0002), which the Context view links to.
+GLOSSARY = "CONTEXT.md"
 
 
 def collect(
     repositories: staging.Repositories | None = None,
     *,
     system_file: Path | None = None,
+    read_private: bool = True,
 ) -> dict[str, Any]:
     """Every listed repository's components, gaps, import graph and ADRs, as the site's `architecture` source.
 
     `repositories` is the run's read handles (`staging.Repositories`; by default
     each repository's clone at `main`, unfetched); `system_file` the hub's
-    `system.yaml` (by default the one in this checkout's working tree).
+    `system.yaml` (by default the one in this checkout's working tree). With
+    `read_private` false (the site's collection, og-dev-hub#15) a `private`
+    repository is never asked for, so never cloned: it is listed, and drawn as its
+    container from `system.yaml`.
     """
     system = model_rules.read_system(system_file)
     repositories = repositories or staging.Repositories()
@@ -62,11 +67,14 @@ def collect(
             "name": name, "visibility": entry.get("visibility"), "status": entry.get("status"),
             "planned": entry.get("visibility") is None, "url": paths.clone_url(name),
             "ref": None, "commit": None, "committed": None, "refresh": None, "source_root": None,
-            "model": None, "note": None, "error": None,
+            "model": None, "note": None, "error": None, "glossary": None,
         }
         repos[name] = record
         if record["planned"]:
             continue  # not created yet: drawn as planned, never cloned
+        if not read_private and entry.get("visibility") == "private":
+            record["note"] = "private: drawn as its container only, never read"
+            continue
         handle = repositories.get(name)
         record["refresh"] = handle.fetch
         tree = None
@@ -82,7 +90,7 @@ def collect(
             continue
         trees[name] = tree
         record |= {"ref": handle.ref, "commit": tree.commit, "committed": tree.committed,
-                   "source_root": architecture_graph.source_root(tree.files)}
+                   "source_root": architecture_graph.source_root(tree.files), "glossary": GLOSSARY in tree.oids}
         text = tree.read([MODEL_PATH]).get(MODEL_PATH)
         model, why = None, f"{MODEL_PATH} is not in {name} at {handle.ref} ({tree.commit[:12]})"
         if text is not None:

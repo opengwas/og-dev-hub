@@ -1,50 +1,36 @@
-"""Where the site build reads and writes, and what it renders (#388).
+"""Where the Dev Hub reads and writes (og-dev-hub#7, og-dev-hub#9, og-dev-hub#15).
 
-Nothing the site build writes goes under `/home` or `/tmp`: the work root is
-`/data/opengwasdb/work/site`, and the output sits under it, one directory per
-checkout. Each path is overridable by an environment variable so a publish run
-can keep its scratch tree apart from a developer's.
-
-The site lives in og-dev-hub (og-dev-hub#7) and reads every repository its
-`system.yaml` lists (og-dev-hub#9): above all opengwasdb-stores (the registry:
-its Release Bundles, docs, epic records and architecture) and opengwasdb (the
-engine, whose docs it renders). Each is read from a bare clone under the work
-root, `<work root>/<name>.git`, through one read handle per run
+Every repository og-dev-hub's `system.yaml` lists is read from a bare clone under
+the work root, `<work root>/<name>.git`, through one read handle per run
 (`staging.Repositories`), which `staging.ensure_clone` clones and fetches.
+
+There are two work roots, each with its own variable, so setting one never
+moves the other. The site's (`site_work_root`) is `$DEV_HUB_SITE_ROOT`, else
+`.work/site` in this checkout, the same on every machine, and only ever holds
+public repositories. `pixi run architecture`'s and `site-data`'s (`work_root`)
+is `$OPENGWASDB_SITE_ROOT`, else the build host's `/data/opengwasdb/work/site`,
+where the private repositories they read are cloned too.
 """
 
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 
-from ogstores import engine
-
-# The repositories whose files or docs the site renders: this hub, the registry
-# whose docs and Release Bundles it renders, and the engine whose docs it stages
-# at the revision the registry pins. Every other repository is a name in
+# The repositories named in code: this hub, the registry whose Release Bundles the
+# Stores collector reads, and the engine. Every other repository is a name in
 # `system.yaml`, read the same way (`clone_dir`, `clone_url`).
 GITHUB = "https://github.com/opengwas"
 HUB = "og-dev-hub"
 REGISTRY = "opengwasdb-stores"
 ENGINE = "opengwasdb"
-HUB_URL = f"{GITHUB}/{HUB}"
-REGISTRY_URL = f"{GITHUB}/{REGISTRY}"
-ENGINE_URL = f"{GITHUB}/{ENGINE}"
 
-# Defaults, all under /data. `git clone` keeps each repository's history here;
-# the checkout being rendered names its own output directory.
+# `pixi run architecture`'s default: the build host's, where `git clone` keeps each repository's history.
 WORK_ROOT = Path("/data/opengwasdb/work/site")
 WORK_ROOT_ENV = "OPENGWASDB_SITE_ROOT"
-OUTPUT_ENV = "OPENGWASDB_SITE_OUT"
-CLONE_ENV = "OPENGWASDB_SITE_ENGINE_CLONE"
-# A clone named here is used instead of `<work root>/<name>.git`.
-CLONE_ENVS = {ENGINE: CLONE_ENV, REGISTRY: "OPENGWASDB_SITE_REGISTRY_CLONE"}
-
-# The ref `site-publish` renders: every merge lands on `main`, and each is a
-# version (#386), so that is what the site publishes; `--ref` names another.
-DEFAULT_PUBLISH_REF = "origin/main"
+# The site's, under this checkout (git-ignored) unless its own variable names another.
+SITE_WORK_ROOT = Path(".work") / "site"
+SITE_WORK_ROOT_ENV = "DEV_HUB_SITE_ROOT"
 
 
 # og-dev-hub's system model (#8), read from this checkout's working tree.
@@ -57,76 +43,47 @@ def system_file() -> Path:
 
 
 def repo_root() -> Path:
-    """The og-dev-hub checkout being rendered: the one this package is installed from.
-
-    It holds the site's Quarto project (`site/`) and the hub's own docs. The
-    registry the site documents is `staging.Repositories`' handle of it, never this.
-    """
+    """The og-dev-hub checkout this package is installed from: its `system.yaml`, `CONTEXT.md` and `_site/`."""
     return Path(__file__).resolve().parents[2]
 
 
+def _configured(variable: str) -> Path | None:
+    configured = os.environ.get(variable, "")
+    return Path(configured) if configured.strip() else None
+
+
 def work_root() -> Path:
-    return Path(os.environ.get(WORK_ROOT_ENV) or WORK_ROOT)
+    """`pixi run architecture`'s and `site-data`'s clones: `$OPENGWASDB_SITE_ROOT`, else `/data/opengwasdb/work/site`."""
+    return _configured(WORK_ROOT_ENV) or WORK_ROOT
+
+
+def site_work_root() -> Path:
+    """The site's clones (og-dev-hub#15), public only: `$DEV_HUB_SITE_ROOT`, else `.work/site` in this checkout."""
+    return _configured(SITE_WORK_ROOT_ENV) or repo_root() / SITE_WORK_ROOT
 
 
 def checkout_name(repo: Path) -> str:
     return repo.resolve().name
 
 
-def output_dir(repo: Path) -> Path:
-    """Where a render puts the site: `$OPENGWASDB_SITE_OUT`, else under the work root."""
-    configured = os.environ.get(OUTPUT_ENV)
-    if configured:
-        return Path(configured)
-    return work_root() / checkout_name(repo) / "_site"
-
-
-def staging_dir(repo: Path) -> Path:
-    """The mirror of `docs/` the render reads, beside the output.
-
-    Rendering a mirror, rather than `docs/` itself, is what lets the build
-    rewrite links and spell Mermaid fences without editing a source file.
-    """
-    return work_root() / checkout_name(repo) / "_stage"
-
-
-def preview_dir(repo: Path) -> Path:
-    """The tree the live preview serves: the mirror, synced file by file.
-
-    `quarto preview` renders into `_site/` inside the tree it serves, so the
-    preview serves a synced copy. Re-staging then never removes a file the
-    preview is writing, which is what a rebuild of the mirror itself would do.
-    """
-    return work_root() / checkout_name(repo) / "_preview"
-
-
-def clone_dir(name: str) -> Path:
-    """Where the site keeps its bare clone of the opengwas repository `name`.
-
-    `<work root>/<name>.git`, unless the repository's variable in `CLONE_ENVS`
-    names another git directory.
-    """
-    configured = os.environ.get(CLONE_ENVS.get(name, ""), "")
-    return Path(configured) if configured.strip() else work_root() / f"{name}.git"
+def clone_dir(name: str, root: Path | None = None) -> Path:
+    """The bare clone of the opengwas repository `name`: `<root>/<name>.git`, `root` by default `work_root()`."""
+    return (root or work_root()) / f"{name}.git"
 
 
 def clone_url(name: str) -> str:
-    """Where the site clones the opengwas repository `name` from: GitHub."""
+    """Where the opengwas repository `name` is cloned from: GitHub."""
     return f"{GITHUB}/{name}"
 
 
-def registry_tree_dir(mirror: Path) -> Path:
-    """Where the registry's files are extracted for a render: beside its mirror, `<mirror>-registry`."""
-    return mirror.with_name(f"{mirror.name}-registry")
+def github_url(name: str, commit: object, path: str) -> str:
+    """The one owner of a link to a repository's file or directory on GitHub, at `commit`.
+
+    A path ending in `/` is a directory (`tree`); any other is a file (`blob`).
+    """
+    return f"{clone_url(name)}/{'tree' if path.endswith('/') else 'blob'}/{commit}/{path}"
 
 
-def pinned_opengwasdb_revision(lock: Path) -> str:
-    """The opengwasdb commit `pixi.lock` resolves; the site documents that runtime."""
-    return engine.locked_commit(lock)
-
-
-def commit_of(repo: Path) -> str:
-    """The commit `repo` has checked out; the one its docs are rendered from."""
-    return subprocess.run(
-        ["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
-    ).stdout.strip()
+def registry_tree_dir(root: Path | None = None) -> Path:
+    """Where opengwasdb-stores' files are extracted for this checkout's run: `<root>/<checkout>-registry`."""
+    return (root or work_root()) / f"{checkout_name(repo_root())}-registry"

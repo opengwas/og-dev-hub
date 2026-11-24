@@ -1,246 +1,132 @@
----
-title: "The site"
----
+# The site
 
-How this site is built, previewed, published and extended. It is one Quarto
-website over opengwasdb-stores' `docs/`, opengwasdb's docs and this hub's own,
-rendered on the host where the data lives, and published from og-dev-hub's
-`gh-pages` branch at <https://blog.opengwas.io/og-dev-hub/>. It moved here from
-opengwasdb-stores, with its history, in og-dev-hub#7; the old address was retired
-with no redirect.
+How the Dev Hub's site is built, previewed and extended (og-dev-hub#15). It is one
+static page of OpenGWAS's **built state**, with a tab per view, rendered in the
+browser from JSON the build writes. It is built from public git alone: no token,
+no `/data`, no private repository and no board. It is published at
+<https://blog.opengwas.io/og-dev-hub/>.
 
 ## The commands
 
 | Command | What it does |
 | --- | --- |
-| `pixi run site` | Collect the site's data, stage the repositories' docs, render, and check every served path. The render runs over 24 Quarto processes; `--jobs N` changes that, and `--jobs 1` is Quarto rendering alone. `--registry PATH` reads that opengwasdb-stores checkout instead of its clone's `main`. |
-| `pixi run site-preview` | The same staging, then Quarto's live-reloading preview (on <http://localhost:4200>, or the next free port). |
-| `pixi run site-publish --dry-run` | Render a clean checkout of `origin/main` and commit it to `gh-pages` **without pushing**. It takes `--jobs` too. |
-| `pixi run site-publish` | The same, then push `gh-pages`. The owner runs this. |
-| `pixi run docs` (in opengwasdb-stores) | Refresh a report: render its `.qmd` and copy the HTML to the name the site serves. |
+| `pixi run site` | Collect from public git, then write the site into `_site/`. `--out DIR` writes it elsewhere, `--registry PATH` reads that opengwasdb-stores checkout instead of its clone, and `--no-refresh` reads the clones as they are. |
+| `pixi run site-preview` | Serve the built `_site/` at <http://localhost:4200/og-dev-hub/>, the sub-path it is published at (`--port N` for another port). |
+| `pixi run site-data` | Run every collector, the board and the private repositories included, into `docs/_data/`. The site does not read it; it stays because `pixi run architecture check\|conflicts --data DIR` reads that collection. |
 
-Nothing is rendered in CI: every page repeats the site's navigation, so committed
-output would make parallel pull requests conflict.
+## The views
 
-## Where a render puts things
+| Tab | What it shows | Its data |
+| --- | --- | --- |
+| Architecture | Every repository `system.yaml` lists and the commit read; the containers; each repository's components by layer or by container (Graphviz, drawn at build time); the stages; every component with its size, claims and the ADRs placed on it; the gaps in the claims; the imports against the layering; and the imports across repositories, with the `opengwasdb-stores` to `opengwasdb` seam and its baseline | `data/architecture.json` |
+| Decisions | Every public repository's ADRs in one table: number, title, status, repository, the components each governs, and the ADRs it cites in another repository, each linking to GitHub; filtered by repository | `data/decisions.json` |
+| Context | The hub's `CONTEXT.md`, rendered at build time, and a link to each public repository's own `CONTEXT.md` at the commit read (or why there is none) | `data/context.json` |
+| Stores | Every Release Bundle in the registry as one inventory row (layout, completion, coverage, Release Status, storage, variants, top hits, HM3, Rho, clumped, Analyses, median sample size, ancestry), each field a value or a gap that names what fills it; and yardstick's latest run per Store, a trend per measure across engine versions, and the runs taken under load or in the Veeam window marked | `data/stores.json` |
 
-| Path | What |
-| --- | --- |
-| `/data/opengwasdb/work/site/<checkout>/_site` | The rendered site (`$OPENGWASDB_SITE_OUT` overrides it). |
-| `/data/opengwasdb/work/site/<checkout>/_stage` | The mirror the render reads, with the collected data and the generated pages in it (`$OPENGWASDB_SITE_ROOT` moves the work root). |
-| `/data/opengwasdb/work/site/<checkout>/_stage-registry` | opengwasdb-stores' `stores/`, `docs/`, `CONTEXT.md`, `pixi.lock` and `ogstores.yaml` at its clone's `main`, extracted with `git archive`: what the collectors and the mirror read. |
-| `/data/opengwasdb/work/site/<checkout>/_site-workers-*` | Each render worker's copy of the mirror, and what it rendered, while a render runs. Removed when the render ends, whether it succeeded or not. |
-| `/data/opengwasdb/work/site/<checkout>/_preview` | The synced copy `site-preview` serves; Quarto renders inside it. |
-| `/data/opengwasdb/work/site/opengwasdb.git` | The bare clone the engine's docs are staged from and its architecture is read from, fetched at every render and by `--refresh`, and otherwise read as it is (`$OPENGWASDB_SITE_ENGINE_CLONE` overrides it). |
-| `/data/opengwasdb/work/site/opengwasdb-stores.git` | The bare clone the registry is read from, fetched at every render and by `--refresh`, and otherwise read as it is (`$OPENGWASDB_SITE_REGISTRY_CLONE` overrides it). |
-| `/data/opengwasdb/work/site/<name>.git` | The bare clone of every other repository `system.yaml` lists (og-dev-hub#9), read the same way; a planned one (`visibility: null`) has none. |
+It shows no planned state (the project board's) and no running state (the
+operations dashboard's).
 
-Nothing the site build writes goes under `/home` or `/tmp`, and nothing is
-written into the checkout.
+## How it is published
 
-The render reads a mirror, never a checkout. It is staged in this order:
+`.github/workflows/site.yml` builds and publishes the site; nobody publishes by hand.
 
-1. opengwasdb-stores' `docs/` at the root, as the site has always served it;
-2. this hub's `site/` over it: `_quarto.yml`, `pre-render.sh` and the section pages;
-3. the engine's docs at `opengwasdb/`, at the revision the registry's `pixi.lock` pins;
-4. this hub's own `docs/` (its ADRs, the consolidation plan, this page and the
-   spec) at `dev-hub/`, so the hub's ADR numbers never meet the registry's `adr/`.
+- **Triggers:** a push to `main`, a nightly run at 05:17 UTC (so the built state
+  follows the other repositories' `main`), and `workflow_dispatch`.
+- **Build job:** `pixi install --locked`, `pixi run site`, then the `_site/` upload
+  (`actions/upload-pages-artifact`). It needs no secret and no token.
+- **Deploy job:** `actions/deploy-pages`, with `pages: write` and `id-token: write`
+  on that job alone. It runs only from `main`: a pull request, or a dispatch on
+  another branch, builds but never deploys.
+- **Ordering:** the workflow's `concurrency` group is `site-<ref>` with
+  `cancel-in-progress: false`, so runs on `main` queue one at a time and a running
+  deploy finishes. A pull request has its own ref, so it never waits on a deploy.
+- **Pull requests** run the build job only, so a build error fails the check. One
+  workflow serves both, so the pull-request build cannot drift from the published one.
 
-That is deliberate: the mirror is where the link rewrite, the Mermaid spelling
-and the staged docs and glossary live, so no source file is ever edited, each
-`docs/` stays readable on GitHub, and two renders — of different checkouts, or of
-one checkout into two outputs — never collide. `glossary.md` is
-opengwasdb-stores' `CONTEXT.md`. A link out of a page's own tree goes to GitHub,
-in the repository and at the commit the page came from.
+**The 60-day pause.** GitHub disables a scheduled workflow after 60 days without
+activity in the repository, and the site then goes stale without warning. Re-enable
+it with `gh workflow enable site.yml -R opengwas/og-dev-hub`.
 
-## How a render runs in parallel
+### One-time switch to Actions (2026-11-24; the owner removes this list once done)
 
-Quarto renders a project's pages one after another, about a second each
-whatever the page, so the 226 pages took five minutes. Quarto cannot render in
-parallel itself, so `src/project_site/render.py` does it from outside:
+The Pages source is still the `gh-pages` branch. In order:
 
-1. One page is rendered alone in a copy of the mirror. Quarto runs the
-   `pre-render` hook first, so the generated pages exist, and `quarto inspect`
-   lists every page the site has.
-2. Each worker renders pages in its own copy of the mirror, one `quarto render
-   <page>` call per page. A call renders one page but builds its navigation
-   from the whole site, so a page is the same whichever worker renders it.
-3. The outputs are merged. A page comes from the worker that rendered it, every
-   other file must be identical in every worker or the render stops, and the
-   search index and sitemap are rebuilt page by page.
+1. Switch the source: `gh api -X PUT repos/opengwas/og-dev-hub/pages -f build_type=workflow`
+2. Allow `main` to deploy: `gh api -X POST repos/opengwas/og-dev-hub/environments/github-pages/deployment-branch-policies -f name=main -f type=branch`
+3. Merge.
+4. After the first successful deploy, delete `gh-pages`: `gh api -X DELETE repos/opengwas/og-dev-hub/git/refs/heads/gh-pages`
 
-On 4 Nov 2026 the render of `main` took 319 s with Quarto alone and 67 s over
-24 workers. Of the 471 files the two renders share besides the search index and
-sitemap, 470 were byte-identical. The other was `architecture-structure.html`,
-whose registry diagram Quarto's Graphviz lays out differently from one render
-to the next, even of the same source. The search index held the same 1,155
-entries and the sitemap the same 226 addresses.
+## What a build reads
 
-`site-preview` is unchanged: Quarto's preview renders the site itself before
-serving it.
+`pixi run site` runs the architecture collector in its public mode
+(`collect.__main__.run(public_only=True)`):
 
-## Publishing
+- every repository `system.yaml` lists as `public` is cloned anonymously from
+  GitHub into the site's work root and read at `main`, one fetch each per run;
+- a `private` one is listed and drawn as its container from `system.yaml`, and
+  is never cloned;
+- a planned one (`visibility: null`) is drawn as planned;
+- the board is not read.
 
-`site-publish` renders a clean detached worktree of the ref, so nothing depends on
-an uncommitted change in your checkout, and commits the output to a `gh-pages`
-worktree with a message naming the source commit. It creates `gh-pages` as an
-orphan branch when it is absent, so the published branch shares no history with a
-source branch.
+It also runs the Stores collector, over the registry clone's `stores/` and
+`docs/_yardstick/` at `main` (extracted by `git archive` into the work root; public git too),
+and `site.build` turns it into `data/stores.json` (`project_site.stores_view`). The registry
+at `main` is behind what the view can draw: the Validation Records that lack
+opengwasdb-stores#502's fields, and the yardstick results of the old workload, render as gaps and
+as the measures those runs hold. Neither is a failure. The charts are inline SVG drawn
+at build time (`stores_view.trend`); there is no charting library.
 
-It refuses a ref that is not on the remote, and it refuses a `gh-pages` worktree
-with uncommitted changes, because a publish replaces what that worktree holds.
+The site's work root is `$DEV_HUB_SITE_ROOT`, else `.work/site` in the
+checkout, the same on every machine; it only ever holds public repositories.
+(`pixi run architecture` and `site-data` keep their own: `$OPENGWASDB_SITE_ROOT`,
+else the build host's `/data/opengwasdb/work/site`, where they also clone the
+private repositories they read. Setting one variable never moves the other
+root.) The collection goes to `docs/_data/` (`$OPENGWASDB_SITE_DATA` or `--data-dir` names
+another), and the site to `_site/`; both are git-ignored.
 
-```mermaid
-flowchart TD
-  A["pixi run site-publish --ref origin/dev"] --> B{"ref on the remote?"}
-  B -- no --> X["refuse"]
-  B -- yes --> C["fetch origin, resolve the source commit"]
-  C --> D["clean detached worktree of that commit"]
-  D --> E["fetch opengwasdb-stores, extract its main; stage the engine's docs at its pixi.lock pin"]
-  E --> F["mirror the docs, rewrite outbound links, spell mermaid fences"]
-  F --> G["quarto render over 24 workers, merged into /data/opengwasdb/work/site/"]
-  G --> H["replace the gh-pages worktree contents"]
-  H --> I{"--dry-run?"}
-  I -- yes --> J["commit to gh-pages locally, push nothing"]
-  I -- no --> K["commit to gh-pages and push"]
+A repository that cannot be read, or has no model, is a gap the page draws, and
+never fails the build (og-dev-hub ADR 0001).
+
+## How a build writes the site
+
+`project_site.site.build(data_dir, out)` reads the collection, passes it through
+`architecture_public.public_view` (the one filter: nothing of a private
+repository but its container, and no host path), and writes:
+
+```text
+_site/
+  index.html          the tabs and an empty section per view
+  style.css           light and dark, from prefers-color-scheme or the toggle
+  js/app.js           the tabs, the theme and what every view shares
+  js/architecture.js  one script per view, each reading its own data file
+  js/decisions.js
+  js/context.js
+  js/stores.js
+  data/architecture.json
+  data/decisions.json
+  data/context.json
+  data/stores.json
 ```
 
-The default ref is og-dev-hub's `origin/main`. The registry is always read at
-its own `main`.
+`index.html`, `style.css` and `js/` are copied from `src/project_site/static/`.
+There is no framework, no bundler and no CDN, and every path is relative, so the
+page works from any sub-path. The Stores charts are SVG from `project_site.stores_view`, held in `data/stores.json`. Each diagram is DOT text from
+`project_site.diagrams`, drawn to SVG by Graphviz's `dot` at build time
+(`diagrams.render_svg`) and held in `data/architecture.json`. A component's box in
+a diagram links to its row in the Components table (`#component-<id>`).
 
-## The data pages
+## Adding a view
 
-Five pages are generated from the site's own data rather than written by hand:
-the Overview ([`site/index.qmd`](../site/index.qmd)), Stores, Epics, Trends and
-Changelog, with one page per epic and one per registered Store beside them
-([`src/project_site/pages.py`](../src/project_site/pages.py), #391).
-
-Three more, under **Architecture** in the navbar, draw how OpenGWASDB fits together
-from every listed repository's `docs/architecture/components.yaml` and its code
-([`src/project_site/architecture_pages.py`](../src/project_site/architecture_pages.py),
-#418): Pipeline (the stages, their components and ADRs) and
-Structure and health (context, containers and
-components, the engine by layer with its upward imports, and the gaps in the
-claims). The third, Work map (#419), shows where live work
-meets: which epics', tickets' and branches' files fall on the same component, and
-whether a blocking edge between the specific tickets coordinates it. It shows
-pushed branches and the files tickets cite, says when it was measured, and says
-that branches existing only on a build host are not shown; `pixi run architecture conflicts`
-run on that host includes them. The engine is read at its `main` from the same bare clone the docs come
-from; the docs stay at the pinned tag. The diagrams are Quarto `{dot}` cells,
-drawn at render time, so no SVG is committed. Each page says what is written by
-hand and what is measured, and `docs/spec/project-site.md` (Architecture) is the
-contract.
-
-- `pixi run site` and `site-publish` **collect the data themselves** before the
-  render, into the render's own `_stage/_data`, from the `stores/` and
-  `docs/_epics/` of the registry being rendered. `$OPENGWASDB_SITE_DATA` names a
-  directory collected already, and then nothing is collected.
-- `site/_quarto.yml` names `site/pre-render.sh` as the project's `pre-render`
-  hook. Quarto runs it inside the mirror before rendering, so the generator
-  writes the pages where the render reads them and never into the checkout. The
-  registry commit being rendered reaches it as `$OPENGWASDB_SITE_COMMIT`, which
-  is what a generated link to a Release Bundle names.
-- The five section pages are committed as short stubs that say they are
-  generated: their published paths stay (`index.html`, `stores.html`), and a
-  render replaces them. The per-epic and per-Store pages are git-ignored
-  (`site/epics/`, `site/stores/`).
-- A page never fails because a source is missing: it shows a notice naming the
-  source, its error and when it was collected. `docs/spec/project-site.md` is
-  the contract between the data and the pages.
-- An epic page is written for every epic the board lists **and** for every valid
-  epic record: a record outlives the board, so when `gh` is offline the
-  record-backed page is still generated, carrying the board's unavailable notice,
-  and a page that has a record is never removed as stale.
-- The Overview reports progress for the board's **open** Milestones only. A closed
-  Milestone is a plan nobody is working to any more, so it appears as one short
-  line under them — `Closed: Milestone: First release (#91)` — and never with a
-  count of lines met or to go.
-- A yardstick trend is drawn within one workload. Results are keyed by
-  `workload_sha256` (`workload_id` where the hash is missing), each series and
-  each matrix table names the workload it measured, and no line or row spans two
-  workloads, so a trend shows a change in the code rather than in the benchmark.
-  A point measured before 2026-11-02 in the Veeam backup window
-  (`veeam_window: true`, which no run since records) is ringed in the figure and
-  marked `†` in the table, with a caveat saying its timing is not comparable.
-- A Store page shows its own size and query performance from the newest yardstick
-  result that measured it, naming that result, its workload and the opengwasdb
-  version it ran on, and says so when the newest result lists the Store as
-  pending or no result names it.
-
-## Going live
-
-The first real publish creates og-dev-hub's `gh-pages`. Turning GitHub Pages on
-for it is the owner's step, taken after the first real `pixi run site-publish`:
-
-```bash
-gh api -X POST repos/opengwas/og-dev-hub/pages \
-  -f 'source[branch]=gh-pages' -f 'source[path]=/'
-```
-
-It sets Pages to build from the `gh-pages` branch at `/`, which is where
-`site-publish` puts the rendered site.
-
-## Adding a page
-
-1. A page about the registry goes in opengwasdb-stores' `docs/` —
-   `docs/my-page.md` — with a single `#` heading as its title. It is served at
-   `/my-page.html`. A page about the hub goes in this repository's `docs/`, and is
-   served under `/dev-hub/`.
-2. If it belongs to a section, add it to `site/_quarto.yml`: the navbar for a
-   section index, or a `sidebar`'s `contents`. A glob such as `adr/*.md` already
-   covers a new ADR, so most pages need no configuration.
-3. Use ` ```mermaid ` for a diagram and it renders as one, as it does on GitHub;
-   `dot` files under `docs/diagrams/` are served as the files they are. Quarto
-   renders a Mermaid cell only in a `.qmd`, so a `.md` page holding one is staged
-   as `.qmd`, its published `.md` path is filled in after the render, and links to
-   it reach its rendered page. Add it to the sidebar as `<name>.qmd`.
-4. Link to a sibling with its relative path (`../spec/release-config.md`). Link to
-   anything outside `docs/` with the relative path you would use on GitHub — the
-   build rewrites it to that file on GitHub, in the page's own repository at the
-   commit being rendered. A link the build rewrites is reported if the commit does
-   not have the target.
-5. **Never move or rename a page that is already published.** A reader's link
-   would break. If a page must move, keep the old path as an `aliases` entry in
-   the new page's YAML front matter; Quarto then writes a redirect page there,
-   which the served-path check counts as an alias rather than a missing path.
-6. Historical reports are not rendered: their source `.qmd` lives in
-   opengwasdb-stores' `docs/reports/`, and its `pixi run docs` renders it and copies the self-contained
-   HTML to the root name the site serves. Do not add `.qmd` files to `docs/`
-   outside `reports/` unless the page really must execute code at render time.
-7. A page that is computed from the site's data is not written by hand: add it
-   to `src/project_site/pages.py` (`SECTION_PAGES` for a section, or one of the
-   per-epic and per-Store writers) and commit a stub with its published path at
-   `site/`, as the data pages above do. Do not edit a generated page — a
-   render replaces it. A page holding a chart is written as a `{=html}` block,
-   not an inline SVG in a table cell: Pandoc drops an SVG's children there.
-8. A fact is data, never markup, and that includes a fact in a code span: a
-   version tag is free text, so it may hold a backtick, a `|` or a `<b>`. Write
-   one with `pages._code`, which uses a plain code span when the value cannot
-   close it or cut its table cell and an HTML `<code>` with escaped text
-   otherwise; a hand-written `` `{value}` `` fence breaks on the first one that
-   does.
-
-## Checking a change
-
-`pixi run site` ends with the served-path check: every path in
-`resources/site/legacy-served-paths.txt` must be present or aliased in the
-output, and a missing path fails the build.
-
-At og-dev-hub's address that baseline starts fresh. Nothing has been published
-here yet, so no reader holds a link to it, and the file is absent until it is
-written from the first publish: until then the check has nothing to compare
-with, and the summary says `served    not checked`. Once written, it is fixed,
-and deliberately: it protects the links readers hold. A page the site generates
-(an epic, a Store, a trend) may come or go without touching it; a path leaves it
-only when a published URL is retired deliberately, by a reviewed change to the
-file. An empty or unreadable baseline fails the check rather than passing an
-unchecked render (`src/project_site/build.py`).
-
-You can run the check on its own against an existing render:
-
-```bash
-pixi run python3 -m project_site.urlcheck \
-  --paths-file resources/site/legacy-served-paths.txt \
-  --output /data/opengwasdb/work/site/<checkout>/_site
-```
+1. Add what it reads to a collector, or a new collector run by
+   `collect.__main__.run(public_only=True)`, reading public git only.
+2. Name every field it draws in `architecture_public` (an allow-list: a field
+   no view names never reaches the site).
+3. Write `data/<view>.json` in `site.build`, from the public view alone.
+4. Add a tab and a section to `static/index.html`, and `static/js/<view>.js`,
+   which calls `DevHub.register("<view>", render)`. Decide every state and figure
+   in the build and write it to the JSON; the script only renders what it is given.
+   Set every fact as text (`DevHub.el`), never as markup.
+5. Test it in `tests/project-site-architecture/test_site.py`: the data file, that
+   nothing of the private fixture repository reaches any file of `_site/`, and
+   that its script draws in `node` over a built site (`view_runner.js`, with the
+   few DOM calls the scripts make; `nodejs` is in the environment for this alone).

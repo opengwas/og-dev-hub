@@ -36,7 +36,7 @@ from pathlib import Path
 
 import architecture_fixtures as fx
 
-from project_site import architecture_pages, staging
+from project_site import architecture_public, site, staging
 from project_site.collect import architecture
 from project_site.collect import architecture_graph as graph
 from project_site.collect import architecture_model as model
@@ -263,11 +263,11 @@ class Fixture:
         system.write_text(fx.SYSTEM_YAML, encoding="utf-8")
         return architecture.collect(fx.repositories(self.registry, self.engine), system_file=system)
 
-    def page(self) -> str:
+    def view(self) -> dict:
+        """The Architecture view's data, as the site publishes it (og-dev-hub#15)."""
         result = self.collect()
-        return architecture_pages.render_structure(
-            {"architecture": {"source": "architecture", "available": True, "collected_at": COLLECTED, "error": None, **result}}
-        )
+        documents = {"architecture": {"source": "architecture", "available": True, "collected_at": COLLECTED, "error": None, **result}}
+        return site.architecture_view(architecture_public.public_view(documents)["architecture"])
 
 
 class CollectorTests(unittest.TestCase):
@@ -312,42 +312,36 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual((summary["edges"], summary["upward_edges"], summary["upward_imports"]), (13, 3, 3))
 
 
-class StructurePageTests(unittest.TestCase):
-    def test_the_page_states_the_baselines_size_next_to_the_seam_counts(self) -> None:
-        page = Fixture(self).page()
-        self.assertIn("5 imports from opengwasdb-stores into opengwasdb, across 4 component pairs", page)
-        self.assertIn(
-            f"**The engine-import baseline** (`{BASELINE}`, in opengwasdb-stores) lists 5 imports of engine modules,"
-            " one per importing file and imported name; opengwasdb-stores makes 5 of them.",
-            page,
-        )
+class SiteViewTests(unittest.TestCase):
+    """What the Architecture view publishes of the seam, the baseline and the layering: unknown is `null`, never 0."""
+
+    def test_the_view_states_the_baselines_size_next_to_the_seam_counts(self) -> None:
+        seam = Fixture(self).view()["seam"]
+        self.assertEqual((seam["from"], seam["to"], seam["imports"], seam["pairs"]), (fx.REGISTRY, fx.ENGINE, 5, 4))
+        self.assertEqual(seam["baseline"], {"path": BASELINE, "from": fx.REGISTRY, "entries": 5, "measured": 5, "note": None})
 
     def test_an_unknown_baseline_says_so_and_never_shows_a_zero(self) -> None:
-        page = Fixture(self, baseline=None).page()
-        self.assertIn(f"**The engine-import baseline is unknown**: {BASELINE} is not in opengwasdb-stores at", page)
-        self.assertIn("opengwasdb-stores makes 5 imports of engine modules.", page)
-        self.assertNotIn("lists 0 imports", page)
+        baseline = Fixture(self, baseline=None).view()["seam"]["baseline"]
+        self.assertIsNone(baseline["entries"])
+        self.assertEqual(baseline["measured"], 5)
+        self.assertIn(f"{BASELINE} is not in opengwasdb-stores at", baseline["note"])
 
-    def test_without_the_engines_model_the_pairs_are_said_to_be_undrawable_not_zero(self) -> None:
-        page = Fixture(self, engine_model=False).page()
-        self.assertIn("5 imports from opengwasdb-stores into opengwasdb", page)
-        self.assertIn("cannot be drawn until opengwasdb's model is at the ref read", page)
-        self.assertIn("lists 5 imports of engine modules", page)
-        self.assertNotIn("0 imports", page)
-        self.assertNotIn("0 component pairs", page)
+    def test_without_the_engines_model_the_pairs_are_unknown_not_zero(self) -> None:
+        seam = Fixture(self, engine_model=False).view()["seam"]
+        self.assertEqual(seam["imports"], 5)
+        self.assertIsNone(seam["pairs"])
+        self.assertEqual(seam["baseline"]["entries"], 5)
 
-    def test_without_the_engines_model_the_layering_is_said_to_be_unmeasurable(self) -> None:
-        page = Fixture(self, engine_model=False).page()
-        self.assertIn(
-            "The layering cannot be measured until a model that declares layers is at the ref read", page
-        )
-        self.assertNotIn("0 upward", page)
-        self.assertNotIn("0 edges", page)
+    def test_without_the_engines_model_the_layering_is_unknown(self) -> None:
+        view = Fixture(self, engine_model=False).view()
+        self.assertIsNone(view["layering"])
+        self.assertIsNone(view["summary"]["upward_imports"])
 
     def test_with_the_engines_model_the_layering_is_drawn_and_counted(self) -> None:
-        page = Fixture(self).page()
-        self.assertIn("opengwasdb (Engine): 3 edges (3 imports) go against the layering", page)
-        self.assertNotIn("cannot be measured", page)
+        view = Fixture(self).view()
+        self.assertEqual([(l["label"], len(l["upward"]), sum(e["imports"] for e in l["upward"])) for l in view["layering"]],
+                         [("opengwasdb (Engine)", 3, 3)])
+        self.assertIn("opengwasdb", [d["id"] for d in view["diagrams"]])
 
 
 if __name__ == "__main__":

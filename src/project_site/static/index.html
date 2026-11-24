@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenGWAS Dev Hub</title>
+  <meta name="description" content="What OpenGWAS has built: its architecture, its decisions and its terms.">
+  <link rel="stylesheet" href="style.css">
+  <script src="js/app.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <a class="home-link" href="#architecture">
+      <span class="monogram" aria-hidden="true">DH</span>
+      <span class="home-words">
+        <span class="home-name">OpenGWAS Dev Hub</span>
+        <span class="home-tagline">What is built</span>
+      </span>
+    </a>
+    <nav class="views-nav" aria-label="Views">
+      <a class="views-link" href="#architecture" data-view="architecture">Architecture</a>
+      <a class="views-link" href="#decisions" data-view="decisions">Decisions</a>
+      <a class="views-link" href="#context" data-view="context">Context</a>
+      <a class="views-link" href="#stores" data-view="stores">Stores</a>
+    </nav>
+    <button class="button button-plain" id="theme-switch" type="button">Dark mode</button>
+  </header>
+
+  <main id="main">
+    <section class="pane" id="pane-architecture" hidden aria-labelledby="h-architecture">
+      <h1 class="pane-heading" id="h-architecture">Architecture</h1>
+      <p class="pane-lede">Every repository's containers and components, the imports within and between them, the gaps in their claims, and the decisions that govern each component.</p>
+      <div class="pane-content" id="architecture-content"><p class="waiting">Loading…</p></div>
+    </section>
+
+    <section class="pane" id="pane-decisions" hidden aria-labelledby="h-decisions">
+      <h1 class="pane-heading" id="h-decisions">Decisions</h1>
+      <p class="pane-lede">Every architecture decision record (ADR) of every public repository, the components it governs and the decisions it cites.</p>
+      <div class="pane-content" id="decisions-content"><p class="waiting">Loading…</p></div>
+    </section>
+
+    <section class="pane" id="pane-context" hidden aria-labelledby="h-context">
+      <h1 class="pane-heading" id="h-context">Context</h1>
+      <p class="pane-lede">The terms that cross repositories, and where each repository keeps its own.</p>
+      <div class="pane-content" id="context-content"><p class="waiting">Loading…</p></div>
+    </section>
+
+    <section class="pane" id="pane-stores" hidden aria-labelledby="h-stores">
+      <h1 class="pane-heading" id="h-stores">Stores</h1>
+      <p class="pane-lede">Every GWAS Store in the registry, what its Release Bundle holds and what it does not yet, and yardstick's results: the latest run per Store and each measure's trend across engine versions.</p>
+      <div class="pane-content" id="stores-content"><p class="waiting">Loading…</p></div>
+    </section>
+  </main>
+
+  <footer class="colophon">
+    <span>The Dev Hub shows built state only, collected from public git. Planned state is the
+      <a href="https://github.com/orgs/opengwas/projects/1">project board</a>'s; running state is the operations dashboard's.</span>
+    <a href="https://github.com/opengwas/og-dev-hub">Source</a>
+  </footer>
+
+  <script defer src="js/architecture.js"></script>
+  <script defer src="js/decisions.js"></script>
+  <script defer src="js/context.js"></script>
+  <script defer src="js/stores.js"></script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The project site's data: the epic record and the collectors (#389, epic #385).
+"""The site data's collectors: the board, the Stores and the command that runs them (#389, og-dev-hub#15).
 
 Each test is at a seam named in the spec, `docs/spec/project-site.md`. Expected
 values are literals. Fixtures are built here or read from `fixtures/`; nothing
@@ -12,11 +12,8 @@ Run from the repository root:
 
 from __future__ import annotations
 
-import copy
-import datetime
 import json
 import os
-import sqlite3
 import subprocess
 import tempfile
 import unittest
@@ -26,239 +23,11 @@ import yaml
 from pathlib import Path
 
 from project_site import paths as site_paths
-from project_site import records, staging
+from project_site import staging
 from project_site.collect import __main__ as site_data
-from project_site.collect import board, catalog, common, releases, stores
-from project_site.collect import records as records_collector
+from project_site.collect import board, common, stores
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
-
-
-def minimal_record() -> dict:
-    return {
-        "repo": "opengwasdb-stores",
-        "number": 313,
-        "title": "Analysis catalog across all Stores",
-        "status": "finished",
-        "workstream": "Analyses",
-        "started": datetime.date(2026, 10, 21),
-        "finished": datetime.date(2026, 10, 29),
-        "summary": "The catalog lists every validated Store. It was first published on 28 October.",
-        "prs": ["opengwasdb-stores#353"],
-        "versions": [],
-        "tickets": [
-            {"key": "opengwasdb-stores#319", "title": "analysis_id never contains ':'",
-             "pr": None, "merge": "7832deb"},
-        ],
-        "decisions": [
-            {"date": datetime.date(2026, 10, 21), "text": "Integration branch cut from dev.", "link": None},
-        ],
-        "test_time": {
-            "baseline": {"commit": "e6e829d", "wall_s": 158.4, "suites": None},
-            "final": {"commit": "a84ecfb", "wall_s": 162.05, "suites": None},
-        },
-        "yardstick": {"before": None, "after": None},
-        "catalog": {"before": None, "after": "1b3a155d449bb84a"},
-        "followups": [{"key": "opengwasdb#294", "text": "builders print n_associations"}],
-    }
-
-
-class TestEpicRecordValidator(unittest.TestCase):
-    def test_a_minimal_valid_record_has_no_errors(self) -> None:
-        self.assertEqual(records.validate_epic(minimal_record()), [])
-
-    def test_an_all_unknown_record_is_valid(self) -> None:
-        record = {
-            "repo": "opengwasdb", "number": 7, "title": "T", "status": "active",
-            "workstream": None, "started": None, "finished": None, "summary": None,
-            "prs": [], "versions": [], "tickets": [], "decisions": [],
-            "test_time": {"baseline": None, "final": None},
-            "yardstick": {"before": None, "after": None},
-            "catalog": {"before": None, "after": None}, "followups": [],
-        }
-        self.assertEqual(records.validate_epic(record), [])
-
-    def test_a_missing_required_field_is_refused_by_name(self) -> None:
-        record = minimal_record()
-        del record["summary"]
-        self.assertEqual(records.validate_epic(record), ["summary is required (write null when unknown)"])
-
-    def test_an_unknown_status_is_refused(self) -> None:
-        record = minimal_record()
-        record["status"] = "done"
-        self.assertEqual(
-            records.validate_epic(record),
-            ["status 'done' is not one of active, finished"],
-        )
-
-    def test_a_workstream_is_one_of_the_boards_twelve(self) -> None:
-        for name in ("GWAS Store architecture", "LD Store architecture", "Builds", "Clients", "Data API"):
-            record = minimal_record()
-            record["workstream"] = name
-            self.assertEqual(records.validate_epic(record), [], name)
-
-    def test_a_record_committed_under_a_retired_workstream_stays_valid(self) -> None:
-        for name in ("Data architecture", "Build architecture", "LD", "Store builds", "Python client"):
-            record = minimal_record()
-            record["workstream"] = name
-            self.assertEqual(records.validate_epic(record), [], name)
-
-    def test_an_unknown_workstream_is_refused(self) -> None:
-        record = minimal_record()
-        record["workstream"] = "Store architecture"
-        [error] = records.validate_epic(record)
-        self.assertTrue(error.startswith("workstream 'Store architecture' is not one of GWAS Store architecture,"), error)
-
-    def test_a_finished_epic_needs_a_finish_date_and_an_active_one_has_none(self) -> None:
-        record = minimal_record()
-        record["finished"] = None
-        self.assertEqual(records.validate_epic(record), ["a finished epic needs a finished date"])
-        record = minimal_record()
-        record["status"] = "active"
-        self.assertEqual(records.validate_epic(record), ["an active epic has finished: null"])
-
-    def test_a_bad_repo_number_key_is_refused(self) -> None:
-        for bad in ("opengwasdb-stores#0", "opengwasdb-stores", "#12", "stores#1a", 12):
-            record = minimal_record()
-            record["prs"] = [bad]
-            self.assertEqual(
-                records.validate_epic(record),
-                [f"prs[0] {bad!r} is not a repo#n key"],
-                bad,
-            )
-
-    def test_an_estimate_where_null_is_required_is_refused(self) -> None:
-        for field, value in (("started", "~2026-10-20"), ("started", "unknown"), ("finished", "about 29 Oct")):
-            record = minimal_record()
-            record[field] = value
-            errors = records.validate_epic(record)
-            self.assertEqual(len(errors), 1, (field, value))
-            self.assertIn(f"{field} {value!r} is not an ISO date", errors[0])
-        record = minimal_record()
-        record["test_time"]["final"]["wall_s"] = "about 160"
-        self.assertEqual(
-            records.validate_epic(record),
-            ["test_time.final.wall_s 'about 160' is not a number (write null when unknown)"],
-        )
-
-    def test_prose_is_free_text_and_only_typed_values_are_checked_for_guesses(self) -> None:
-        record = minimal_record()
-        record["title"] = "About the catalog"
-        record["summary"] = "Estimated N for eQTLGen is the published NrSamples. About the catalog: it lists 9 Stores."
-        record["decisions"][0]["text"] = "Approx. 10 Stores; unknown until validated."
-        record["followups"][0]["text"] = "TBD with the owner"
-        self.assertEqual(records.validate_epic(record), [])
-
-    def test_empty_prose_is_refused(self) -> None:
-        record = minimal_record()
-        record["title"] = " "
-        record["decisions"][0]["text"] = ""
-        self.assertEqual(
-            sorted(records.validate_epic(record)),
-            ["decisions[0].text must be non-empty text", "title must be non-empty text"],
-        )
-
-    def test_nested_fields_are_always_mappings_with_null_members(self) -> None:
-        for field in ("test_time", "yardstick", "catalog"):
-            record = minimal_record()
-            record[field] = None
-            self.assertEqual(len(records.validate_epic(record)), 1, field)
-            self.assertIn(f"{field} must be a mapping with", records.validate_epic(record)[0])
-        record = minimal_record()
-        record["test_time"] = {"baseline": None, "final": None}
-        record["yardstick"] = {"before": None, "after": None}
-        record["catalog"] = {"before": None, "after": None}
-        self.assertEqual(records.validate_epic(record), [])
-
-    def test_a_yardstick_reference_is_a_json_file_under_docs_yardstick(self) -> None:
-        for good in ("docs/_yardstick/opengwasdb-stores-313-after.json", "docs/_yardstick/a/b.json"):
-            record = minimal_record()
-            record["yardstick"]["after"] = good
-            self.assertEqual(records.validate_epic(record), [], good)
-        for bad in ("docs/_epics/other.yaml", "docs/_yardstick/x.yaml", "docs/_yardstick/../x.json",
-                    "/docs/_yardstick/x.json", "_yardstick/x.json", "x.json", "docs/_yardstick/", 5):
-            record = minimal_record()
-            record["yardstick"]["before"] = bad
-            self.assertEqual(
-                records.validate_epic(record),
-                [f"yardstick.before {bad!r} is not a docs/_yardstick/*.json path"],
-                bad,
-            )
-
-    def test_a_summary_of_one_or_five_sentences_is_refused(self) -> None:
-        record = minimal_record()
-        record["summary"] = "One sentence only."
-        self.assertEqual(records.validate_epic(record), ["summary has 1 sentences; write 2 to 4"])
-        record["summary"] = "A one. B two. C three. D four. E five."
-        self.assertEqual(records.validate_epic(record), ["summary has 5 sentences; write 2 to 4"])
-
-    def test_unknown_fields_and_bad_references_are_refused(self) -> None:
-        record = minimal_record()
-        record["owner"] = "x"
-        record["catalog"]["after"] = "1b3a155"
-        record["yardstick"]["before"] = "../secrets.json"
-        record["tickets"][0]["merge"] = "abc"
-        record["decisions"][0]["link"] = "not a url"
-        self.assertEqual(
-            sorted(records.validate_epic(record)),
-            sorted([
-                "unknown field 'owner'",
-                "catalog.after '1b3a155' is not a 16-hex catalog version",
-                "yardstick.before '../secrets.json' is not a docs/_yardstick/*.json path",
-                "tickets[0].merge 'abc' is not a 7 to 40 hex commit",
-                "decisions[0].link 'not a url' is not an http(s) URL",
-            ]),
-        )
-
-    def test_the_file_name_must_match_the_record(self) -> None:
-        self.assertEqual(records.validate_epic(minimal_record(), "opengwasdb-stores-313.yaml"), [])
-        self.assertEqual(
-            records.validate_epic(minimal_record(), "opengwasdb-stores-314.yaml"),
-            ["file name 'opengwasdb-stores-314.yaml' should be 'opengwasdb-stores-313.yaml'"],
-        )
-
-    def test_a_record_is_not_changed_by_validation(self) -> None:
-        record = minimal_record()
-        before = copy.deepcopy(record)
-        records.validate_epic(record)
-        self.assertEqual(record, before)
-
-
-# opengwasdb-stores' docs/_epics/ at 2fff9eb6, copied: the records live in the
-# repository of each epic, not in this hub (og-dev-hub#7).
-COMMITTED_EPICS = Path(__file__).resolve().parent / "fixtures" / "epics"
-
-
-class TestCommittedEpicRecords(unittest.TestCase):
-    """The records backfilled from the orchestrate run states (docs/spec/project-site.md, Backfill)."""
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.valid, cls.invalid = records.load_epics(COMMITTED_EPICS)
-        cls.by_number = {r["number"]: r for r in cls.valid}
-
-    def test_every_committed_record_is_valid(self) -> None:
-        self.assertEqual(self.invalid, {})
-
-    def test_the_backfilled_epics_are_present(self) -> None:
-        # Every finished epic adds its own record, so the backfilled three are a subset.
-        self.assertLessEqual({282, 302, 313}, set(self.by_number))
-
-    def test_status_follows_the_epic_issue(self) -> None:
-        # #282 and #302 are open; #313 closed on 1 Nov 2026 once the catalog listed OGS-00011.
-        self.assertEqual({n: (self.by_number[n]["status"], self.by_number[n]["finished"]) for n in (282, 302, 313)},
-                         {282: ("active", None), 302: ("active", None),
-                          313: ("finished", datetime.date(2026, 11, 1))})
-
-    def test_313_finished_with_the_catalog_that_lists_ogs_00011(self) -> None:
-        record = self.by_number[313]
-        self.assertEqual(record["started"], datetime.date(2026, 10, 21))
-        self.assertEqual(record["catalog"], {"before": None, "after": "9df14f8dc3cceabf"})
-        self.assertEqual(record["test_time"]["final"]["commit"], "a84ecfb")
-        self.assertIn("OGS-00011", record["summary"])
-        tickets = {t["key"]: t for t in record["tickets"] if t["key"]}
-        self.assertEqual(tickets["opengwasdb-stores#319"]["merge"], "7832deb")
-        self.assertIsNone(tickets["opengwasdb-stores#359"]["merge"])
 
 
 class TestBoardCollector(unittest.TestCase):
@@ -366,32 +135,6 @@ class TestBoardCollector(unittest.TestCase):
                 {"checked": True, "text": "nested #10", "refs": ["opengwasdb-stores#10"]},
             ],
         )
-
-
-def write_catalog_version(
-    root: Path, version: str, *, built_at: str, commit: str, counts: list[tuple], listed: list[tuple],
-    changes: str | None = None, selection: list[tuple] | None = None,
-) -> Path:
-    """A catalog version with only the tables the collector reads (`analysis_catalog.database` has the rest)."""
-    directory = root / version
-    directory.mkdir(parents=True)
-    db = sqlite3.connect(directory / "catalog.sqlite")
-    db.executescript(
-        "CREATE TABLE catalog_meta (key TEXT PRIMARY KEY, value TEXT);"
-        "CREATE TABLE counts (dimension TEXT NOT NULL, value TEXT, n_analyses INTEGER NOT NULL);"
-        "CREATE TABLE listed_analyses (id TEXT, store_id TEXT, analysis_id TEXT);"
-        "CREATE TABLE selection (store_id TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT);"
-    )
-    db.executemany("INSERT INTO catalog_meta VALUES (?, ?)",
-                   [("built_at", built_at), ("registry_commit", commit), ("builder_version", "1")])
-    db.executemany("INSERT INTO counts VALUES (?, ?, ?)", counts)
-    db.executemany("INSERT INTO listed_analyses VALUES (?, ?, ?)", [(f"{s}:{a}", s, a) for s, a in listed])
-    db.executemany("INSERT INTO selection VALUES (?, ?, ?)", selection or [])
-    db.commit()
-    db.close()
-    if changes is not None:
-        (directory / "changes.tsv").write_text(changes)
-    return directory
 
 
 def repo_of(name: str = "opengwasdb-stores") -> dict:
@@ -571,143 +314,18 @@ class TestBoardPagination(unittest.TestCase):
             board.parse(raw)
 
 
-class TestCatalogHistoryCollector(unittest.TestCase):
-    def setUp(self) -> None:
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.catalog_dir = Path(self.tmp.name) / "catalog"
-        self.root = self.catalog_dir / "versions"
-        self.root.mkdir(parents=True)
-        # The older version has no changes.tsv; the newer has two Stores, and
-        # its dimension rows overlap (3 + 2 + 1 = 6 rows, 5 Analyses).
-        write_catalog_version(
-            self.root, "aaaaaaaaaaaaaaaa", built_at="2026-10-23T18:25:29Z", commit="560dae9",
-            counts=[("store", "OGS-00027", 3), ("coverage", "cis", 3), ("ancestry", None, 3)],
-            listed=[("OGS-00027", "g1"), ("OGS-00027", "g2"), ("OGS-00027", "g3")],
-        )
-        write_catalog_version(
-            self.root, "bbbbbbbbbbbbbbbb", built_at="2026-10-28T22:57:35Z", commit="49d8099",
-            counts=[("store", "OGS-00006", 2), ("store", "OGS-00027", 3), ("coverage", "cis", 3),
-                    ("coverage", "signals_only", 2), ("ancestry", "EUR", 5)],
-            listed=[("OGS-00006", "a"), ("OGS-00006", "b"), ("OGS-00027", "g1"), ("OGS-00027", "g2"), ("OGS-00027", "g3")],
-            changes="id\tchange\nOGS-00006:a\tadded\nOGS-00006:b\tadded\nOGS-00027:g3\tchanged\n",
-            selection=[
-                ("OGS-00006", "listed", "Release Status is validated, Access Posture is public"),
-                ("OGS-00027", "excluded", "Trial Store Release"),
-            ],
-        )
-        os.symlink("versions/bbbbbbbbbbbbbbbb", self.catalog_dir / "current")
-
-    def test_each_version_has_its_meta_counts_and_sql_totals(self) -> None:
-        result = catalog.collect(self.root)
-        self.assertEqual([v["version"] for v in result["versions"]], ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"])
-        older, newer = result["versions"]
-        self.assertEqual(older["catalog_meta"],
-                         {"built_at": "2026-10-23T18:25:29Z", "registry_commit": "560dae9", "builder_version": "1"})
-        self.assertEqual(older["counts"], [
-            {"dimension": "store", "value": "OGS-00027", "n_analyses": 3},
-            {"dimension": "coverage", "value": "cis", "n_analyses": 3},
-            {"dimension": "ancestry", "value": None, "n_analyses": 3},
-        ])
-        self.assertEqual(older["totals"], {"analyses": 3, "stores": 1})
-        self.assertEqual(newer["totals"], {"analyses": 5, "stores": 2})
-        self.assertEqual(len(newer["counts"]), 5)
-
-    def test_the_total_is_the_row_count_not_a_sum_of_dimension_rows(self) -> None:
-        db = sqlite3.connect(self.root / "bbbbbbbbbbbbbbbb" / "catalog.sqlite")
-        db.execute("INSERT INTO counts VALUES ('store', 'OGS-99999', 100)")
-        db.commit()
-        db.close()
-        newer = catalog.collect(self.root)["versions"][1]
-        self.assertEqual(newer["totals"]["analyses"], 5)
-        self.assertEqual(sum(r["n_analyses"] for r in newer["counts"] if r["dimension"] == "store"), 105)
-
-    def test_changes_are_tallied_and_a_missing_file_is_null(self) -> None:
-        older, newer = catalog.collect(self.root)["versions"]
-        self.assertIsNone(older["changes"])
-        self.assertEqual(newer["changes"], {"added": 2, "changed": 1})
-
-    def test_current_is_the_version_the_symlink_names(self) -> None:
-        result = catalog.collect(self.root)
-        self.assertEqual(result["current"], "bbbbbbbbbbbbbbbb")
-        self.assertEqual([v["current"] for v in result["versions"]], [False, True])
-
-    def test_the_collector_opens_catalogs_read_only(self) -> None:
-        before = {p: p.stat().st_mtime_ns for p in self.root.rglob("*") if p.is_file()}
-        os.chmod(self.root / "aaaaaaaaaaaaaaaa" / "catalog.sqlite", 0o444)
-        catalog.collect(self.root)
-        after = {p: p.stat().st_mtime_ns for p in self.root.rglob("*") if p.is_file()}
-        self.assertEqual(before, after)
-        self.assertEqual(sorted(p.name for p in self.root.rglob("*") if p.is_file() and "-journal" in p.name), [])
-
-    def test_the_current_versions_selection_names_each_stores_decision_and_reason(self) -> None:
-        older, newer = catalog.collect(self.root)["versions"]
-
-        self.assertIsNone(older["selection"])
-        self.assertEqual(
-            newer["selection"],
-            [
-                {"store_id": "OGS-00006", "decision": "listed",
-                 "reason": "Release Status is validated, Access Posture is public"},
-                {"store_id": "OGS-00027", "decision": "excluded", "reason": "Trial Store Release"},
-            ],
-        )
-
-    def test_a_missing_root_is_an_error_and_an_empty_root_is_not(self) -> None:
-        with self.assertRaises(catalog.CollectError):
-            catalog.collect(Path(self.tmp.name) / "nowhere")
-        empty = Path(self.tmp.name) / "empty"
-        empty.mkdir()
-        self.assertEqual(catalog.collect(empty), {"root": str(empty), "current": None, "versions": []})
+# These suites never check manifest figures (`test_stores_view` does, with the real call), and the real one
+# imports the engine (1.6 s), so `bundle.manifest_summary` is stubbed.
+MANIFEST = {"n_built": 1, "n_excluded": 0, "median_sample_size": None, "n_with_sample_size": 0,
+            "n_unparseable_sample_size": 0, "ancestry": {}}
 
 
-class FakeGh:
-    """A `gh` runner that answers each `gh api <endpoint> ... --jq .[]` from a table, or fails."""
+def stub_manifest(case: unittest.TestCase) -> None:
+    from ogstores import bundle as release_bundle
 
-    def __init__(self, answers: dict[str, list[dict] | Exception]) -> None:
-        self.answers = answers
-        self.calls: list[list[str]] = []
-
-    def __call__(self, args: list[str], stdin: str | None = None) -> str:
-        self.calls.append(args)
-        answer = self.answers[args[1]]
-        if isinstance(answer, Exception):
-            raise answer
-        return "".join(json.dumps(row) + "\n" for row in answer)
-
-
-class TestReleasesCollector(unittest.TestCase):
-    def test_both_repositories_tags_and_releases_are_listed(self) -> None:
-        gh = FakeGh({
-            "repos/opengwas/opengwasdb/tags": [
-                {"name": "v0.2.0", "commit": {"sha": "0123456789abcdef0123456789abcdef01234567"}},
-            ],
-            "repos/opengwas/opengwasdb/releases": [
-                {"tag_name": "v0.2.0", "name": "0.2.0", "published_at": "2026-09-01T10:00:00Z",
-                 "draft": False, "prerelease": False, "html_url": "https://github.com/opengwas/opengwasdb/releases/tag/v0.2.0",
-                 "body": "ignored"},
-            ],
-            "repos/opengwas/opengwasdb-stores/tags": [],
-            "repos/opengwas/opengwasdb-stores/releases": [],
-        })
-        self.assertEqual(
-            releases.collect(gh),
-            {"repos": [
-                {"repo": "opengwasdb",
-                 "tags": [{"name": "v0.2.0", "commit": "0123456789abcdef0123456789abcdef01234567"}],
-                 "releases": [{"tag": "v0.2.0", "name": "0.2.0", "published_at": "2026-09-01T10:00:00Z",
-                               "draft": False, "prerelease": False,
-                               "url": "https://github.com/opengwas/opengwasdb/releases/tag/v0.2.0"}]},
-                {"repo": "opengwasdb-stores", "tags": [], "releases": []},
-            ]},
-        )
-
-    def test_no_tags_and_no_releases_is_not_an_error(self) -> None:
-        gh = FakeGh({f"repos/opengwas/{r}/{k}": [] for r in ("opengwasdb", "opengwasdb-stores") for k in ("tags", "releases")})
-        result = common.collect_source("releases", lambda: releases.collect(gh))
-        self.assertTrue(result["available"])
-        self.assertIsNone(result["error"])
-        self.assertEqual([(r["tags"], r["releases"]) for r in result["repos"]], [([], []), ([], [])])
+    patcher = mock.patch.object(release_bundle, "manifest_summary", return_value=MANIFEST)
+    patcher.start()
+    case.addCleanup(patcher.stop)
 
 
 def write_store_bundle(registry: Path, store_id: str, release: dict, build: dict, validation: dict | None) -> None:
@@ -722,6 +340,7 @@ def write_store_bundle(registry: Path, store_id: str, release: dict, build: dict
 
 class TestStoresCollector(unittest.TestCase):
     def setUp(self) -> None:
+        stub_manifest(self)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.registry = Path(tmp.name) / "stores"
@@ -788,145 +407,15 @@ class TestStoresCollector(unittest.TestCase):
             stores.collect(self.registry / "nowhere")
 
 
-class TestRecordsCollector(unittest.TestCase):
-    def setUp(self) -> None:
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.epics = Path(tmp.name) / "_epics"
-        self.yardstick = Path(tmp.name) / "_yardstick"
-        self.epics.mkdir()
-
-    def write_epic(self, name: str, record: dict) -> None:
-        (self.epics / name).write_text(yaml.safe_dump(record))
-
-    def test_valid_records_are_collected_and_each_invalid_file_is_named(self) -> None:
-        self.write_epic("opengwasdb-stores-313.yaml", minimal_record())
-        wrong = minimal_record()
-        wrong["status"] = "done"
-        self.write_epic("opengwasdb-stores-314.yaml", {**wrong, "number": 314})
-        (self.epics / "broken.yaml").write_text("a: [unclosed")
-        result = records_collector.collect(self.epics, self.yardstick)
-        self.assertEqual([e["number"] for e in result["epics"]], [313])
-        self.assertEqual(result["epics"][0]["started"], "2026-10-21")
-        self.assertEqual(result["invalid"]["opengwasdb-stores-314.yaml"], ["status 'done' is not one of active, finished"])
-        self.assertEqual(list(result["invalid"]), ["broken.yaml", "opengwasdb-stores-314.yaml"])
-
-    def test_an_absent_or_empty_yardstick_directory_is_not_an_error(self) -> None:
-        self.assertEqual(
-            records_collector.collect(self.epics, self.yardstick)["yardstick"],
-            {"results": [], "invalid": {}},
-        )
-        self.yardstick.mkdir()
-        self.assertEqual(
-            records_collector.collect(self.epics, self.yardstick)["yardstick"],
-            {"results": [], "invalid": {}},
-        )
-
-    def test_yardstick_results_go_through_the_validator_given(self) -> None:
-        self.yardstick.mkdir()
-        (self.yardstick / "good.json").write_text('{"epic": 313}')
-        (self.yardstick / "bad.json").write_text('{"epic": "x"}')
-        (self.yardstick / "torn.json").write_text("{")
-
-        def validator(document: dict) -> list[str]:
-            return [] if isinstance(document.get("epic"), int) else ["epic is not an integer"]
-
-        result = records_collector.collect(self.epics, self.yardstick, validator)["yardstick"]
-        self.assertEqual(result["results"], [{"name": "good.json", "result": {"epic": 313}}])
-        self.assertEqual(result["invalid"]["bad.json"], ["epic is not an integer"])
-        self.assertTrue(result["invalid"]["torn.json"][0].startswith("could not be read"))
-
-
-def minimal_yardstick_result() -> dict:
-    return {
-        "schema": 1,
-        "workload_id": "w",
-        "workload_sha256": "0" * 64,
-        "opengwasdb": {"version": "0.3.0", "revision": "0d59f151c7618933747a59f825deeef6a51de9e1"},
-        "ogstores": {
-            "version": "0.1.0",
-            "commit": "08bd4a57f0d4e7f1e3f2f0f0f0f0f0f0f0f0f0f0",
-            "dirty": False,
-        },
-        "host": {"name": "h", "cpu_count": 4},
-        "load_average": {"before": [0.1, 0.2, 0.3], "after": [0.2, 0.2, 0.3]},
-        "started_utc": "2026-10-29T12:00:00Z",
-        "ended_utc": "2026-10-29T12:01:00Z",
-        "duration_s": 60.0,
-        "local_utc_offset_minutes": 0,
-        "veeam_window": False,
-        "repetitions": {"default": 5},
-        "stores": [{"store_id": "OGS-00011", "layout": "hybrid", "coverage": "gwas", "status": "pending", "reason": "x"}],
-    }
-
-
-class TestRecordsCollectorUsesTheYardstickValidator(unittest.TestCase):
-    def test_default_validator_reports_a_refused_result_by_name_and_passes_a_valid_one(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            epics, yardstick = Path(tmp) / "_epics", Path(tmp) / "_yardstick"
-            epics.mkdir()
-            yardstick.mkdir()
-            (yardstick / "good.json").write_text(json.dumps(minimal_yardstick_result()))
-            wrong_schema = {**minimal_yardstick_result(), "schema": 2}
-            (yardstick / "wrong-schema.json").write_text(json.dumps(wrong_schema))
-            negative = minimal_yardstick_result()
-            negative["duration_s"] = -1
-            (yardstick / "negative.json").write_text(json.dumps(negative))
-            (yardstick / "object.json").write_text('{"epic": 313}')
-            result = records_collector.collect(epics, yardstick)["yardstick"]
-        self.assertEqual([r["name"] for r in result["results"]], ["good.json"])
-        self.assertEqual(sorted(result["invalid"]), ["negative.json", "object.json", "wrong-schema.json"])
-        self.assertEqual(result["invalid"]["wrong-schema.json"], ["result schema must be 1, got 2"])
-        self.assertEqual(result["invalid"]["negative.json"], ["duration_s must not be negative, got -1"])
-
-    def test_one_malformed_result_is_that_files_error_and_never_the_sources(self) -> None:
-        """A shape the validator cannot read is refused by file name; the others are still read (#389)."""
-        with tempfile.TemporaryDirectory() as tmp:
-            epics, yardstick = Path(tmp) / "_epics", Path(tmp) / "_yardstick"
-            epics.mkdir()
-            yardstick.mkdir()
-            (yardstick / "good.json").write_text(json.dumps(minimal_yardstick_result()))
-            null_store = minimal_yardstick_result()
-            null_store["stores"] = [None]
-            (yardstick / "null-store.json").write_text(json.dumps(null_store))
-            string_engine = minimal_yardstick_result()
-            string_engine["opengwasdb"] = "0.3.0"
-            (yardstick / "string-engine.json").write_text(json.dumps(string_engine))
-            result = records_collector.collect(epics, yardstick)["yardstick"]
-        self.assertEqual([entry["name"] for entry in result["results"]], ["good.json"])
-        self.assertIn("stores[0] must be an object", result["invalid"]["null-store.json"][0])
-        self.assertIn("opengwasdb must be an object", result["invalid"]["string-engine.json"][0])
-
-    def test_a_validator_that_raises_is_that_files_error_too(self) -> None:
-        """Any exception from validating one file is that file's error, named, and the rest go on (#389)."""
-        with tempfile.TemporaryDirectory() as tmp:
-            epics, yardstick = Path(tmp) / "_epics", Path(tmp) / "_yardstick"
-            epics.mkdir()
-            yardstick.mkdir()
-            (yardstick / "good.json").write_text('{"epic": 313}')
-            (yardstick / "breaks.json").write_text('{"epic": null}')
-
-            def validator(document: dict) -> list[str]:
-                if document["epic"] is None:
-                    return [document["epic"].citation]  # AttributeError, not a refusal
-                return []
-
-            result = records_collector.collect(epics, yardstick, validator)["yardstick"]
-        self.assertEqual(result["results"], [{"name": "good.json", "result": {"epic": 313}}])
-        self.assertTrue(result["invalid"]["breaks.json"][0].startswith("AttributeError: "))
-
-
 class TestSiteData(unittest.TestCase):
     def setUp(self) -> None:
+        stub_manifest(self)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.tmp = Path(tmp.name)
         self.data = self.tmp / "data"
         self.registry = self.tmp / "stores"
         self.registry.mkdir()
-        self.epics = self.tmp / "_epics"
-        self.epics.mkdir()
-        self.catalog_root = self.tmp / "no-catalog"
         # The architecture collector reads git, never the host's clone: a fixture repository for each side.
         self.checkout = self.tmp / "checkout"
         self.engine = self.tmp / "engine"
@@ -946,8 +435,7 @@ class TestSiteData(unittest.TestCase):
     def run_all(self, gh: common.GhRunner) -> tuple[list[dict], list[str]]:
         lines: list[str] = []
         results = site_data.run(
-            self.data, gh=gh, catalog_root=self.catalog_root, registry=self.registry,
-            epics_dir=self.epics, yardstick_dir=self.tmp / "_yardstick", out=lines.append,
+            self.data, gh=gh, registry=self.registry, out=lines.append,
             repositories=staging.Repositories(checkouts={"opengwasdb-stores": self.checkout}, git_dirs={"opengwasdb": self.engine}),
             system_file=self.system,
         )
@@ -955,35 +443,39 @@ class TestSiteData(unittest.TestCase):
 
     def test_one_unavailable_source_is_recorded_and_the_others_are_intact(self) -> None:
         def gh(args: list[str], stdin: str | None = None) -> str:
-            if args[1] == "graphql":
-                raise common.CollectError("gh api graphql exited 4: could not resolve host")
-            return ""  # the releases endpoints: nothing
+            raise common.CollectError("gh api graphql exited 4: could not resolve host")
 
-        write_catalog_version(
-            self.tmp / "versions", "aaaaaaaaaaaaaaaa", built_at="2026-10-23T18:25:29Z", commit="560dae9",
-            counts=[("store", "OGS-00027", 1)], listed=[("OGS-00027", "g1")],
-        )
-        self.catalog_root = self.tmp / "versions"
         results, lines = self.run_all(gh)
         by_source = {r["source"]: r for r in results}
-        self.assertEqual(list(by_source), ["board", "catalog", "releases", "stores", "records", "architecture", "work"])
+        self.assertEqual(list(by_source), ["board", "stores", "architecture", "work"])
         self.assertFalse(by_source["board"]["available"])
         self.assertEqual(by_source["board"]["error"], "CollectError: gh api graphql exited 4: could not resolve host")
         self.assertEqual(
             sorted(k for k in by_source["board"] if k not in ("source", "available", "collected_at", "error")), []
         )
-        for source in ("catalog", "releases", "stores", "records", "architecture"):
+        for source in ("stores", "architecture"):
             self.assertTrue(by_source[source]["available"], source)
             self.assertIsNone(by_source[source]["error"], source)
         self.assertFalse(by_source["work"]["available"])  # the board it reads is down
-        self.assertEqual(by_source["catalog"]["versions"][0]["totals"], {"analyses": 1, "stores": 1})
         # Every source has its file, and the file is the result.
         self.assertEqual(sorted(p.name for p in self.data.iterdir()),
-                         ["architecture.json", "board.json", "catalog.json", "records.json", "releases.json", "stores.json", "work.json"])
+                         ["architecture.json", "board.json", "stores.json", "work.json"])
         self.assertEqual(json.loads((self.data / "board.json").read_text())["available"], False)
-        self.assertEqual(len(lines), 7)
+        self.assertEqual(len(lines), 4)
         self.assertEqual(lines[0], "UNAVAILABLE board: CollectError: gh api graphql exited 4: could not resolve host")
-        self.assertEqual(lines[1], "catalog: 1 versions, current none")
+        self.assertEqual(lines[1], "stores: 0 stores")
+
+    def test_the_sites_collection_is_the_architecture_and_the_stores_and_needs_no_gh(self) -> None:
+        def gh(args: list[str], stdin: str | None = None) -> str:
+            raise AssertionError("the site's collection called gh")
+
+        lines: list[str] = []
+        results = site_data.run(
+            self.data, gh=gh, out=lines.append, public_only=True, system_file=self.system,
+            repositories=staging.Repositories(checkouts={"opengwasdb-stores": self.checkout}, git_dirs={"opengwasdb": self.engine}))
+        self.assertEqual([r["source"] for r in results], ["architecture", "stores"])
+        self.assertTrue(results[0]["available"], results[0]["error"])
+        self.assertEqual(sorted(p.name for p in self.data.iterdir()), ["architecture.json", "stores.json"])
 
     def test_without_network_or_a_clone_the_registrys_sources_are_unavailable_and_the_rest_are_written(self) -> None:
         # og-dev-hub#7: the registry is read from the site's clone; with no clone and no
@@ -996,8 +488,8 @@ class TestSiteData(unittest.TestCase):
             results = site_data.run(self.data, gh=gh, out=lambda line: None, refresh=True, system_file=self.system)
 
         by_source = {r["source"]: r for r in results}
-        self.assertEqual(list(by_source), ["board", "catalog", "releases", "stores", "records", "architecture", "work"])
-        for source in ("catalog", "stores", "records"):
+        self.assertEqual(list(by_source), ["board", "stores", "architecture", "work"])
+        for source in ("stores",):
             self.assertFalse(by_source[source]["available"], source)
             self.assertIn("opengwasdb-stores", by_source[source]["error"], source)
         # og-dev-hub#9: a repository that cannot be cloned is that repository's gap, never the whole architecture.
@@ -1005,7 +497,7 @@ class TestSiteData(unittest.TestCase):
         self.assertIn("no-network", by_source["architecture"]["gaps"]["opengwasdb-stores"]["unreadable"])
         self.assertFalse(by_source["work"]["available"])  # the board it reads is down
         self.assertEqual(sorted(p.name for p in self.data.iterdir()),
-                         ["architecture.json", "board.json", "catalog.json", "records.json", "releases.json", "stores.json", "work.json"])
+                         ["architecture.json", "board.json", "stores.json", "work.json"])
 
     def test_an_unavailable_source_exits_0_unless_strict(self) -> None:
         down = [common.envelope("board", available=False, error="CollectError: offline"),
