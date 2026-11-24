@@ -130,16 +130,24 @@ _SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
 
 
 def summary(description: Any, limit: int = SUMMARY_CUT) -> str | None:
-    """The first sentence of a description, cut to about `limit` characters on a word boundary, ending in `…` when cut."""
+    """The first sentence of a description as written, cut to about `limit` characters on a word boundary, ending in `…` when cut.
+
+    The cut is made before host paths are scrubbed; a cut text that holds a host path ends before it.
+    """
     flat = " ".join(str(description or "").split())
     if not flat:
         return None
     end = _SENTENCE_END.search(flat)
     first = flat[:end.end()] if end else flat
-    if len(first) <= limit:
+    cut = first
+    if len(first) > limit:
+        cut = first[:limit + 1]
+        cut = cut[:cut.rfind(" ")] if " " in cut else first[:limit]
+    path = architecture_public.HOST_PATH.search(cut)
+    if path:  # end before a host path: the build never shows one, and a scrubbed `…/x` would sit beside the cut's `…`
+        cut = cut[:path.start()]
+    elif len(first) <= limit:
         return first
-    cut = first[:limit + 1]
-    cut = cut[:cut.rfind(" ")] if " " in cut else first[:limit]
     return cut.rstrip(" ,;:.-") + "…"
 
 
@@ -163,7 +171,7 @@ def inventory_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
         "url": url,
         "label": text(row.get("label")),
         "description": text((row.get("description") or "").strip() or None),
-        "summary": summary(text(row.get("description"))),
+        "summary": text(summary(row.get("description"))),
         "layout": _cell(row.get("layout"), str),
         "completion_state": _cell(row.get("completion_state"), str),
         "coverage": _cell(row.get("coverage"), str),

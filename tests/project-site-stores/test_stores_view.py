@@ -85,6 +85,17 @@ class TileTests(Fixture):
         self.assertLessEqual(len(short), 161)
         self.assertNotIn("A second sentence", short)
 
+    def test_a_host_path_ends_the_summary_before_it_and_never_leaves_two_ellipses(self) -> None:
+        real = ("Full dense Store Release of all 2,514 UK Biobank (ukb-b) GWAS-VCF Analyses declared in the OpenGWAS IGD "
+                "collection and verified present in /data/opengwasdb/raw/gwas-vcf/ukb-b, reference-completed under its own id "
+                "against the UKB EUR LD panel (ADR 0037).")
+        short = stores_view.summary(real)
+        self.assertEqual(short, "Full dense Store Release of all 2,514 UK Biobank (ukb-b) GWAS-VCF Analyses declared in the "
+                                "OpenGWAS IGD collection and verified present in…")
+        self.assertNotIn("……", short.replace("…/", "……"))
+        self.assertNotIn("…/", short)
+        self.assertEqual(stores_view.summary("Read at /data/opengwasdb/raw/x by the builder."), "Read at…")
+
     def test_a_shorter_description_is_its_first_sentence_alone(self) -> None:
         self.assertEqual(stores_view.summary("Dense build of UKB. Second sentence."), "Dense build of UKB.")
         self.assertEqual(stores_view.summary("No full stop here"), "No full stop here")
