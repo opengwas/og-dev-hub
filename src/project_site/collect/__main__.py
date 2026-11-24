@@ -1,9 +1,10 @@
 """`pixi run site-data`: run every collector, write `<data dir>/<source>.json`, print a line each (#389).
 
-    pixi run site-data [--data-dir PATH] [--catalog-root PATH] [--registry PATH] [--strict]
+    pixi run site-data [--data-dir PATH] [--catalog-root PATH] [--registry PATH] [--refresh] [--strict]
 
-opengwasdb-stores is read from `main` of the site's bare clone of it, or from the
-checkout `--registry` names (`staging.registry_root`).
+Every repository `system.yaml` lists is read from `main` of the site's bare clone
+of it, through one read handle each (`staging.Repositories`), fetched once with
+`--refresh`; opengwasdb-stores from the checkout `--registry` names instead.
 
 A source that fails is written as `available: false` with its error, printed as
 `UNAVAILABLE <source>: <error>`, and the others still run. The exit status is 0
@@ -18,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable
 
-from project_site import staging
+from project_site import paths, staging
 from project_site.collect import architecture, architecture_model, board, catalog, common, records, releases, stores, work
 
 
@@ -47,26 +48,36 @@ def describe(result: dict[str, Any]) -> str:
 
 
 def _describe_architecture(result: dict[str, Any]) -> str:
-    engine, summary, gaps = result["engine"], result["summary"], result["gaps"]
-    counts = {repo: sum(1 for c in result["components"] if c["repo"] == repo) for repo in ("registry", "engine")}
-    stale = " REFRESH FAILED" if (engine.get("refresh") or {}).get("ok") is False else ""
-    model = f"engine model at {engine['ref']} {engine['commit'][:8]}{stale}" if engine["model"] else (
-        f"NO engine model at {engine['ref']} {engine['commit'][:8]}")
-    # Without the engine's model the figures that need its layers and claims are
-    # unknown (`null`), and say so rather than reading 0 (#421 review).
-    upward = "unknown" if summary["upward_edges"] is None else (
-        f"{summary['upward_edges']} upward edges ({summary['upward_imports']} imports)")
-    def gap(found: dict[str, Any] | None) -> str:
-        return "unknown" if found is None else f"{len(found['unclaimed'])}/{len(found['stale'])}"
+    repos, summary, gaps = result["repos"], result["summary"], result["gaps"]
 
+    def gap(found: dict[str, Any] | None) -> str:
+        if not found or found.get("unclaimed") is None:
+            return "unknown"
+        return f"{len(found['unclaimed'])}/{len(found['stale'])}"
+
+    read = []
+    for name, repo in repos.items():
+        if repo.get("model"):
+            count = sum(1 for c in result["components"] if c["repo"] == name)
+            failed = " REFRESH FAILED" if (repo.get("refresh") or {}).get("ok") is False else ""
+            read.append(f"{name} {count} components at {repo['ref']} {str(repo['commit'])[:8]}{failed} "
+                        f"(gaps {gap(gaps.get(name))} unclaimed/stale)")
+    no_model = [name for name, repo in repos.items() if repo.get("model") is False]
+    unreadable = [f"{name} ({repo['error']})" for name, repo in repos.items() if repo.get("error")]
+    planned = [name for name, repo in repos.items() if repo.get("planned")]
+    # Without a model declaring layers the layering is unknown (`null`), and says so rather than reading 0 (#421 review).
+    upward = "layering unknown" if summary["upward_edges"] is None else (
+        f"{summary['upward_edges']} upward edges ({summary['upward_imports']} imports)")
     system = [f"{repo} {sentence}" for repo, found in gaps.items() if found
               for sentence in architecture_model.describe_system_gaps(found)]
-    note = f", SYSTEM GAPS: {'; '.join(system)}" if system else ""
+    seam = "unknown" if summary["registry_to_engine_imports"] is None else summary["registry_to_engine_imports"]
     return (
-        f"architecture: {counts['registry']} registry + {counts['engine']} engine components ({model}), "
-        f"gaps registry {gap(gaps['registry'])} engine {gap(gaps['engine'])} (unclaimed/stale){note}, "
-        f"{upward}, "
-        f"{summary['registry_to_engine_imports']} registry->engine imports, "
+        f"architecture: {', '.join(read) or 'no repository with a model'}"
+        + (f", NO MODEL: {', '.join(no_model)}" if no_model else "")
+        + (f", UNREADABLE: {'; '.join(unreadable)}" if unreadable else "")
+        + (f", PLANNED: {', '.join(planned)}" if planned else "")
+        + (f", SYSTEM GAPS: {'; '.join(system)}" if system else "")
+        + f", {upward}, {seam} registry->engine imports, "
         f"{summary['adrs_placed']} of {summary['adrs_total']} ADRs placed"
     )
 
@@ -77,7 +88,7 @@ def _describe_work(result: dict[str, Any]) -> str:
     return (
         f"work: {summary['owners']} owners, {summary['meets']} meets ({summary['coordinated']} coordinated, "
         f"{summary['uncoordinated']} uncoordinated, {summary['unlinkable']} unlinkable), {summary['branches']} branches"
-        + (f", ENGINE SIDE NOT MEASURED" if result.get("unmeasured", {}).get("engine") else "")
+        + (f", NOT MEASURED for {', '.join(sorted(result['unmeasured']))}" if result.get("unmeasured") else "")
         + (f", BRANCH FETCH FAILED for {', '.join(failed)}" if failed else "")
     )
 
@@ -90,33 +101,32 @@ def run(
     registry: Path | None = None,
     epics_dir: Path | None = None,
     yardstick_dir: Path | None = None,
-    source: staging.Registry | None = None,
+    repositories: staging.Repositories | None = None,
     engine_git: Path | None = None,
-    engine_ref: str = architecture.DEFAULT_ENGINE_REF,
-    refresh_engine: bool = False,
+    engine_ref: str = architecture.DEFAULT_REF,
+    refresh: bool = False,
     out: Callable[[str], Any] = print,
     checkout: Path | None = None,
+    system_file: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Run every collector into `data_dir`.
 
-    `source` is the opengwasdb-stores to read; left out, it is
-    `staging.registry_root(checkout)`, read once, the first time a collector
-    needs it, and fetched first when `refresh_engine` asks for a refresh.
-    `registry` (the Release Bundles), `epics_dir`, `yardstick_dir` and
-    `catalog_root` name other directories to read instead. A registry that
-    cannot be read makes each source that needs it unavailable, and no other.
+    `repositories` is the run's read handles; left out, they are made here, with
+    opengwasdb-stores read from `checkout` when one is named, opengwasdb from
+    `engine_git` at `engine_ref`, and every repository fetched once when
+    `refresh` asks. `registry` (the Release Bundles), `epics_dir`,
+    `yardstick_dir` and `catalog_root` name other directories to read instead.
+    `system_file` is the `system.yaml` read (by default this checkout's). A
+    registry that cannot be read makes each source that needs its files
+    unavailable, and no other.
     """
-    found: dict[str, Any] = {"registry": source}
-
-    def opengwasdb_stores() -> staging.Registry:
-        if found["registry"] is None:
-            found["registry"] = staging.registry_root(checkout, refresh=refresh_engine)
-        return found["registry"]
+    repositories = repositories or staging.Repositories(
+        refresh=refresh, checkouts={paths.REGISTRY: checkout}, git_dirs={paths.ENGINE: engine_git},
+        refs={paths.ENGINE: engine_ref})
 
     def files(*parts: str) -> Path:
-        root = opengwasdb_stores().root
-        if root is None:
-            raise common.CollectError("only opengwasdb-stores' git was read, not its files")
+        root = repositories.get(paths.REGISTRY, files=True).require().root
+        assert root is not None
         return root.joinpath(*parts)
 
     collectors: list[tuple[str, Callable[[], dict[str, Any]]]] = [
@@ -125,11 +135,9 @@ def run(
         ("releases", lambda: releases.collect(gh)),
         ("stores", lambda: stores.collect(registry or files("stores"))),
         ("records", lambda: records.collect(epics_dir or files("docs", "_epics"), yardstick_dir or files("docs", "_yardstick"))),
-        ("architecture", lambda: architecture.collect(
-            opengwasdb_stores(), engine_git=engine_git, engine_ref=engine_ref, refresh_engine=refresh_engine)),
+        ("architecture", lambda: architecture.collect(repositories, system_file=system_file)),
         # After board and architecture: it reads the files those two just wrote to `data_dir`.
-        ("work", lambda: work.collect(
-            data_dir, registry=opengwasdb_stores(), engine_git=engine_git, refresh=refresh_engine)),
+        ("work", lambda: work.collect(data_dir, repositories)),
     ]
     results = []
     for source, collect in collectors:
@@ -150,15 +158,15 @@ def main(argv: list[str] | None = None) -> int:
                         help="an opengwasdb-stores checkout to read (default: its main, from the site's clone)")
     parser.add_argument("--engine-git", type=Path, default=None,
                         help="the engine's git directory (default: the site's bare clone under the work root)")
-    parser.add_argument("--engine-ref", default=architecture.DEFAULT_ENGINE_REF,
+    parser.add_argument("--engine-ref", default=architecture.DEFAULT_REF,
                         help="the engine ref the architecture is read at (default: main)")
-    parser.add_argument("--refresh-engine", action="store_true",
-                        help="fetch the engine ref (and the branches of both repositories) first, and record whether that worked")
+    parser.add_argument("--refresh", "--refresh-engine", dest="refresh", action="store_true",
+                        help="fetch every listed repository once first (`main` and its branches), and record whether that worked")
     parser.add_argument("--strict", action="store_true", help="exit 1 when any source is unavailable")
     args = parser.parse_args(argv)
     results = run(args.data_dir or common.data_dir(), catalog_root=args.catalog_root,
                   checkout=args.registry, engine_git=args.engine_git, engine_ref=args.engine_ref,
-                  refresh_engine=args.refresh_engine)
+                  refresh=args.refresh)
     return 1 if args.strict and not all(r["available"] for r in results) else 0
 
 

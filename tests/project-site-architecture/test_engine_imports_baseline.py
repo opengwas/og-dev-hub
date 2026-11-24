@@ -36,7 +36,7 @@ from pathlib import Path
 
 import architecture_fixtures as fx
 
-from project_site import architecture_pages, staging
+from project_site import architecture_pages
 from project_site.collect import architecture
 from project_site.collect import architecture_graph as graph
 from project_site.collect import architecture_model as model
@@ -87,13 +87,13 @@ def measure(
     root = Path(tempfile.mkdtemp(prefix="baseline-"))
     test.addCleanup(shutil.rmtree, root, True)
     fx.make_repo(root / "registry", registry_files)
-    trees: dict[str, object] = {"registry": architecture.Tree(root / "registry", "HEAD")}
-    claims = {"registry": model.claims_of(model.load_model(registry_files["docs/architecture/components.yaml"])["components"])}
+    trees: dict[str, object] = {fx.REGISTRY: architecture.Tree(root / "registry", "HEAD")}
+    claims = {fx.REGISTRY: model.claims_of(model.load_model(registry_files["docs/architecture/components.yaml"])["components"])}
     if engine_files is not None:
         fx.make_repo(root / "engine", engine_files)
-        trees["engine"] = architecture.Tree(root / "engine", "main")
+        trees[fx.ENGINE] = architecture.Tree(root / "engine", "main")
         engine_model = model.load_model(engine_files["docs/architecture/components.yaml"])
-        claims["engine"] = model.claims_of(engine_model["components"])
+        claims[fx.ENGINE] = model.claims_of(engine_model["components"])
     return graph.engine_imports(graph.imports_of(trees, claims))
 
 
@@ -259,7 +259,9 @@ class Fixture:
         fx.make_repo(self.engine, engine)
 
     def collect(self) -> dict:
-        return architecture.collect(staging.registry_root(self.registry), engine_git=self.engine, engine_ref="main")
+        system = self.registry.parent / "system.yaml"
+        system.write_text(fx.SYSTEM_YAML, encoding="utf-8")
+        return architecture.collect(fx.repositories(self.registry, self.engine), system_file=system)
 
     def page(self) -> str:
         result = self.collect()
@@ -272,7 +274,7 @@ class CollectorTests(unittest.TestCase):
     def test_the_collector_reports_the_baselines_size_and_what_it_measures(self) -> None:
         result = Fixture(self).collect()
         self.assertEqual(
-            result["baseline"], {"path": BASELINE, "entries": 5, "measured": 5, "note": None}
+            result["baseline"], {"path": BASELINE, "from": fx.REGISTRY, "entries": 5, "measured": 5, "note": None}
         )
         # The same five imports the seam counts: one measurement, two views of it.
         self.assertEqual(result["summary"]["registry_to_engine_imports"], 5)
@@ -282,7 +284,7 @@ class CollectorTests(unittest.TestCase):
         baseline = fixture.collect()["baseline"]
         self.assertIsNone(baseline["entries"])
         self.assertEqual(baseline["measured"], 5)
-        self.assertIn(f"{BASELINE} is not in opengwas/opengwasdb-stores at", baseline["note"])
+        self.assertIn(f"{BASELINE} is not in opengwasdb-stores at HEAD", baseline["note"])
         self.assertIn(fixture.registry_commit[:12], baseline["note"])
 
     def test_the_seam_is_counted_without_the_engines_model(self) -> None:
@@ -301,7 +303,8 @@ class CollectorTests(unittest.TestCase):
         summary = Fixture(self, engine_model=False).collect()["summary"]
         self.assertIsNone(summary["upward_edges"])
         self.assertIsNone(summary["upward_imports"])
-        self.assertIsNone(summary["edges"])  # the whole graph's edges, engine half included
+        # Only the edges measured: opengwasdb-stores' one within itself (ogs -> gen); none is guessed for the engine.
+        self.assertEqual(summary["edges"], 1)
 
     def test_with_the_engines_model_the_layering_is_counted(self) -> None:
         summary = Fixture(self).collect()["summary"]
@@ -312,23 +315,23 @@ class CollectorTests(unittest.TestCase):
 class StructurePageTests(unittest.TestCase):
     def test_the_page_states_the_baselines_size_next_to_the_seam_counts(self) -> None:
         page = Fixture(self).page()
-        self.assertIn("5 imports from this repository into the engine", page)
+        self.assertIn("5 imports from opengwasdb-stores into opengwasdb, across 4 component pairs", page)
         self.assertIn(
-            f"**The engine-import baseline** (`{BASELINE}`) lists 5 imports of engine modules,"
-            " one per importing file and imported name; this repository makes 5 of them.",
+            f"**The engine-import baseline** (`{BASELINE}`, in opengwasdb-stores) lists 5 imports of engine modules,"
+            " one per importing file and imported name; opengwasdb-stores makes 5 of them.",
             page,
         )
 
     def test_an_unknown_baseline_says_so_and_never_shows_a_zero(self) -> None:
         page = Fixture(self, baseline=None).page()
-        self.assertIn(f"**The engine-import baseline is unknown**: {BASELINE} is not in opengwas/opengwasdb-stores at", page)
-        self.assertIn("This repository makes 5 imports of engine modules.", page)
+        self.assertIn(f"**The engine-import baseline is unknown**: {BASELINE} is not in opengwasdb-stores at", page)
+        self.assertIn("opengwasdb-stores makes 5 imports of engine modules.", page)
         self.assertNotIn("lists 0 imports", page)
 
     def test_without_the_engines_model_the_pairs_are_said_to_be_undrawable_not_zero(self) -> None:
         page = Fixture(self, engine_model=False).page()
-        self.assertIn("5 imports from this repository into the engine", page)
-        self.assertIn("cannot be drawn until the engine's model is at the ref read", page)
+        self.assertIn("5 imports from opengwasdb-stores into opengwasdb", page)
+        self.assertIn("cannot be drawn until opengwasdb's model is at the ref read", page)
         self.assertIn("lists 5 imports of engine modules", page)
         self.assertNotIn("0 imports", page)
         self.assertNotIn("0 component pairs", page)
@@ -336,14 +339,14 @@ class StructurePageTests(unittest.TestCase):
     def test_without_the_engines_model_the_layering_is_said_to_be_unmeasurable(self) -> None:
         page = Fixture(self, engine_model=False).page()
         self.assertIn(
-            "The engine's layering cannot be measured until its model is at the ref read", page
+            "The layering cannot be measured until a model that declares layers is at the ref read", page
         )
         self.assertNotIn("0 upward", page)
         self.assertNotIn("0 edges", page)
 
     def test_with_the_engines_model_the_layering_is_drawn_and_counted(self) -> None:
         page = Fixture(self).page()
-        self.assertIn("3 edges (3 imports) go against the layering", page)
+        self.assertIn("opengwasdb (Engine): 3 edges (3 imports) go against the layering", page)
         self.assertNotIn("cannot be measured", page)
 
 

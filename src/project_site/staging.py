@@ -3,8 +3,9 @@
 The site is one Quarto project over several repositories' documentation, so a
 render needs a tree it may alter. This module builds that tree:
 
-- a bare clone of each repository under the work root (`ensure_clone`), and the
-  registry's files extracted from its clone (`extract_tree`, `registry_root`);
+- a bare clone of each repository under the work root (`ensure_clone`), read
+  through one handle per repository (`Repositories`), and the registry's files
+  extracted from its clone (`extract_tree`);
 - the engine's `docs/` at the revision the registry's `pixi.lock` pins, keeping
   only its Markdown and self-contained HTML;
 - the registry's `CONTEXT.md` as the glossary page;
@@ -24,9 +25,9 @@ import io
 import shutil
 import subprocess
 import tarfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from project_site import paths
 from project_site.collect.common import CollectError
@@ -178,53 +179,141 @@ def extract_tree(clone: Path, ref: str, dest: Path) -> str:
     return commit
 
 
-@dataclass(frozen=True)
-class Registry:
-    """opengwasdb-stores as the site reads it: files from `root`, history from `git_dir` at `ref`.
+# A named checkout's pushed branches, as `git fetch origin` keeps them; a bare clone's are `BRANCHES`.
+CHECKOUT_FETCH = "+refs/heads/*:refs/remotes/origin/*"
 
-    `root` is `None` when only its history was asked for (`registry_root(files=False)`).
-    `clone` says the git directory is the site's bare clone, whose pushed branches
-    are `refs/heads/*`, rather than a checkout, whose are `refs/remotes/origin/*`.
-    `fetch` is the refresh's `{ok, error}`, or `None` when none was asked for.
+
+@dataclass(frozen=True)
+class Repository:
+    """One repository as the site reads it (og-dev-hub#9): its git at `ref`, and its files when asked for.
+
+    `git_dir` is the site's bare clone (`clone` true: pushed branches are
+    `refs/heads/*`), or a checkout named instead (`clone` false: they are
+    `refs/remotes/origin/*`). `commit` is what `ref` names there, or `None` when
+    the repository cannot be read at all, and then `error` says why, with git's
+    own message. `fetch` is this run's one fetch, `{ok, error}`, or `None` when
+    none was asked for. `root` holds its files: a named checkout's own, or the
+    tree extracted from the clone (opengwasdb-stores only, `extract_tree`), else
+    `None`.
     """
 
-    root: Path | None
+    name: str
     git_dir: Path
     ref: str
-    clone: bool = False
+    commit: str | None
+    root: Path | None = None
+    clone: bool = True
     fetch: dict[str, Any] | None = None
+    error: str | None = None
+
+    @property
+    def readable(self) -> bool:
+        return self.commit is not None
+
+    def require(self) -> "Repository":
+        """This handle, or a `CollectError` saying why the repository cannot be read."""
+        if self.commit is None:
+            raise CollectError(str(self.error))
+        return self
 
 
-def registry_root(
-    checkout: Path | None = None, *, tree: Path | None = None, files: bool = True, refresh: bool = False
-) -> Registry:
-    """The one owner of where the site reads opengwasdb-stores from (og-dev-hub#7).
+class Repositories:
+    """The one owner of where the site reads every repository from (og-dev-hub#7, og-dev-hub#9).
 
-    A named `checkout` (`--registry PATH`) is read as it is: its files, and its
-    git at `HEAD`. Otherwise the registry is `main` of the site's bare clone,
-    cloned the first time and fetched only on a `refresh` (`--refresh`, and the
-    build's refresh step), with the files the site reads extracted into `tree`
-    (by default beside this hub checkout's mirror) and git read at that same
-    commit. A refresh that fails is recorded in `fetch` and the `main` the clone
-    has is read; a clone with no `main` at all is a `CollectError`, naming why.
-    A caller that reads only git passes `files=False`, and nothing is extracted,
-    so it never rewrites a tree a render is reading.
+    `get(name)` is a repository's read handle. Each repository is cloned the
+    first time (bare, under the work root, `paths.clone_dir`) and fetched at
+    most once per run: on a `refresh`, or when a `revision` is asked for that
+    the clone lacks. Every later `get` of it is the same handle, so every reader
+    of one run (the architecture, the work, the build's engine docs) reads the
+    same commit. A clone or fetch that fails never raises: it is in the handle,
+    and whatever the clone already holds is read.
+
+    `checkouts` names a checkout to read instead of a clone (`--registry PATH`),
+    at `HEAD` with its own files; a refresh fetches its remote-tracking branches
+    only. `git_dirs` names another git directory to read a repository from
+    (`--engine-git`), never cloned into; `refs` another ref than `main`
+    (`--engine-ref`). `tree` is where opengwasdb-stores' files are extracted, by
+    default beside this hub checkout's mirror: only its readers need files
+    (`stores/`, `docs/_epics`, `CONTEXT.md`).
     """
-    if checkout is not None:
-        checkout = Path(checkout).resolve()
-        return Registry(root=checkout, git_dir=checkout, ref="HEAD")
-    clone = paths.clone_dir(paths.REGISTRY)
-    fetched = ensure_clone(clone, url=paths.clone_url(paths.REGISTRY), fetch=refresh)
+
+    def __init__(
+        self,
+        *,
+        refresh: bool = False,
+        checkouts: Mapping[str, Path | None] | None = None,
+        git_dirs: Mapping[str, Path | None] | None = None,
+        refs: Mapping[str, str | None] | None = None,
+        tree: Path | None = None,
+    ) -> None:
+        self.refresh = refresh
+        self.checkouts = {name: Path(path).resolve() for name, path in (checkouts or {}).items() if path is not None}
+        self.git_dirs = {name: Path(path) for name, path in (git_dirs or {}).items() if path is not None}
+        self.refs = {name: ref for name, ref in (refs or {}).items() if ref}
+        self.tree = tree
+        self.handles: dict[str, Repository] = {}
+        self.fetched: set[str] = set()
+
+    def get(self, name: str, *, files: bool = False, revision: str | None = None) -> Repository:
+        """`name`'s read handle; `files` extracts opengwasdb-stores' files; `revision` must be in the clone."""
+        if files and name != paths.REGISTRY:
+            raise ValueError(f"only {paths.REGISTRY}'s files are extracted, not {name}'s")
+        handle = self.handles.get(name)
+        if handle is None:
+            handle = self.handles[name] = self._read(name, revision)
+        elif revision is not None and handle.clone and name not in self.fetched and not has_revision(handle.git_dir, revision):
+            handle = self.handles[name] = replace(handle, fetch=self._fetch(name, handle.git_dir, url=None, fetch=True))
+        if files and handle.root is None and handle.readable:
+            root = Path(self.tree) if self.tree is not None else paths.registry_tree_dir(paths.staging_dir(paths.repo_root()))
+            extract_tree(handle.git_dir, str(handle.commit), root)
+            handle = self.handles[name] = replace(handle, root=root)
+        return handle
+
+    def git_dir(self, name: str) -> Path:
+        """Where `name`'s git is read from, without reading it: a named checkout, a named git directory or its clone."""
+        return self.checkouts.get(name) or self.git_dirs.get(name) or paths.clone_dir(name)
+
+    def _fetch(self, name: str, git_dir: Path, *, url: str | None, fetch: bool, refspec: str = BRANCHES) -> dict[str, Any] | None:
+        done = ensure_clone(git_dir, url=url, fetch=fetch and name not in self.fetched, refspec=refspec)
+        if done is not None:
+            self.fetched.add(name)
+        return done
+
+    def _read(self, name: str, revision: str | None) -> Repository:
+        if name in self.checkouts:
+            checkout = self.checkouts[name]
+            fetched = self._fetch(name, checkout, url=None, fetch=self.refresh, refspec=CHECKOUT_FETCH)
+            commit, why = _commit(checkout, "HEAD")
+            return Repository(name=name, git_dir=checkout, ref="HEAD", commit=commit, root=checkout, clone=False,
+                              fetch=fetched, error=None if commit else f"{name} cannot be read from {checkout}: {why}")
+        named = name in self.git_dirs
+        git_dir = self.git_dirs.get(name) or paths.clone_dir(name)
+        ref = self.refs.get(name, "main")
+        url = None if named else paths.clone_url(name)
+        wanted = revision is not None and (git_dir / "HEAD").exists() and not has_revision(git_dir, revision)
+        fetched = self._fetch(name, git_dir, url=url, fetch=self.refresh or wanted)
+        commit, why = _commit(git_dir, ref)
+        if commit is None and fetched and not fetched["ok"]:
+            why = fetched["error"]
+        return Repository(
+            name=name, git_dir=git_dir, ref=ref, commit=commit, clone=True, fetch=fetched if self.refresh or wanted else None,
+            error=None if commit else f"{name} cannot be read from its clone at {git_dir}: {str(why).strip()}",
+        )
+
+
+def registry_files() -> Path:
+    """opengwasdb-stores' files from its clone's `main`, for a reader run on its own (a run passes its handles)."""
+    root = Repositories().get(paths.REGISTRY, files=True).require().root
+    assert root is not None
+    return root
+
+
+def _commit(git_dir: Path, ref: str) -> tuple[str | None, str]:
+    """`(commit, "")` that `ref` names in `git_dir`, or `(None, why)`."""
     try:
-        commit = _git(clone, "rev-parse", "--verify", "main^{commit}").strip()
+        return _git(git_dir, "rev-parse", "--verify", f"{ref}^{{commit}}").strip(), ""
     except (OSError, subprocess.CalledProcessError) as error:
-        why = fetched["error"] if fetched and not fetched["ok"] else getattr(error, "stderr", "") or str(error)
-        raise CollectError(f"{paths.REGISTRY} cannot be read from its clone at {clone}: {str(why).strip()}") from error
-    root = None
-    if files:
-        root = Path(tree) if tree is not None else paths.registry_tree_dir(paths.staging_dir(paths.repo_root()))
-        extract_tree(clone, commit, root)
-    return Registry(root=root, git_dir=clone, ref=commit, clone=True, fetch=fetched if refresh else None)
+        return None, (getattr(error, "stderr", "") or str(error)).strip()
 
 
 def has_revision(clone: Path, revision: str) -> bool:

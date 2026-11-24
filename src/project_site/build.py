@@ -18,10 +18,12 @@ The mirror is where links are rewritten to GitHub, where a plain
 glossary is staged. Nothing is written into a checkout, so two renders of
 different checkouts, or of one checkout into two outputs, never collide.
 
-The registry is `main` of the site's bare clone, or the checkout `--registry`
-names (`staging.registry_root`). The engine's docs come from the revision the
-registry's `pixi.lock` pins, so the engine section describes the runtime the
-registry imports.
+Every repository is read through one handle per run (`staging.Repositories`),
+fetched once by the build's refresh: the registry is `main` of the site's bare
+clone, or the checkout `--registry` names. The engine's docs come from the
+revision the registry's `pixi.lock` pins, so the engine section describes the
+runtime the registry imports; the engine's clone is the same handle the
+collectors read, fetched again only when it lacks that revision.
 
 Quarto renders pages one after another, about a second each, so the render runs
 over several Quarto processes (`project_site.render`, `--jobs`, 24 by default)
@@ -89,7 +91,7 @@ class BuildReport:
 RENDER_MARKERS = frozenset({"index.html", "search.json", "site_libs"})
 
 
-def collect_data(mirror: Path, registry: staging.Registry, engine_clone: Path | None = None) -> list[dict]:
+def collect_data(mirror: Path, repositories: staging.Repositories) -> list[dict]:
     """Collect the site's data into the render's own directory (#391).
 
     The pages are rendered from the data of the registry being rendered, so
@@ -100,14 +102,14 @@ def collect_data(mirror: Path, registry: staging.Registry, engine_clone: Path | 
     """
     if os.environ.get(collect_common.DATA_DIR_ENV_VAR, "").strip():
         return []
+    registry = repositories.get(paths.REGISTRY, files=True).require()
+    assert registry.root is not None
     return site_data.run(
         mirror / "_data",
         registry=registry.root / "stores",
         epics_dir=registry.root / "docs" / "_epics",
         yardstick_dir=registry.root / "docs" / "_yardstick",
-        source=registry,
-        engine_git=engine_clone,
-        refresh_engine=True,
+        repositories=repositories,
     )
 
 
@@ -229,40 +231,44 @@ class Stage:
 
     hub: Path
     hub_commit: str
-    registry: staging.Registry
+    registry: staging.Repository
     registry_commit: str
     engine_clone: Path
     engine_commit: str
     mirror: Path
+    repositories: staging.Repositories | None = None
 
 
 def stage_everything(
     repo: Path,
     *,
-    registry: staging.Registry | None = None,
+    repositories: staging.Repositories | None = None,
     clone: Path | None = None,
     revision: str | None = None,
     stage_dir: Path | None = None,
 ) -> Stage:
     """Stage the mirror: the registry's docs, this hub's site and docs, the engine's docs and the glossary.
 
-    `repo` is the og-dev-hub checkout being rendered. `registry` is the
-    opengwasdb-stores it documents; left out, it is `main` of the site's clone,
-    fetched first: this is the build's refresh step (`staging.registry_root`).
-    `clone` and `revision` name the engine repository and commit; left out, they
-    come from the revision the registry's `pixi.lock` pins and the clone under
-    the work root, fetched only when it lacks that revision. `stage_dir` is where the mirror is
-    built; left out, it sits beside the output under the work root. A publish
-    gives its own, because the checkout it renders is a worktree that must stay
-    clean for `git worktree remove` to accept it.
+    `repo` is the og-dev-hub checkout being rendered. `repositories` is the
+    run's read handles; left out, they are every repository's clone, fetched
+    once first: this is the build's refresh step, and the registry's files are
+    extracted beside the mirror. `clone` and `revision` name the engine
+    repository and commit; left out, they come from the revision the registry's
+    `pixi.lock` pins and the engine's handle, fetched only when it lacks that
+    revision. `stage_dir` is where the mirror is built; left out, it sits beside
+    the output under the work root. A publish gives its own, because the
+    checkout it renders is a worktree that must stay clean for `git worktree
+    remove` to accept it.
     """
     repo = repo.resolve()
     mirror = Path(stage_dir) if stage_dir is not None else paths.staging_dir(repo)
-    if registry is None:
-        registry = staging.registry_root(tree=paths.registry_tree_dir(mirror), refresh=True)
-    registry_commit = paths.commit_of(registry.git_dir) if registry.ref == "HEAD" else registry.ref
+    if repositories is None:
+        repositories = staging.Repositories(refresh=True, tree=paths.registry_tree_dir(mirror))
+    registry = repositories.get(paths.REGISTRY, files=True).require()
+    assert registry.root is not None and registry.commit is not None
+    registry_commit = registry.commit
     pinned = revision or paths.pinned_opengwasdb_revision(registry.root / "pixi.lock")
-    clone = Path(clone) if clone is not None else _engine_clone(pinned)
+    clone = Path(clone) if clone is not None else _engine_clone(pinned, repositories)
     staging.mirror_docs(registry.root, mirror)
     staging.mirror_docs(repo, mirror, docs=SITE_DIR, replace=False)
     engine_section = mirror / ENGINE_SECTION
@@ -277,23 +283,24 @@ def stage_everything(
     write_engine_index(engine_section, revision=pinned, repository_url=paths.ENGINE_URL)
     return Stage(
         hub=repo, hub_commit=paths.commit_of(repo), registry=registry, registry_commit=registry_commit,
-        engine_clone=clone, engine_commit=pinned, mirror=mirror,
+        engine_clone=clone, engine_commit=pinned, mirror=mirror, repositories=repositories,
     )
 
 
-def _engine_clone(revision: str) -> Path:
-    """The site's clone of the engine, holding `revision`: fetched only when it does not, since a pin never moves.
+def _engine_clone(revision: str, repositories: staging.Repositories | None = None) -> Path:
+    """The engine's git, holding `revision`, through its read handle: fetched for it only when it lacks it, since a pin never moves.
 
     The fetch never raises. But a clone still without the pinned revision has no
     older engine to fall back to, so the render stops with git's message: a
     `CollectError`, which `main` and `publish.main` turn into exit status 2.
     """
-    clone = paths.clone_dir(paths.ENGINE)
-    fetched = staging.ensure_clone(clone, url=paths.clone_url(paths.ENGINE), fetch=not staging.has_revision(clone, revision))
-    if not staging.has_revision(clone, revision):
-        why = f": {fetched['error']}" if fetched and not fetched["ok"] else ""
-        raise collect_common.CollectError(f"the {paths.ENGINE} clone at {clone} does not have revision {revision}{why}")
-    return clone
+    handle = (repositories or staging.Repositories()).get(paths.ENGINE, revision=revision)
+    if not staging.has_revision(handle.git_dir, revision):
+        fetched = handle.fetch
+        why = f": {fetched['error']}" if fetched and not fetched["ok"] else f": {handle.error}" if handle.error else ""
+        raise collect_common.CollectError(
+            f"the {paths.ENGINE} clone at {handle.git_dir} does not have revision {revision}{why}")
+    return handle.git_dir
 
 
 def rewrite(stage: Stage) -> LinkReport:
@@ -348,9 +355,8 @@ def build_site(
     """
     repo = Path(repo).resolve() if repo is not None else paths.repo_root()
     output = Path(output).resolve() if output is not None else paths.output_dir(repo)
-    source = staging.registry_root(registry) if registry is not None else None
-    stage = stage_everything(repo, registry=source, stage_dir=stage_dir)
-    collect_data(stage.mirror, stage.registry, stage.engine_clone)
+    stage = stage_everything(repo, repositories=_repositories(registry, stage_dir, repo), stage_dir=stage_dir)
+    collect_data(stage.mirror, stage.repositories)
     links = rewrite(stage)
 
     started = time.monotonic()
@@ -374,6 +380,12 @@ def build_site(
         links=links,
         served=served,
     )
+
+
+def _repositories(registry: Path | None, stage_dir: Path | None, repo: Path) -> staging.Repositories:
+    """A render's read handles: every repository fetched once, the registry's files extracted beside the mirror."""
+    mirror = Path(stage_dir) if stage_dir is not None else paths.staging_dir(repo)
+    return staging.Repositories(refresh=True, checkouts={paths.REGISTRY: registry}, tree=paths.registry_tree_dir(mirror))
 
 
 def render_checkout(source_commit: str, checkout: Path, output: Path, *, jobs: int = render.DEFAULT_JOBS) -> Path:
@@ -525,7 +537,7 @@ def _sync_tree(source: Path, served: Path) -> int:
 
 
 def _restage_on_change(
-    repo: Path, served: Path, stop: "threading.Event", registry: staging.Registry, named: Path | None
+    repo: Path, served: Path, stop: "threading.Event", repositories: staging.Repositories, named: Path | None
 ) -> None:
     """Keep the served tree current while the preview runs: a source edit is re-staged."""
     previous = _preview_inputs(repo, named)
@@ -536,8 +548,8 @@ def _restage_on_change(
         previous = current
         stop.wait(1.0)  # let a save settle before staging it
         try:
-            stage = stage_everything(repo, registry=registry)
-            collect_data(stage.mirror, stage.registry)
+            stage = stage_everything(repo, repositories=repositories)
+            collect_data(stage.mirror, repositories)
             rewrite(stage)
             _sync_tree(stage.mirror, served)
             print("restaged the docs mirror", flush=True)
@@ -554,15 +566,15 @@ def preview(repo: Path | None = None, registry: Path | None = None) -> int:
     restarting the command.
     """
     repo = Path(repo).resolve() if repo is not None else paths.repo_root()
-    source = staging.registry_root(registry) if registry is not None else None
-    stage = stage_everything(repo, registry=source)
-    collect_data(stage.mirror, stage.registry)
+    repositories = _repositories(registry, None, repo)
+    stage = stage_everything(repo, repositories=repositories)
+    collect_data(stage.mirror, repositories)
     rewrite(stage)
     served = paths.preview_dir(repo)
     _sync_tree(stage.mirror, served)
     stop = threading.Event()
     watcher = threading.Thread(
-        target=_restage_on_change, args=(repo, served, stop, stage.registry, registry), daemon=True
+        target=_restage_on_change, args=(repo, served, stop, repositories, registry), daemon=True
     )
     watcher.start()
     process = subprocess.Popen(["quarto", "preview", str(served)], env=render_env(stage.registry_commit))

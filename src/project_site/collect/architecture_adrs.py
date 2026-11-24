@@ -1,4 +1,4 @@
-"""Place each ADR on the architecture (#418).
+"""Place each ADR on the architecture (#418), from every repository read (og-dev-hub#9).
 
 An ADR belongs to a component for one of two reasons, and no other:
 
@@ -13,7 +13,12 @@ An ADR belongs to a component for one of two reasons, and no other:
 A component's name that appears only in the body, however often, places
 nothing: counting words rewarded long ADRs and wrongly placed ones that merely
 discuss a neighbour. An ADR placed nowhere is still listed, with no components,
-so the page can say which decisions the map cannot reach.
+so the page can say which decisions the map cannot reach. Code is placed only
+into a repository with a model: only its claims say which component owns a file.
+
+An ADR that names another decision across repositories (`<repo> ADR NNNN`,
+og-dev-hub ADR 0002, where `<repo>` is a listed repository) records it in
+`cites`, which the pages show as a link to that ADR.
 """
 
 from __future__ import annotations
@@ -21,32 +26,57 @@ from __future__ import annotations
 import re
 from typing import Any, Mapping, Sequence
 
-from project_site.collect import architecture_model as model_rules, citations
+from project_site.collect import architecture_graph, architecture_model as model_rules, citations
 
 ADR_PATH = re.compile(r"docs/adr/(\d{4})-.*\.md$")
 PATH_CITE = re.compile(r"(?<![\w./:-])((?:[\w.-]+/)+[\w.-]+\.(?:py|smk|sh|toml))\b")
+# A GitHub link to a file of any opengwas repository; the collector keeps the ones of a listed repository it read.
 URL_CITE = re.compile(
-    r"github\.com/opengwas/(opengwasdb(?:-stores)?)/(?:blob|tree)/[^/\s]+/([^\s#)?\]>`'\"]+)"
+    r"github\.com/opengwas/([\w.-]+)/(?:blob|tree)/[^/\s]+/([^\s#)?\]>`'\"]+)"
 )
-REPO_OF_URL = {"opengwasdb": "engine", "opengwasdb-stores": "registry"}
-GITHUB = {"engine": "opengwas/opengwasdb", "registry": "opengwas/opengwasdb-stores"}
+GITHUB = "https://github.com/opengwas"
+
+
+def adr_citations(text: str, repos: Sequence[str]) -> list[dict[str, str]]:
+    """Every `<repo> ADR NNNN` of `text` whose `<repo>` is one of `repos`, as `{repo, number}`, sorted, once each.
+
+    The form is og-dev-hub ADR 0002's: a citation that crosses repositories names
+    the repository, because the same number means different things in each.
+    """
+    if not repos:
+        return []
+    names = "|".join(re.escape(r) for r in sorted(repos, key=len, reverse=True))
+    found = {
+        (repo, number.zfill(4))
+        for repo, number in re.findall(r"(?<![\w./-])(" + names + r")(?![\w-])\s+ADR[\s-]?(\d{1,4})\b", text)
+    }
+    return [{"repo": repo, "number": number} for repo, number in sorted(found)]
 
 
 def place(
     trees: Mapping[str, Any],
     claims: Mapping[str, Sequence[tuple[str, str]]],
     components: Sequence[Mapping[str, Any]],
-    modules: Mapping[str, tuple[str, str]],
+    modules: Mapping[str, Mapping[str, str]],
+    repos: Sequence[str] = (),
 ) -> list[dict[str, Any]]:
-    """Every ADR of both repositories, with `components` as `{component id: "code" | "title"}`."""
-    packages = sorted({module.split(".")[0] for module in modules})
-    dotted = re.compile(r"\b((?:" + "|".join(map(re.escape, packages)) + r")(?:\.[A-Za-z_0-9]+)+)") if packages else None
+    """Every ADR of every tree, with `components` as `{component id: "code" | "title"}` and `cites`.
+
+    `trees` and `modules` are keyed by repository name, every repository read;
+    `claims` only the repositories with a model, the only ones code is placed in.
+    A citation is resolved in the ADR's own repository first, then in those.
+    `repos` is every listed repository name, which `cites` recognises.
+    """
     names = {
         c["id"]: re.compile(r"(?<!\w)" + re.escape(c["name"]), re.IGNORECASE) for c in components
     }
     adrs: list[dict[str, Any]] = []
-    for repo in ("registry", "engine"):
-        tree = trees[repo]
+    for repo, tree in trees.items():
+        reach = [repo, *[r for r in claims if r != repo]]
+        reach_modules = {r: modules.get(r) or {} for r in reach}
+        packages = sorted({module.split(".")[0] for found in reach_modules.values() for module in found})
+        dotted = re.compile(r"\b((?:" + "|".join(map(re.escape, packages)) + r")(?:\.[A-Za-z_0-9]+)+)") if packages else None
+        reach_trees = {r: trees[r] for r in reach if r in trees}
         paths = sorted(f for f in tree.files if ADR_PATH.search(f))
         texts = tree.read(paths)
         for path in paths:
@@ -54,8 +84,8 @@ def place(
             title = next((line[2:].strip() for line in text.splitlines() if line.startswith("# ")), path)
             placed = {
                 cid: "code"
-                for found_repo, found in _cited_files(text, repo, trees, modules, dotted)
-                if (cid := model_rules.owner(claims[found_repo], found))
+                for found_repo, found in _cited_files(text, repo, reach_trees, reach_modules, dotted)
+                if (cid := model_rules.owner(claims.get(found_repo) or [], found))
             }
             for cid, pattern in names.items():
                 if cid not in placed and pattern.search(title):
@@ -67,8 +97,9 @@ def place(
                     "path": path,
                     "title": title,
                     "status": _status(text),
-                    "url": f"https://github.com/{GITHUB[repo]}/blob/main/{path}",
+                    "url": f"{GITHUB}/{repo}/blob/main/{path}",
                     "components": dict(sorted(placed.items())),
+                    "cites": adr_citations(text, repos),
                 }
             )
     return adrs
@@ -111,7 +142,7 @@ def cited_strings(text: str | None) -> list[str]:
 
 
 def _cited_files(
-    text: str, home: str, trees: Mapping[str, Any], modules: Mapping[str, tuple[str, str]], dotted: re.Pattern | None
+    text: str, home: str, trees: Mapping[str, Any], modules: Mapping[str, Mapping[str, str]], dotted: re.Pattern | None
 ) -> set[tuple[str, str]]:
     """The `(repository, file)` pairs a text cites, by dotted module, GitHub link or path."""
     return _resolve(*_extract(text, dotted), home, trees, modules)
@@ -119,22 +150,18 @@ def _cited_files(
 
 def _resolve(
     names: Sequence[str], urls: Sequence[tuple[str, str]], paths: Sequence[str], home: str,
-    trees: Mapping[str, Any], modules: Mapping[str, tuple[str, str]],
+    trees: Mapping[str, Any], modules: Mapping[str, Mapping[str, str]],
 ) -> set[tuple[str, str]]:
     found: set[tuple[str, str]] = set()
     for name in names:
-        parts = name.split(".")
-        while parts and ".".join(parts) not in modules:
-            parts.pop()
-        if parts:
-            found.add(modules[".".join(parts)])
+        if hit := architecture_graph.resolve(name, home, modules):
+            found.add(hit)
     for slug, path in urls:
-        repo = REPO_OF_URL[slug]
-        if path in set(trees[repo].files):
-            found.add((repo, path))
+        if slug in trees and path in set(trees[slug].files):
+            found.add((slug, path))
     listings = {repo: tree.files for repo, tree in trees.items()}
     for raw in paths:
-        resolved = citations.resolve_path(raw, home, listings).found
-        if resolved:
-            found.add(resolved)
+        resolved = citations.resolve_path(raw, home, listings)
+        if resolved.found:
+            found.add(resolved.found)
     return found

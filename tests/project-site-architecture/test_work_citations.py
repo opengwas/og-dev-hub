@@ -12,23 +12,24 @@ from __future__ import annotations
 
 import unittest
 
+import work_fixtures as fx
 from work_fixtures import ARCHITECTURE, board, compute, component, epic, states, ticket
 
 from project_site.collect import citations
 
 FILES = {
-    "engine": [
+    fx.ENGINE: [
         "opengwasdb/encoding/codec.py",
         "opengwasdb/layouts/ragged/zarr_csr.py",
         "opengwasdb/a/x/dup.py",
         "opengwasdb/b/x/dup.py",
     ],
-    "registry": ["src/project_site/pages.py", "src/other/dup.py"],
+    fx.STORES: ["src/project_site/pages.py", "src/other/dup.py"],
 }
 WITH_FILES = {
     **ARCHITECTURE,
     "files": FILES,
-    "components": [*ARCHITECTURE["components"], component("ragged", "Ragged layout", "engine", ["opengwasdb/layouts/ragged/"])],
+    "components": [*ARCHITECTURE["components"], component("ragged", "Ragged layout", fx.ENGINE, ["opengwasdb/layouts/ragged/"])],
 }
 
 
@@ -38,17 +39,17 @@ def work_of(*cited: str) -> dict:
 
 class ResolverTests(unittest.TestCase):
     def test_an_exact_file_is_that_file(self) -> None:
-        self.assertEqual(citations.resolve_path("opengwasdb/encoding/codec.py", "engine", FILES).found,
-                         ("engine", "opengwasdb/encoding/codec.py"))
+        self.assertEqual(citations.resolve_path("opengwasdb/encoding/codec.py", fx.ENGINE, FILES).found,
+                         (fx.ENGINE, "opengwasdb/encoding/codec.py"))
 
     def test_a_line_is_stripped(self) -> None:
-        self.assertEqual(citations.resolve_path("layouts/ragged/zarr_csr.py:551", "engine", FILES).found,
-                         ("engine", "opengwasdb/layouts/ragged/zarr_csr.py"))
+        self.assertEqual(citations.resolve_path("layouts/ragged/zarr_csr.py:551", fx.ENGINE, FILES).found,
+                         (fx.ENGINE, "opengwasdb/layouts/ragged/zarr_csr.py"))
 
     def test_a_suffix_matching_two_files_is_none_with_both_as_candidates(self) -> None:
-        got = citations.resolve_path("x/dup.py", "engine", FILES)
+        got = citations.resolve_path("x/dup.py", fx.ENGINE, FILES)
         self.assertIsNone(got.found)
-        self.assertEqual(got.candidates, (("engine", "opengwasdb/a/x/dup.py"), ("engine", "opengwasdb/b/x/dup.py")))
+        self.assertEqual(got.candidates, ((fx.ENGINE, "opengwasdb/a/x/dup.py"), (fx.ENGINE, "opengwasdb/b/x/dup.py")))
 
 
 class WorkCitationTests(unittest.TestCase):

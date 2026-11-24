@@ -919,13 +919,19 @@ class TestSiteData(unittest.TestCase):
             for args in (["init", "-q", "-b", "main"], ["add", "-A"],
                          ["-c", "user.name=t", "-c", "user.email=t@e.org", "commit", "-q", "-m", "x"]):
                 subprocess.run(["git", "-C", str(repo), *args], check=True)
+        # The two repositories it lists, so no other is cloned (og-dev-hub#9).
+        self.system = self.tmp / "system.yaml"
+        self.system.write_text(
+            "system: {name: S, summary: s}\npeople: []\nexternal: []\ncontainers: []\ncontainer_relations: []\n"
+            "repos:\n  - {name: opengwasdb-stores, visibility: public}\n  - {name: opengwasdb, visibility: public}\n")
 
     def run_all(self, gh: common.GhRunner) -> tuple[list[dict], list[str]]:
         lines: list[str] = []
         results = site_data.run(
             self.data, gh=gh, catalog_root=self.catalog_root, registry=self.registry,
             epics_dir=self.epics, yardstick_dir=self.tmp / "_yardstick", out=lines.append,
-            source=staging.registry_root(self.checkout), engine_git=self.engine,
+            repositories=staging.Repositories(checkouts={"opengwasdb-stores": self.checkout}, git_dirs={"opengwasdb": self.engine}),
+            system_file=self.system,
         )
         return results, lines
 
@@ -969,13 +975,17 @@ class TestSiteData(unittest.TestCase):
 
         with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": str(self.tmp / "work")}), \
                 mock.patch.object(site_paths, "GITHUB", str(self.tmp / "no-network")):
-            results = site_data.run(self.data, gh=gh, out=lambda line: None, refresh_engine=True)
+            results = site_data.run(self.data, gh=gh, out=lambda line: None, refresh=True, system_file=self.system)
 
         by_source = {r["source"]: r for r in results}
         self.assertEqual(list(by_source), ["board", "catalog", "releases", "stores", "records", "architecture", "work"])
-        for source in ("catalog", "stores", "records", "architecture", "work"):
+        for source in ("catalog", "stores", "records"):
             self.assertFalse(by_source[source]["available"], source)
             self.assertIn("opengwasdb-stores", by_source[source]["error"], source)
+        # og-dev-hub#9: a repository that cannot be cloned is that repository's gap, never the whole architecture.
+        self.assertTrue(by_source["architecture"]["available"])
+        self.assertIn("no-network", by_source["architecture"]["gaps"]["opengwasdb-stores"]["unreadable"])
+        self.assertFalse(by_source["work"]["available"])  # the board it reads is down
         self.assertEqual(sorted(p.name for p in self.data.iterdir()),
                          ["architecture.json", "board.json", "catalog.json", "records.json", "releases.json", "stores.json", "work.json"])
 

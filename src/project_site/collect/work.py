@@ -29,7 +29,7 @@ from itertools import combinations
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from project_site import paths, staging
+from project_site import staging
 from project_site.collect import architecture_model as model_rules, branches as branch_reader, citations, plans as plan_reader
 from project_site.collect.common import CollectError
 
@@ -37,10 +37,6 @@ SCHEMA_VERSION = 1
 LIVE_STATUSES = ("Active", "Todo", "Paused")
 LIVE_STATES = ("building", "active")
 STATUS_STATE = {"Active": "active", "Todo": "planned", "Paused": "paused"}
-REPO_KIND = {"opengwasdb": "engine", "opengwasdb-stores": "registry"}
-KIND_REPO = {kind: repo for repo, kind in REPO_KIND.items()}
-# A checkout's pushed branches; a bare clone's are `staging.BRANCHES`.
-REGISTRY_FETCH = "+refs/heads/*:refs/remotes/origin/*"
 
 
 def compute(
@@ -50,22 +46,26 @@ def compute(
 ) -> dict[str, Any]:
     """The work output from the two collectors' documents and the branches read; no I/O."""
     components = [c for c in architecture.get("components") or [] if isinstance(c, Mapping)]
+    repos = {name: r for name, r in (architecture.get("repos") or {}).items() if isinstance(r, Mapping)}
+    modelled = [name for name, r in repos.items() if r.get("model")]
+    modelled += sorted({c["repo"] for c in components} - set(modelled))
     claims = {
-        kind: model_rules.claims_of(c for c in components if c["repo"] == kind and c.get("paths"))
-        for kind in ("engine", "registry")
+        repo: model_rules.claims_of(c for c in components if c["repo"] == repo and c.get("paths"))
+        for repo in modelled
     }
     by_id = {c["id"]: c for c in components}
-    # Without the engine's model no engine file belongs to any component, so engine-side
-    # work is unknown: it is said to be, never turned into "no work" or "no meets".
-    engine = architecture.get("engine") or {}
-    unmeasured: dict[str, str] = {}
-    if not engine.get("model"):
-        unmeasured["engine"] = str(engine.get("note") or f"no architecture model at {engine.get('ref')}")
+    # Without a repository's model no file of it belongs to any component, so its work is
+    # unknown: it is said to be, never turned into "no work" or "no meets".
+    unmeasured: dict[str, str] = {
+        name: str(r.get("note") or r.get("error") or f"no architecture model at {r.get('ref')}")
+        for name, r in repos.items() if not r.get("planned") and not r.get("model")
+    }
 
     listed = architecture.get("files")
     listings = {k: v for k, v in listed.items() if isinstance(v, list)} if isinstance(listed, Mapping) else {}
 
-    is_code = {"registry": model_rules.is_registry_code, "engine": model_rules.is_engine_code}
+    is_code = {repo: model_rules.code_rule(claims[repo]) for repo in claims}
+    roots = {repo: _source_root(repos.get(repo) or {}, claims[repo]) for repo in claims}
 
     def place(strings: Sequence[str], home: str) -> tuple[list[tuple[str, str, str]], list[tuple[str, list[str]]]]:
         """`(component, cited string, path status)` for each placed citation, and the ambiguous ones.
@@ -76,6 +76,7 @@ def compute(
         """
         placed: list[tuple[str, str, str]] = []
         unresolved: list[tuple[str, list[str]]] = []
+        order = (home, *[k for k in claims if k != home])
         for text in strings:
             status = "n/a"
             if "/" in text:
@@ -86,11 +87,11 @@ def compute(
                 if got.found:
                     status, targets = "found", [got.found]
                 else:
-                    targets = [(kind, citations.without_line(text)) for kind in (home, *[k for k in claims if k != home])]
+                    targets = [(kind, citations.without_line(text)) for kind in order]
             else:
-                targets = [(kind, path) for kind in (home, *[k for k in claims if k != home]) for path in _modules(text, kind)]
+                targets = [(kind, path) for kind in order for path in _modules(text, roots[kind])]
             for kind, path in targets:
-                if cid := model_rules.owner(claims[kind], path):
+                if cid := model_rules.owner(claims.get(kind) or [], path):
                     if "/" in text and status != "found":
                         status = "not found" if kind in listings and is_code[kind](path) else "unchecked"
                     placed.append((cid, text, status))
@@ -126,8 +127,8 @@ def compute(
                 not_found_rows.add((owner, item, text, cid))
 
     for key, e in epics.items():
-        home = REPO_KIND.get(key.split("#")[0])
-        # An epic of a repository that is neither the engine nor this one has no claims to cite against.
+        home = _home(key, claims)
+        # An epic of a repository without a model has no claims to cite against.
         placed, ambiguous = place(e.get("cited") or [], home) if home else ([], [])
         unresolved_rows |= {(key, key, text, tuple(paths)) for text, paths in ambiguous}
         cited_signals(key, key, "scope", "scope", placed)
@@ -135,7 +136,7 @@ def compute(
             if child["state"] != "OPEN":
                 continue
             state = "waiting" if child["key"] in blocked else STATUS_STATE[e["status"]]
-            child_home = REPO_KIND.get(child["key"].split("#")[0])
+            child_home = _home(child["key"], claims)
             placed, ambiguous = place(child.get("cited") or [], child_home) if child_home else ([], [])
             unresolved_rows |= {(key, child["key"], text, tuple(paths)) for text, paths in ambiguous}
             cited_signals(key, child["key"], "cited", state, placed)
@@ -145,7 +146,7 @@ def compute(
     chosen: dict[tuple[str, str], tuple[str, Mapping[str, Any]]] = {}
     sources = []
     for found in branch_sets:
-        sources.append({k: found.get(k) for k in ("repo", "git_dir", "main", "days", "fetch")}
+        sources.append({k: found.get(k) for k in ("repo", "git_dir", "main", "days", "fetch", "error")}
                        | {"local": any(b.get("local") for b in found["branches"]), "count": len(found["branches"]),
                           # What the reader left out, by name and reason: an orphan branch is no work against main.
                           "skipped": list(found.get("skipped") or [])})
@@ -155,8 +156,8 @@ def compute(
                 chosen[key] = (found["repo"], b)
     listed: list[dict[str, Any]] = []
     for repo, b in chosen.values():
-        owner, item, state = _branch_owner(b, repo, epics, every_epic, ticket_epic, ticket_state, owners)
-        cids = sorted({cid for f in b["files"] if (cid := model_rules.owner(claims[REPO_KIND[repo]], f))})
+        owner, item, state = _branch_owner(b, repo, list(repos), epics, every_epic, ticket_epic, ticket_state, owners)
+        cids = sorted({cid for f in b["files"] if (cid := model_rules.owner(claims.get(repo) or [], f))})
         for cid in cids:
             signal(cid, owner, item, "branch", state, [f"{repo}:{b['name']}"])
         listed.append({**b, "owner": owner, "item": item, "components": cids})
@@ -190,8 +191,7 @@ def compute(
             "board": {"collected_at": board.get("collected_at")},
             "architecture": {
                 "collected_at": architecture.get("collected_at"),
-                "engine": {k: (architecture.get("engine") or {}).get(k) for k in ("ref", "commit")},
-                "registry": {k: (architecture.get("registry") or {}).get(k) for k in ("ref", "commit")},
+                "repos": {name: {k: r.get(k) for k in ("ref", "commit", "visibility")} for name, r in repos.items()},
             },
         },
         "owners": [owners[k] for k in sorted(owners) if k in with_signals],
@@ -272,10 +272,22 @@ def _title(epic: Mapping[str, Any]) -> str:
     return title[len("Epic:"):].strip() if title.lower().startswith("epic:") else title
 
 
-def _modules(cited: str, kind: str) -> list[str]:
-    """The files a dotted module name can mean in repository `kind`, longest first."""
+def _home(key: str, claims: Mapping[str, Any]) -> str | None:
+    """The repository a `repo#n` key is in, when it has a model to place citations by."""
+    repo = key.split("#")[0]
+    return repo if repo in claims else None
+
+
+def _source_root(repo: Mapping[str, Any], claims: Sequence[tuple[str, str]]) -> str:
+    """Where a repository's modules are named from, as the collector read it; else as its claims say."""
+    if isinstance(repo.get("source_root"), str):
+        return repo["source_root"]
+    return "src/" if any(path.startswith("src/") for path, _ in claims) else ""
+
+
+def _modules(cited: str, root: str) -> list[str]:
+    """The files a dotted module name can mean in a repository whose modules are named from `root`, longest first."""
     parts = cited.split(".")
-    root = "src/" if kind == "registry" else ""
     paths = []
     while parts:
         base = root + "/".join(parts)
@@ -285,14 +297,20 @@ def _modules(cited: str, kind: str) -> list[str]:
 
 
 def _branch_owner(
-    b: Mapping[str, Any], repo: str, epics: Mapping[str, Any], every_epic: Mapping[str, Any],
+    b: Mapping[str, Any], repo: str, names: Sequence[str], epics: Mapping[str, Any], every_epic: Mapping[str, Any],
     ticket_epic: Mapping[str, str], ticket_state: Mapping[str, str], owners: dict[str, dict[str, Any]],
 ) -> tuple[str, str, str]:
-    """`(owner, item, state)` of a branch, adding an owner that is not a live epic of the board."""
+    """`(owner, item, state)` of a branch, adding an owner that is not a live epic of the board.
+
+    The epic a lane's name gives (`orch/<epic>/...`) is looked up in the branch's
+    own repository first, then in every other listed repository, in `system.yaml`'s
+    order: an epic's lanes live in each repository whose files it changes.
+    """
     epic, ticket = b.get("epic"), b.get("ticket")
     if epic:
-        other = KIND_REPO["registry" if REPO_KIND[repo] == "engine" else "engine"]
-        epic = next((k for k in (epic, f"{other}#{epic.split('#')[1]}") if k in every_epic), epic)
+        number = epic.split("#")[1]
+        candidates = [epic, *[f"{name}#{number}" for name in names if name != repo]]
+        epic = next((k for k in candidates if k in every_epic), epic)
     if not epic and ticket:
         epic = ticket_epic.get(ticket)
     owner = epic or ticket
@@ -328,17 +346,15 @@ def _read(data_dir: Path, source: str) -> tuple[dict[str, Any] | None, str]:
     return document, ""
 
 
-def repo_of(git_dir: Path) -> str:
-    """Which of the two repositories a git directory is, by its `origin`, else by its package."""
+def repo_of(git_dir: Path, names: Sequence[str]) -> str:
+    """Which listed repository a git directory is a clone of, by its `origin` URL; an error when it is none."""
     done = subprocess.run(["git", "-C", str(git_dir), "remote", "get-url", "origin"], capture_output=True, text=True, check=False)
     url = done.stdout.strip().removesuffix(".git").rstrip("/")
-    if done.returncode == 0 and url:
-        name = url.rsplit("/", 1)[-1]
-        if name in REPO_KIND:
-            return name
-    tree = subprocess.run(["git", "-C", str(git_dir), "ls-tree", "--name-only", "-z", "HEAD"], capture_output=True, check=False)
-    top = model_rules.split_nul(tree.stdout.decode("utf-8", "replace"))
-    return "opengwasdb" if "opengwasdb" in top else "opengwasdb-stores"
+    name = url.rsplit("/", 1)[-1] if done.returncode == 0 and url else ""
+    if name in names:
+        return name
+    raise CollectError(
+        f"{git_dir} is not a clone of a repository system.yaml lists: its origin is {url or 'not set'}")
 
 
 def _has_ref(git_dir: Path, ref: str) -> bool:
@@ -347,54 +363,53 @@ def _has_ref(git_dir: Path, ref: str) -> bool:
 
 
 def read_branches(
-    *, registry: staging.Registry, engine_git: Path, refresh: bool = False,
-    local: Sequence[Path] = (), days: int = branch_reader.WINDOW_DAYS, now: dt.datetime | None = None,
+    repositories: staging.Repositories, names: Sequence[str], *, local: Sequence[Path] = (),
+    listed: Sequence[str] | None = None, days: int = branch_reader.WINDOW_DAYS, now: dt.datetime | None = None,
 ) -> list[dict[str, Any]]:
-    """Pushed branches of both repositories, then those of each local git directory given.
+    """The pushed branches of each repository `names` gives, then those of each local git directory given.
 
-    The engine's clone holds them as `refs/heads/*`, and so does the registry's
-    bare clone; a registry checkout (`--registry`) holds them as
-    `refs/remotes/origin/*`. `refresh` fetches each first, recording a failure,
-    except the registry's clone: `registry_root` fetched it already, once, and
-    its result and the `main` it read are reused, so work and architecture read
-    the same `main`.
+    Each is read through its run's read handle, so the one fetch a refresh made
+    (and its result) is the architecture's too, and both read the same `main`. A
+    bare clone holds pushed branches as `refs/heads/*`; a checkout named instead
+    (`--registry`) as `refs/remotes/origin/*`. A repository whose branches cannot
+    be read is recorded with the error, and the others are still read. A local git
+    directory must be a clone of a listed repository (`listed`, by default `names`).
     """
-    registry_root = registry.git_dir
-    sets = [
-        # Ahead of the engine's `main`, whatever ref the architecture was read at.
-        branch_reader.collect(engine_git, "opengwasdb", main_ref="main", prefixes=("refs/heads/",), days=days, now=now,
-                              fetch=staging.BRANCHES if refresh else None),
-    ]
-    if registry.clone:
-        found = branch_reader.collect(registry_root, "opengwasdb-stores", main_ref=registry.ref,
-                                      prefixes=("refs/heads/",), days=days, now=now)
-        sets.append(found | {"fetch": registry.fetch if refresh else None})
-    else:
-        registry_main = next((r for r in ("origin/main", "main") if _has_ref(registry_root, r)), "HEAD")
-        sets.append(branch_reader.collect(registry_root, "opengwasdb-stores", main_ref=registry_main,
-                                          prefixes=("refs/remotes/origin/",), days=days, now=now,
-                                          fetch=REGISTRY_FETCH if refresh else None))
+    sets = []
+    for name in names:
+        handle = repositories.get(name)
+        if handle.clone:
+            main, prefixes = "main", ("refs/heads/",)
+        else:
+            main = next((r for r in ("origin/main", "main") if _has_ref(handle.git_dir, r)), "HEAD")
+            prefixes = ("refs/remotes/origin/",)
+        try:
+            handle.require()
+            found = branch_reader.collect(handle.git_dir, name, main_ref=main, prefixes=prefixes, days=days, now=now)
+        except CollectError as error:
+            found = {"repo": name, "git_dir": str(handle.git_dir), "main": main, "days": days, "branches": [],
+                     "skipped": [], "error": str(error)}
+        sets.append(found | {"fetch": handle.fetch})
     for git_dir in local:
         main = next((r for r in ("origin/main", "main") if _has_ref(git_dir, r)), "HEAD")
-        sets.append(branch_reader.collect(git_dir, repo_of(git_dir), main_ref=main,
+        sets.append(branch_reader.collect(git_dir, repo_of(git_dir, listed if listed is not None else names), main_ref=main,
                                           prefixes=("refs/heads/", "refs/remotes/origin/"), days=days, now=now, local=True))
     return sets
 
 
 def collect(
     data_dir: Path,
+    repositories: staging.Repositories | None = None,
     *,
-    registry: staging.Registry | None = None,
-    engine_git: Path | None = None,
-    refresh: bool = False,
     local: Sequence[Path] = (),
     days: int = branch_reader.WINDOW_DAYS,
     now: dt.datetime | None = None,
 ) -> dict[str, Any]:
     """The `work` source: the board and architecture files of `data_dir`, and the branches read now.
 
-    `registry` is opengwasdb-stores (`staging.registry_root`'s, by default its
-    clone); `engine_git` the engine's git directory (by default the site's clone).
+    The branches are those of every repository the architecture read (listed,
+    not planned, and readable), through `repositories`, the run's read handles
+    (by default each repository's clone).
     """
     data_dir = Path(data_dir)
     board, board_why = _read(data_dir, "board")
@@ -402,7 +417,7 @@ def collect(
     if board is None or architecture is None:
         problems = [why for doc, why in ((board, board_why), (architecture, architecture_why)) if doc is None]
         raise CollectError("; ".join(problems))
-    sets = read_branches(registry=registry or staging.registry_root(files=False),
-                         engine_git=engine_git or paths.clone_dir(paths.ENGINE), refresh=refresh,
-                         local=local, days=days, now=now)
+    repos = architecture.get("repos") or {}
+    names = [name for name, r in repos.items() if isinstance(r, Mapping) and r.get("commit")]
+    sets = read_branches(repositories or staging.Repositories(), names, local=local, listed=list(repos), days=days, now=now)
     return compute(board, architecture, sets)

@@ -5,10 +5,12 @@ Nothing the site build writes goes under `/home` or `/tmp`: the work root is
 checkout. Each path is overridable by an environment variable so a publish run
 can keep its scratch tree apart from a developer's.
 
-The site lives in og-dev-hub (og-dev-hub#7) and reads two other repositories:
-opengwasdb-stores (the registry: its Release Bundles, docs, epic records and
-architecture) and opengwasdb (the engine). Each is read from a bare clone under
-the work root, `<work root>/<name>.git`, which `staging.ensure_clone` keeps.
+The site lives in og-dev-hub (og-dev-hub#7) and reads every repository its
+`system.yaml` lists (og-dev-hub#9): above all opengwasdb-stores (the registry:
+its Release Bundles, docs, epic records and architecture) and opengwasdb (the
+engine, whose docs it renders). Each is read from a bare clone under the work
+root, `<work root>/<name>.git`, through one read handle per run
+(`staging.Repositories`), which `staging.ensure_clone` clones and fetches.
 """
 
 from __future__ import annotations
@@ -19,9 +21,10 @@ from pathlib import Path
 
 from ogstores import engine
 
-# The repositories the site shows: this hub, the registry whose docs and
-# Release Bundles it renders, and the engine whose docs it stages at the
-# revision the registry pins.
+# The repositories whose files or docs the site renders: this hub, the registry
+# whose docs and Release Bundles it renders, and the engine whose docs it stages
+# at the revision the registry pins. Every other repository is a name in
+# `system.yaml`, read the same way (`clone_dir`, `clone_url`).
 GITHUB = "https://github.com/opengwas"
 HUB = "og-dev-hub"
 REGISTRY = "opengwasdb-stores"
@@ -48,7 +51,7 @@ def repo_root() -> Path:
     """The og-dev-hub checkout being rendered: the one this package is installed from.
 
     It holds the site's Quarto project (`site/`) and the hub's own docs. The
-    registry the site documents is `staging.registry_root`'s, never this.
+    registry the site documents is `staging.Repositories`' handle of it, never this.
     """
     return Path(__file__).resolve().parents[2]
 

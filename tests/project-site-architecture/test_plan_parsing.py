@@ -161,14 +161,18 @@ class MalformedBlockTests(unittest.TestCase):
         self.assertEqual(self.invalid("moves:\n  - paths: [a.py]\n    to: encoding\n    extra: 1"), "unknown key `extra` in a move")
         self.assertEqual(self.invalid("moves:\n  - encoding"), "a move must be a mapping with `paths` and `to`")
 
-    def test_a_new_engine_component_needs_a_container_and_a_layer(self) -> None:
+    def test_a_new_component_of_a_layered_repository_needs_a_container_and_a_layer(self) -> None:
+        # og-dev-hub#9: the repositories whose models declare layers, with their code roots.
+        layered = {"opengwasdb": {"opengwasdb"}}
+        bare = block("adds:\n  - paths: [opengwasdb/new/a.py]\n    component: fresh\n    name: Fresh")
         self.assertEqual(
-            self.invalid("adds:\n  - paths: [opengwasdb/new/a.py]\n    component: fresh\n    name: Fresh"),
-            "component `fresh` is a new engine component, so its add needs a `container` and a `layer`")
+            plans.parse(bare, KNOWN, layered)["invalid"],
+            "component `fresh` is a new component of opengwasdb, whose model declares layers, so its add needs a "
+            "`container` and a `layer`")
         ok = plans.parse(block("adds:\n  - paths: [opengwasdb/new/a.py]\n    component: fresh\n    name: Fresh\n"
-                               "    container: engine\n    layer: 2"), KNOWN)
+                               "    container: engine\n    layer: 2"), KNOWN, layered)
         self.assertNotIn("invalid", ok)
-        registry = plans.parse(block("adds:\n  - paths: [src/new/a.py]\n    component: fresh\n    name: Fresh"), KNOWN)
+        registry = plans.parse(block("adds:\n  - paths: [src/new/a.py]\n    component: fresh\n    name: Fresh"), KNOWN, layered)
         self.assertNotIn("invalid", registry)
 
     def test_a_component_id_that_could_inject_diagram_markup_is_invalid(self) -> None:

@@ -21,7 +21,6 @@ import yaml
 KEYS = ("adds", "moves", "drops", "absorbs")
 ADD_KEYS = {"paths", "component", "name", "container", "layer"}
 MOVE_KEYS = {"paths", "to"}
-ENGINE_ROOT = "opengwasdb"
 DROP = re.compile(r"\s*([a-z][a-z0-9_]*)\s*->\s*([a-z][a-z0-9_]*)\s*")
 _FENCE = re.compile(r"^\s*(?P<fence>`{3,}|~{3,})\s*(?P<info>[^`]*?)\s*$")
 
@@ -53,11 +52,14 @@ def blocks(body: str | None) -> list[str]:
     return found
 
 
-def parse(body: str | None, known: Collection[str] | None = None) -> dict[str, Any] | None:
+def parse(
+    body: str | None, known: Collection[str] | None = None, layered: Mapping[str, Collection[str]] | None = None,
+) -> dict[str, Any] | None:
     """The plan in `body`: `None` without a block, `{"invalid": reason}` when unusable, else the plan.
 
     `known` is the ids of the components that exist; without it a component's
-    existence is not judged (`check_components` does that later).
+    existence is not judged (`check_components` does that later). `layered` maps
+    each repository whose model declares layers to its code roots.
     """
     try:
         found = blocks(body)
@@ -66,19 +68,21 @@ def parse(body: str | None, known: Collection[str] | None = None) -> dict[str, A
         if len(found) > 1:
             raise Invalid("more than one `architecture` block")
         plan = _read(found[0])
-        return plan if known is None else _checked(plan, known)
+        return plan if known is None else _checked(plan, known, layered or {})
     except Invalid as error:
         return {"invalid": str(error)}
     except Exception as error:  # whatever else a strange block does, it stays that ticket's problem
         return {"invalid": f"the block could not be read: {type(error).__name__}: {error}"}
 
 
-def check_components(plan: Mapping[str, Any], known: Collection[str]) -> dict[str, Any]:
+def check_components(
+    plan: Mapping[str, Any], known: Collection[str], layered: Mapping[str, Collection[str]] | None = None,
+) -> dict[str, Any]:
     """`plan`, or `{"invalid": reason}` when it names a component that is neither in `known` nor declared in `adds`."""
     if "invalid" in plan:
         return dict(plan)
     try:
-        return _checked(dict(plan), known)
+        return _checked(dict(plan), known, layered or {})
     except Invalid as error:
         return {"invalid": str(error)}
 
@@ -165,15 +169,18 @@ def _text(item: Any) -> str:
     return item
 
 
-def _checked(plan: dict[str, Any], known: Collection[str]) -> dict[str, Any]:
+def _checked(plan: dict[str, Any], known: Collection[str], layered: Mapping[str, Collection[str]]) -> dict[str, Any]:
+    """`plan` when every component it names exists or is declared, and a new one in a layered repository has a layer."""
     declared = {a["component"] for a in plan["adds"]}
     for add in plan["adds"]:
         if add["component"] in known:
             continue
         if not add.get("name"):
             raise Invalid(f"component `{add['component']}` is new, so its add needs a `name`")
-        if any(p.startswith(f"{ENGINE_ROOT}/") for p in add["paths"]) and not ("container" in add and "layer" in add):
-            raise Invalid(f"component `{add['component']}` is a new engine component, so its add needs a `container` and a `layer`")
+        repo = next((r for r, roots in layered.items() for p in add["paths"] if p.split("/", 1)[0] in roots), None)
+        if repo and not ("container" in add and "layer" in add):
+            raise Invalid(f"component `{add['component']}` is a new component of {repo}, whose model declares layers, "
+                          "so its add needs a `container` and a `layer`")
     mentioned = [m["to"] for m in plan["moves"]] + [d[k] for d in plan["drops"] for k in ("from", "to")]
     for cid in mentioned:
         if cid not in known and cid not in declared:
@@ -190,45 +197,57 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
     """Every ticket's plan for the `work` source: the plan, the components it involves, and, once closed, its checks.
 
     A closed ticket's items are `held` true or false, or `None` (unknown) when
-    the engine's model is missing and the item needs it: absence of the model is
-    not an unmet item. An open ticket's plan is carried and nothing is checked,
-    and so is an invalid one. `absorbs` is carried and never checked.
+    the repository a path or component is in has no model at the ref read, or no
+    model covers it at all: absence of a model is not an unmet item. An open
+    ticket's plan is carried and nothing is checked, and so is an invalid one.
+    `absorbs` is carried and never checked. Which repository a path is in is the
+    one whose claims cover it, else the first whose code roots do (og-dev-hub#9).
     """
     from project_site.collect import architecture_model as rules
 
     components = [c for c in architecture.get("components") or [] if isinstance(c, Mapping)]
     by_id = {c["id"]: c for c in components}
-    engine = architecture.get("engine") or {}
-    model = bool(engine.get("model"))
-    claims = {kind: rules.claims_of(c for c in components if c["repo"] == kind and c.get("paths")) for kind in ("registry", "engine")}
+    repos = {name: r for name, r in (architecture.get("repos") or {}).items() if isinstance(r, Mapping)}
+    names = [name for name, r in repos.items() if r.get("model")]
+    names += sorted({c["repo"] for c in components} - set(names))
+    claims = {repo: rules.claims_of(c for c in components if c["repo"] == repo and c.get("paths")) for repo in names}
+    roots = {repo: rules.code_roots(claims[repo]) for repo in names}
+    layers = (architecture.get("model") or {}).get("layers")
+    layered = {repo: roots[repo] for repo in (layers if isinstance(layers, Mapping) else {}) if repo in roots}
+    # A repository read with no model: nothing in it can be judged, so what is unplaced may be its.
+    unmodelled = [name for name, r in repos.items() if not r.get("planned") and not r.get("model")]
+    missing = "; ".join(
+        f"{name} has no model at {r.get('ref')} ({str(r.get('commit'))[:12]})" if r.get("commit") else f"{name} could not be read"
+        for name, r in repos.items() if name in unmodelled)
     files = architecture.get("files")
-    registry_ref = architecture.get("registry") or {}
-    missing = f"the engine's model is missing at {engine.get('ref')} ({str(engine.get('commit'))[:12]})"
     edge_list = architecture.get("edges")
     edges = None if not isinstance(edge_list, list) else {
         (e["from"], e["to"]): e["imports"] for e in edge_list if isinstance(e, Mapping)}
 
-    def exists(path: str) -> tuple[bool | None, str]:
+    def repo_of(path: str) -> str | None:
+        owned = next((r for r in names if rules.owner(claims[r], path)), None)
+        return owned or next((r for r in names if rules.is_code(path, roots[r])), None)
+
+    def exists(path: str, repo: str | None) -> tuple[bool | None, str]:
         """Whether `path` is a tracked file: only code files are listed, and only where the tree was read."""
-        kind = "registry" if rules.is_registry_code(path) else "engine" if rules.is_engine_code(path) else None
         if not isinstance(files, Mapping):
             return None, "this architecture collection lists no tracked files"
-        if kind is None:
+        if repo is None:
+            if unmodelled:
+                return None, f"no model read covers it, so whether it exists is not known: {missing}"
             return None, "only code files are listed, so a non-code path's existence is not known"
-        listing = files.get(kind)
+        listing = files.get(repo)
         if listing is None:
-            return None, f"the {kind} tree was not read"
+            return None, f"the {repo} tree was not read"
         if path in listing:
             return True, ""
-        ref = registry_ref if kind == "registry" else engine
-        why = f"no such file at {ref.get('ref')} ({str(ref.get('commit'))[:12]})"
-        if kind == "engine" and not model:
-            why += "; the tree was read, the claims were not judged (the engine's model is missing)"
-        return False, why
+        read = repos.get(repo) or {}
+        return False, f"no such file at {read.get('ref')} ({str(read.get('commit'))[:12]})"
 
     def claimed(path: str, target: str, kind: str) -> dict[str, Any]:
-        present, why = exists(path)
-        found = next((o for k in ("registry", "engine") if (o := rules.owner(claims[k], path))), None)
+        repo = repo_of(path)
+        present, why = exists(path, repo)
+        found = rules.owner(claims[repo], path) if repo else None
         if present is False:
             held = False
         elif found and found != target:
@@ -237,21 +256,20 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
             held = None
         elif found == target:
             held, why = True, f"claimed by `{target}`"
-        elif model or path.split("/", 1)[0] in rules.REGISTRY_CODE_ROOTS:
-            held, why = False, "no component claims it"
         else:
-            held, why = None, missing
-        repo = (next((k for k in ("registry", "engine") if rules.owner(claims[k], path)), None)
-                or ("registry" if rules.is_registry_code(path) else "engine"))
-        return {"kind": kind, "path": path, "component": target, "held": held, "why": why, "repo": repo}
+            held, why = False, "no component claims it"
+        return {"kind": kind, "path": path, "component": target, "held": held, "why": why,
+                "repo": repo or (by_id.get(target) or {}).get("repo")}
 
     def dropped(a: str, b: str) -> dict[str, Any]:
-        repo = "registry" if by_id.get(a, {}).get("repo") == "registry" else "engine"
+        repo = (by_id.get(a) or by_id.get(b) or {}).get("repo")
         if edges is None:
             return {"kind": "drops", "from": a, "to": b, "imports": None, "held": None, "repo": repo,
                     "why": "this architecture collection lists no import edges"}
-        if not model and not all(by_id.get(x, {}).get("repo") == "registry" for x in (a, b)):
-            return {"kind": "drops", "from": a, "to": b, "imports": None, "held": None, "why": missing, "repo": repo}
+        if unmodelled and not all(x in by_id for x in (a, b)):
+            unknown = next(x for x in (a, b) if x not in by_id)
+            return {"kind": "drops", "from": a, "to": b, "imports": None, "held": None, "repo": repo,
+                    "why": f"`{unknown}` is in no model read: {missing}"}
         n = edges.get((a, b), 0)
         why = f"no import from `{a}` into `{b}`" if not n else f"{n} import{'s' if n != 1 else ''} from `{a}` into `{b}` remain{'s' if n == 1 else ''}"
         return {"kind": "drops", "from": a, "to": b, "imports": n, "held": not n, "why": why, "repo": repo}
@@ -262,8 +280,10 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
             plan = ticket.get("plan")
             if plan is None:
                 continue
-            if model:
-                plan = check_components(plan, set(by_id))
+            # A component of a repository with no model is unknown, never absent: its ids are judged
+            # only when every repository read has a model.
+            if not unmodelled:
+                plan = check_components(plan, set(by_id), layered)
             closed = ticket.get("state") == "CLOSED"
             checks: list[dict[str, Any]] = []
             involved: list[dict[str, Any]] = []

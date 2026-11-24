@@ -45,8 +45,23 @@ container_relations:
   - [ld_registry, sources, "reads"]
 """
 
+# The two repositories with a model, by name (og-dev-hub#9).
+REGISTRY, ENGINE = "opengwasdb-stores", "opengwasdb"
+
 # og-dev-hub's system.yaml, as the collector reads it: the five keys and `repos`.
-SYSTEM_YAML = SYSTEM_SECTIONS + "repos:\n  - {name: opengwasdb-stores, visibility: public}\n"
+REPOS = "repos:\n  - {name: opengwasdb-stores, visibility: public}\n  - {name: opengwasdb, visibility: public}\n"
+SYSTEM_YAML = SYSTEM_SECTIONS + REPOS
+
+
+def repositories(registry: Path, engine: Path, **git_dirs: Path) -> "staging.Repositories":
+    """The read handles of a fixture run: the registry a checkout at `HEAD`, every other repository a git directory at `main`.
+
+    `git_dirs` names more repositories by name (`ogquery=path`); none is ever cloned.
+    """
+    from project_site import staging
+
+    return staging.Repositories(checkouts={REGISTRY: registry},
+                                git_dirs={ENGINE: engine, **{k.replace("_", "-"): v for k, v in git_dirs.items()}})
 
 REGISTRY_MODEL = """\
 repo: opengwas/opengwasdb-stores

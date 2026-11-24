@@ -96,7 +96,8 @@ class ServedPathGateTest(unittest.TestCase):
         stage = build.Stage(
             hub=self.repo,
             hub_commit="2" * 40,
-            registry=staging.Registry(root=self.root / "registry", git_dir=self.root / "registry", ref="HEAD"),
+            registry=staging.Repository(name="opengwasdb-stores", root=self.root / "registry", git_dir=self.root / "registry",
+                                        ref="HEAD", commit="0" * 40, clone=False),
             registry_commit="0" * 40,
             engine_clone=self.root / "engine",
             engine_commit="1" * 40,

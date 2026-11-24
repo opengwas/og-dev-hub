@@ -32,48 +32,73 @@ def comp(cid: str, name: str, repo: str, stages: list[str], *, layer: int | None
             "summary": f"{name} summary.", "paths": [], "files": files, "lines": lines, "tracked": files}
 
 
+ENGINE, STORES = "opengwasdb", "opengwasdb-stores"
+
+
 def edge(src: str, dst: str, imports: int, scope: str, upward: bool = False) -> dict:
-    return {"from": src, "to": dst, "imports": imports, "scope": scope, "upward": upward}
+    """An edge within the engine (`engine`), within opengwasdb-stores (`registry`), or across the seam (`registry_to_engine`)."""
+    if scope == "registry_to_engine":
+        return {"from": src, "to": dst, "imports": imports, "scope": "across", "from_repo": STORES, "to_repo": ENGINE,
+                "upward": upward}
+    return {"from": src, "to": dst, "imports": imports, "scope": "within", "repo": ENGINE if scope == "engine" else STORES,
+            "upward": upward}
 
 
-def adr(repo: str, number: str, title: str, components: dict[str, str]) -> dict:
-    slug = "opengwasdb" if repo == "engine" else "opengwasdb-stores"
+def adr(repo: str, number: str, title: str, components: dict[str, str], cites: list[dict] | None = None) -> dict:
     return {"repo": repo, "number": number, "path": f"docs/adr/{number}-x.md", "title": title,
-            "status": "current", "url": f"https://github.com/opengwas/{slug}/blob/main/docs/adr/{number}-x.md",
-            "components": components}
+            "status": "current", "url": f"https://github.com/opengwas/{repo}/blob/main/docs/adr/{number}-x.md",
+            "components": components, "cites": cites or []}
+
+
+def repo(name: str, *, ref: str = "main", commit: str | None = None, model: bool | None = True, **more) -> dict:
+    return {"name": name, "visibility": "public", "status": None, "planned": False, "url": f"https://github.com/opengwas/{name}",
+            "ref": ref, "commit": commit, "committed": None, "refresh": None, "source_root": "", "model": model,
+            "note": None, "error": None, **more}
 
 
 def architecture(*, engine_model: bool = True) -> dict:
     engine = [
-        comp("query", "Query", "engine", ["query"], layer=2),
-        comp("check", "Checks", "engine", ["build"], layer=2),
-        comp("store", "Store envelope", "engine", ["build"], layer=1),
-        comp("model", "Store contract model", "engine", ["build", "query"], layer=0),
+        comp("query", "Query", ENGINE, ["query"], layer=2),
+        comp("check", "Checks", ENGINE, ["build"], layer=2),
+        comp("store", "Store envelope", ENGINE, ["build"], layer=1),
+        comp("model", "Store contract model", ENGINE, ["build", "query"], layer=0),
     ] if engine_model else []
     return {
         "source": "architecture", "available": True, "collected_at": COLLECTED, "error": None,
-        "registry": {"repo": "opengwas/opengwasdb-stores", "ref": "HEAD", "commit": "1111111111111111", "model": True, "note": None},
-        "engine": {"repo": "opengwas/opengwasdb", "ref": "main", "commit": ENGINE_COMMIT, "committed": "2026-11-01T09:30:00+00:00",
-                   "refresh": {"ok": True, "error": None}, "model": engine_model,
-                   "note": None if engine_model else f"docs/architecture/components.yaml is not in opengwas/opengwasdb at main ({ENGINE_COMMIT[:12]})"},
+        "repos": {
+            STORES: repo(STORES, ref="HEAD", commit="1111111111111111"),
+            ENGINE: repo(ENGINE, commit=ENGINE_COMMIT, committed="2026-11-01T09:30:00+00:00", refresh={"ok": True, "error": None},
+                         model=engine_model,
+                         note=None if engine_model else f"docs/architecture/components.yaml is not in opengwasdb at main ({ENGINE_COMMIT[:12]})"),
+            "ogquery": repo("ogquery", model=None, planned=True, visibility=None, ref=None),
+            "opengwaspy": repo("opengwaspy", commit="2" * 40, model=False,
+                               note="docs/architecture/components.yaml is not in opengwaspy at main (222222222222)"),
+        },
         "model": {
             "system": {"name": "OpenGWASDB", "summary": "The system."},
             "people": [{"id": "curator", "name": "Curator", "summary": "Runs builds."}],
             "external": [{"id": "sources", "name": "Sources", "summary": "Summary statistics."}],
             "containers": [
-                {"id": "engine", "name": "Engine (opengwasdb)", "repo": "opengwasdb", "tech": "Python", "summary": "Builds."},
+                {"id": "engine", "name": "opengwasdb", "repo": "opengwasdb", "tech": "Python", "summary": "Builds."},
                 {"id": "generation", "name": "Manifest Generation", "repo": "opengwasdb-stores", "tech": "Python", "summary": "Makes manifests."},
+                {"id": "ogquery", "name": "ogquery", "repo": "ogquery", "tech": "Python", "summary": "Reads."},
             ],
             "container_relations": [["curator", "generation", "runs"], ["generation", "engine", "builds with"]],
             "stages": [
                 {"id": "build", "name": "Build", "summary": "Build a store"},
                 {"id": "query", "name": "Query", "summary": "Look values up"},
             ],
-            "layers": [{"layer": 2, "name": "Use"}, {"layer": 1, "name": "Storage"}, {"layer": 0, "name": "Foundations"}] if engine_model else [],
+            "layers": {ENGINE: [{"layer": 2, "name": "Use"}, {"layer": 1, "name": "Storage"}, {"layer": 0, "name": "Foundations"}]}
+            if engine_model else {},
         },
-        "components": [comp("gen", "Manifest Generation", "registry", ["build"], container="generation"), *engine],
-        "gaps": {"registry": {"unclaimed": [], "stale": []},
-                 "engine": {"unclaimed": ["opengwasdb/orphan.py"], "stale": [{"path": "opengwasdb/gone/", "component": "model"}]}},
+        "components": [comp("gen", "Manifest Generation", STORES, ["build"], container="generation"), *engine],
+        "gaps": {STORES: {"unreadable": None, "no_model": None, "unclaimed": [], "stale": [], "containers": [], "system_sections": []},
+                 ENGINE: {"unreadable": None, "no_model": None, "unclaimed": ["opengwasdb/orphan.py"],
+                          "stale": [{"path": "opengwasdb/gone/", "component": "model"}], "containers": [], "system_sections": []}
+                 if engine_model else {"unreadable": None, "no_model": "no model", "unclaimed": None, "stale": None,
+                                       "containers": [], "system_sections": []},
+                 "opengwaspy": {"unreadable": None, "no_model": "docs/architecture/components.yaml is not in opengwaspy at main (222222222222)",
+                                "unclaimed": None, "stale": None, "containers": [], "system_sections": []}},
         "edges": [
             edge("check", "query", 1, "engine"),
             edge("model", "store", 2, "engine", upward=True),
@@ -83,18 +108,18 @@ def architecture(*, engine_model: bool = True) -> dict:
             edge("gen", "model", 1, "registry_to_engine"),
         ] if engine_model else [],
         "adrs": [
-            adr("registry", "0001", "0001. Manifest Generation is one pipeline", {"gen": "code"}),
-            adr("engine", "0001", "0001. Query is layer free", {"query": "title"}),
-            adr("engine", "0003", "0003. Nothing", {}),
+            adr(STORES, "0001", "0001. Manifest Generation is one pipeline", {"gen": "code"}),
+            adr(ENGINE, "0001", "0001. Query is layer free", {"query": "title"}),
+            adr(ENGINE, "0003", "0003. Nothing", {}),
         ],
-        "summary": {"edges": 6, "upward_edges": 2, "upward_imports": 5, "registry_to_engine_edges": 2,
+        "summary": {"edges": 6, "upward_edges": 2, "upward_imports": 5, "registry_to_engine_edges": 2 if engine_model else None,
                     "registry_to_engine_imports": 8, "adrs_total": 3, "adrs_placed": 2},
     }
 
 
 def failed_refresh() -> dict:
     doc = architecture()
-    doc["engine"]["refresh"] = {"ok": False, "error": "fatal: unable to access 'https://github.com/opengwas/opengwasdb/'"}
+    doc["repos"][ENGINE]["refresh"] = {"ok": False, "error": "fatal: unable to access 'https://github.com/opengwas/opengwasdb/'"}
     return doc
 
 
@@ -124,11 +149,11 @@ class PipelineTests(unittest.TestCase):
         link = "[0001. Manifest Generation is one pipeline](https://github.com/opengwas/opengwasdb-stores/blob/main/docs/adr/0001-x.md)"
         # nested under its component, before the next component starts
         # Each name opens the component's panel (#435).
-        self.assertIn(f"- **[Manifest Generation](#component-gen)** (registry; 3 files, 100 lines): Manifest Generation summary.\n  - {link}", build)
+        self.assertIn(f"- **[Manifest Generation](#component-gen)** (opengwasdb-stores; 3 files, 100 lines): Manifest Generation summary.\n  - {link}", build)
         self.assertLess(build.index(link), build.index("**[Checks](#component-check)**"))
         self.assertNotIn("Query is layer free", build)
         query = section(self.page, "Query")
-        self.assertIn("- **[Query](#component-query)** (engine; 3 files, 100 lines): Query summary.\n  - [0001. Query is layer free]", query)
+        self.assertIn("- **[Query](#component-query)** (opengwasdb; 3 files, 100 lines): Query summary.\n  - [0001. Query is layer free]", query)
         self.assertIn("Store contract model", query)
 
     def test_an_adr_placed_nowhere_is_listed(self) -> None:
@@ -142,33 +167,33 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("Measured", self.page)
         self.assertIn("stages", self.page.split("Written by hand", 1)[1].split("Measured", 1)[0])
 
-    def test_an_engine_without_a_model_says_so_with_ref_and_commit_and_keeps_this_repositorys_components(self) -> None:
+    def test_an_engine_without_a_model_says_so_and_keeps_the_other_repositorys_components(self) -> None:
         page = render(pages.render_pipeline, architecture(engine_model=False))
-        self.assertIn("main", page.split("no architecture model", 1)[1][:200])
-        self.assertIn("abcdef012345", page)
+        self.assertIn("> **2 repositories have no architecture model yet**: opengwasdb, opengwaspy. Their components, "
+                      "layers and imports are unknown, not none", page)
         self.assertIn("Manifest Generation", section(page, "Build"))
 
     def test_the_engine_commit_and_its_date_are_stated(self) -> None:
         for function in (pages.render_pipeline, pages.render_structure):
             page = render(function, architecture())
-            self.assertIn("engine `main` at `abcdef012345`, committed 2026-11-01T09:30:00+00:00", page)
+            self.assertIn("opengwasdb `main` at `abcdef012345` (committed 2026-11-01T09:30:00+00:00)", page)
             self.assertNotIn("refresh failed", page)
 
     def test_a_failed_refresh_is_a_visible_line_with_gits_error(self) -> None:
         for function in (pages.render_pipeline, pages.render_structure):
             page = render(function, failed_refresh())
-            self.assertIn("> **The engine refresh failed**: fatal: unable to access", page)
-            self.assertIn("the `main` this clone already had", page)
+            self.assertIn("> **The opengwasdb refresh failed**: fatal: unable to access", page)
+            self.assertIn("the `main` its clone already had", page)
 
     def test_a_failed_registry_refresh_is_a_visible_line_too(self) -> None:
         # og-dev-hub#7: the registry is read from the site's clone, refreshed like the engine's.
         doc = architecture()
-        doc["registry"]["refresh"] = {"ok": False, "error": "fatal: unable to access 'https://github.com/opengwas/opengwasdb-stores/'"}
+        doc["repos"][STORES]["refresh"] = {"ok": False, "error": "fatal: unable to access 'https://github.com/opengwas/opengwasdb-stores/'"}
         for function in (pages.render_pipeline, pages.render_structure):
             page = render(function, doc)
             self.assertIn("> **The opengwasdb-stores refresh failed**: fatal: unable to access", page)
-            self.assertIn("the commit this clone already had", page)
-            self.assertNotIn("The engine refresh failed", page)
+            self.assertIn("the `HEAD` its clone already had (`111111111111`)", page)
+            self.assertNotIn("The opengwasdb refresh failed", page)
 
     def test_an_unavailable_source_is_the_sites_usual_notice(self) -> None:
         failed = {"source": "architecture", "available": False, "collected_at": COLLECTED,
@@ -205,7 +230,32 @@ class StructureTests(unittest.TestCase):
 
     def test_the_seam_between_the_repositories_is_drawn_as_counts(self) -> None:
         registry = self.cells[3]
-        self.assertRegex(registry, r'"gen" -> "engine" \[[^\]]*label="8"')
+        self.assertRegex(registry, r'"gen" -> "repo:opengwasdb" \[[^\]]*label="8"')
+        # The node is labelled from system.yaml's container, never written here (og-dev-hub#9).
+        self.assertIn("opengwasdb (the engine)", registry)
+        self.assertIn("## opengwasdb (the engine) by layer", self.page)
+        self.assertIn("## opengwasdb-stores (Manifest Generation), and its imports of other repositories", self.page)
+
+    def test_every_listed_repository_is_in_health_planned_and_without_a_model_as_gaps(self) -> None:
+        claims = self.page.split("### Claims", 1)[1].split("### Layering", 1)[0]
+        self.assertIn("- **ogquery**: planned, not created yet.", claims)
+        self.assertIn("- **opengwaspy**: no model, so its components are unknown: docs/architecture/components.yaml "
+                      "is not in opengwaspy at main (222222222222).", claims)
+        self.assertIn("- **opengwasdb (the engine)**: 1 code files no component claims; 1 claims that match no tracked file.", claims)
+
+    def test_a_planned_repositorys_container_is_drawn_dashed_and_marked(self) -> None:
+        containers = self.cells[1]
+        self.assertRegex(containers, r'"ogquery" \[style="rounded,filled,dashed"[^\]]*planned; Python')
+
+    def test_imports_across_repositories_are_tabled_by_pair(self) -> None:
+        self.assertIn("| opengwasdb-stores | opengwasdb | 8 | 2 |", self.page)
+
+    def test_an_adr_citing_another_repositorys_adr_links_to_it(self) -> None:
+        doc = architecture()
+        doc["adrs"][1]["cites"] = [{"repo": STORES, "number": "0001"}, {"repo": "ogld", "number": "0004"}]
+        page = render(pages.render_pipeline, doc)
+        self.assertIn("; cites [opengwasdb-stores ADR 0001](https://github.com/opengwas/opengwasdb-stores/blob/main/"
+                      "docs/adr/0001-x.md), ogld ADR 0004", page)
 
     def test_the_page_says_what_is_written_by_hand_and_what_is_measured(self) -> None:
         by_hand, measured = self.page.split("Written by hand", 1)[1].split("Measured", 1)
@@ -223,27 +273,27 @@ class StructureTests(unittest.TestCase):
 
     def test_system_gaps_are_listed_in_health_and_do_not_stop_the_page(self) -> None:
         doc = architecture()
-        doc["gaps"]["registry"] |= {"system_sections": ["containers", "people"],
+        doc["gaps"][STORES] |= {"system_sections": ["containers", "people"],
                                     "containers": [{"component": "yardstick", "container": "site"}]}
         page = render(pages.render_structure, doc)
-        self.assertIn("- System sections ignored: `containers`, `people` "
+        self.assertIn("  - System sections ignored: `containers`, `people` "
                       "(system sections belong in og-dev-hub's `system.yaml`)", page)
-        self.assertIn("- `yardstick` names container `site`, which `system.yaml` does not have", page)
+        self.assertIn("  - `yardstick` names container `site`, which `system.yaml` does not have", page)
         self.assertNotIn("System sections ignored", render(pages.render_structure, architecture()))
 
     def test_engine_gaps_are_listed_and_do_not_stop_the_page(self) -> None:
         self.assertIn("`opengwasdb/orphan.py`", self.page)
         self.assertIn("`opengwasdb/gone/` (claimed by `model`)", self.page)
 
-    def test_an_engine_without_a_model_still_draws_this_repositorys_half(self) -> None:
+    def test_an_engine_without_a_model_still_draws_the_other_repositorys_half(self) -> None:
         page = render(pages.render_structure, architecture(engine_model=False))
-        self.assertIn("abcdef012345", page)
+        self.assertIn("- **opengwasdb (the engine)**: no model, so its components are unknown", page)
         self.assertEqual(len(dot_cells(page)), 3)
         self.assertIn('"gen"', dot_cells(page)[2])
 
     def test_the_headline_numbers_are_stated(self) -> None:
-        self.assertIn("2 edges (5 imports) go against the layering", self.page)
-        self.assertIn("8 imports", self.page)
+        self.assertIn("opengwasdb (the engine): 2 edges (5 imports) go against the layering, of 4 edges between its components.", self.page)
+        self.assertIn("8 imports from opengwasdb-stores into opengwasdb, across 2 component pairs.", self.page)
 
 
 class HostileFactTests(unittest.TestCase):
@@ -251,10 +301,10 @@ class HostileFactTests(unittest.TestCase):
 
     def pages(self) -> list[str]:
         doc = architecture()
-        doc["engine"]["ref"] = "ma`in"
-        doc["gaps"]["engine"]["unclaimed"] = ["opengwasdb/a`|<b>.py"]
-        doc["gaps"]["engine"]["stale"] = [{"path": "opengwasdb/<i>x`/", "component": "mo`del"}]
-        doc["engine"]["refresh"] = {"ok": False, "error": "bad `<b>` | thing"}
+        doc["repos"][ENGINE]["ref"] = "ma`in"
+        doc["gaps"][ENGINE]["unclaimed"] = ["opengwasdb/a`|<b>.py"]
+        doc["gaps"][ENGINE]["stale"] = [{"path": "opengwasdb/<i>x`/", "component": "mo`del"}]
+        doc["repos"][ENGINE]["refresh"] = {"ok": False, "error": "bad `<b>` | thing"}
         return [re.sub(r"```\{dot\}.*?```", "", render(f, doc), flags=re.S)
                 for f in (pages.render_pipeline, pages.render_structure)]
 
@@ -266,7 +316,7 @@ class HostileFactTests(unittest.TestCase):
     def test_a_path_with_a_backtick_and_a_pipe_is_shown_whole(self) -> None:
         structure = self.pages()[1]
         self.assertIn("<code>opengwasdb/a&#96;&#124;&lt;b&gt;.py</code>", structure)
-        self.assertIn("engine <code>ma&#96;in</code> at", structure)
+        self.assertIn("opengwasdb <code>ma&#96;in</code> at", structure)
 
 
 DOT = shutil.which("dot")

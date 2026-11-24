@@ -42,12 +42,13 @@ def work(*, registry_fetch: dict | None = None) -> dict:
     return {
         "source": "work", "available": True, "collected_at": MEASURED, "error": None, "schema_version": 1,
         "inputs": {"board": {"collected_at": "2026-11-02T11:59:00Z"},
-                   "architecture": {"collected_at": "2026-11-02T11:59:30Z", "engine": {"ref": "main", "commit": "e" * 40},
-                                    "registry": {"ref": "HEAD", "commit": "r" * 40}}},
+                   "architecture": {"collected_at": "2026-11-02T11:59:30Z", "repos": {
+                       "opengwasdb": {"ref": "main", "commit": "e" * 40, "visibility": "public"},
+                       "opengwasdb-stores": {"ref": "HEAD", "commit": "r" * 40, "visibility": "public"}}}},
         "owners": [owner("opengwasdb#347", "Encoding rework", "Active"), owner("opengwasdb#58", "Hybrid layout", "Active"),
                    owner("opengwasdb-stores#232", "Phase 2", "Active")],
-        "components": [{"id": "enc", "name": "Store Encoding", "repo": "engine"}, {"id": "query", "name": "Query", "repo": "engine"},
-                       {"id": "store", "name": "Store envelope", "repo": "engine"}],
+        "components": [{"id": "enc", "name": "Store Encoding", "repo": "opengwasdb"}, {"id": "query", "name": "Query", "repo": "opengwasdb"},
+                       {"id": "store", "name": "Store envelope", "repo": "opengwasdb"}],
         "signals": [
             signal("enc", "opengwasdb#347", "opengwasdb#338", "branch", "building", ["opengwasdb:orch/347/338"]),
             signal("enc", "opengwasdb#58", "opengwasdb#350", "cited", "active", ["opengwasdb/encoding/se_range.py"]),
@@ -121,12 +122,12 @@ class WorkPageTests(unittest.TestCase):
 
     def test_engine_side_work_that_was_not_measured_is_said_on_the_page(self) -> None:
         document = work()
-        document["unmeasured"] = {"engine": "docs/architecture/components.yaml is not in opengwas/opengwasdb at main (abc)"}
+        document["unmeasured"] = {"opengwasdb": "docs/architecture/components.yaml is not in opengwasdb at main (abc)"}
         page = render(document)
-        self.assertIn("**Engine-side work was not measured**", page)
-        self.assertIn("is not in opengwas/opengwasdb at main (abc)", page)
-        self.assertIn("meets shown are this repository's only", page)
-        self.assertNotIn("Engine-side work was not measured", self.page)
+        self.assertIn("**Work was not measured in opengwasdb**", page)
+        self.assertIn("- opengwasdb: docs/architecture/components.yaml is not in opengwasdb at main (abc)", page)
+        self.assertIn("meets shown are the other repositories' only", page)
+        self.assertNotIn("Work was not measured", self.page)
 
     def test_unresolved_citations_are_counted_on_the_page(self) -> None:
         document = work()

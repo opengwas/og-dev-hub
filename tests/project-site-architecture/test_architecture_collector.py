@@ -34,8 +34,7 @@ class Fixture:
         self.engine_commit = fx.make_repo(self.engine, engine_files or fx.ENGINE_FILES)
 
     def collect(self) -> dict:
-        return architecture.collect(staging.registry_root(self.registry), engine_git=self.engine, engine_ref="main",
-                                  system_file=self.system)
+        return architecture.collect(fx.repositories(self.registry, self.engine), system_file=self.system)
 
 
 class CombinedModelTests(unittest.TestCase):
@@ -44,19 +43,19 @@ class CombinedModelTests(unittest.TestCase):
         by_id = {c["id"]: c["repo"] for c in result["components"]}
         self.assertEqual(
             by_id,
-            {"cli": "engine", "query": "engine", "check": "engine", "store": "engine", "model": "engine",
-             "gen": "registry", "ogs": "registry", "tools": "registry"},
+            {"cli": fx.ENGINE, "query": fx.ENGINE, "check": fx.ENGINE, "store": fx.ENGINE, "model": fx.ENGINE,
+             "gen": fx.REGISTRY, "ogs": fx.REGISTRY, "tools": fx.REGISTRY},
         )
-        self.assertEqual([layer["name"] for layer in result["model"]["layers"]],
+        self.assertEqual([layer["name"] for layer in result["model"]["layers"][fx.ENGINE]],
                          ["Entry", "Use", "Storage", "Foundations"])
 
     def test_each_repository_records_the_ref_and_commit_read(self) -> None:
         fixture = Fixture(self)
         result = fixture.collect()
-        self.assertEqual(result["engine"]["ref"], "main")
-        self.assertEqual(result["engine"]["commit"], fixture.engine_commit)
-        self.assertTrue(result["engine"]["model"])
-        self.assertEqual(result["registry"]["commit"], fixture.registry_commit)
+        self.assertEqual(result["repos"][fx.ENGINE]["ref"], "main")
+        self.assertEqual(result["repos"][fx.ENGINE]["commit"], fixture.engine_commit)
+        self.assertTrue(result["repos"][fx.ENGINE]["model"])
+        self.assertEqual(result["repos"][fx.REGISTRY]["commit"], fixture.registry_commit)
 
     def test_an_unclaimed_engine_file_and_a_stale_claim_are_gaps_not_errors(self) -> None:
         engine = dict(fx.ENGINE_FILES)
@@ -64,32 +63,37 @@ class CombinedModelTests(unittest.TestCase):
         engine["docs/architecture/components.yaml"] = fx.ENGINE_MODEL.replace(
             "paths: [opengwasdb/model/]", "paths: [opengwasdb/model/, opengwasdb/gone/]")
         result = Fixture(self, engine_files=engine).collect()
-        self.assertEqual(result["gaps"]["engine"]["unclaimed"], ["opengwasdb/orphan.py"])
-        self.assertEqual(result["gaps"]["engine"]["stale"],
+        self.assertEqual(result["gaps"][fx.ENGINE]["unclaimed"], ["opengwasdb/orphan.py"])
+        self.assertEqual(result["gaps"][fx.ENGINE]["stale"],
                          [{"path": "opengwasdb/gone/", "component": "model"}])
-        self.assertEqual(result["gaps"]["registry"],
-                         {"unclaimed": [], "stale": [], "containers": [], "system_sections": []})
+        self.assertEqual(result["gaps"][fx.REGISTRY],
+                         {"unreadable": None, "no_model": None, "unclaimed": [], "stale": [], "containers": [], "system_sections": []})
 
     def test_the_description_says_unknown_for_engine_gaps_without_a_model(self) -> None:
         from project_site.collect import __main__ as command
 
         engine = {k: v for k, v in fx.ENGINE_FILES.items() if k != "docs/architecture/components.yaml"}
         line = command._describe_architecture(Fixture(self, engine_files=engine).collect())
-        self.assertIn("gaps registry 0/0 engine unknown (unclaimed/stale)", line)
+        self.assertIn("NO MODEL: opengwasdb", line)
+        self.assertIn("opengwasdb-stores 3 components", line)
 
     def test_an_engine_ref_without_a_model_says_so_and_keeps_this_repositorys_components(self) -> None:
         engine = {k: v for k, v in fx.ENGINE_FILES.items() if k != "docs/architecture/components.yaml"}
         fixture = Fixture(self, engine_files=engine)
         result = fixture.collect()
-        self.assertFalse(result["engine"]["model"])
-        self.assertEqual(result["engine"]["ref"], "main")
-        self.assertEqual(result["engine"]["commit"], fixture.engine_commit)
+        self.assertFalse(result["repos"][fx.ENGINE]["model"])
+        self.assertEqual(result["repos"][fx.ENGINE]["ref"], "main")
+        self.assertEqual(result["repos"][fx.ENGINE]["commit"], fixture.engine_commit)
         self.assertEqual([c["id"] for c in result["components"]], ["gen", "ogs", "tools"])
         # Unknown, not "no gaps": nothing was judged against missing claims.
-        self.assertIsNone(result["gaps"]["engine"])
-        self.assertEqual(result["gaps"]["registry"],
-                         {"unclaimed": [], "stale": [], "containers": [], "system_sections": []})
-        self.assertEqual(result["model"]["layers"], [])
+        self.assertEqual(result["gaps"][fx.ENGINE]["no_model"],
+                         f"docs/architecture/components.yaml is not in opengwasdb at main ({fixture.engine_commit[:12]})")
+        self.assertIsNone(result["gaps"][fx.ENGINE]["unclaimed"])
+        self.assertIsNone(result["gaps"][fx.ENGINE]["stale"])
+        self.assertIsNone(result["files"][fx.ENGINE])
+        self.assertEqual(result["gaps"][fx.REGISTRY],
+                         {"unreadable": None, "no_model": None, "unclaimed": [], "stale": [], "containers": [], "system_sections": []})
+        self.assertEqual(result["model"]["layers"], {})
         # Unknown, not empty: the layering cannot be measured without the model.
         self.assertIsNone(result["upward_imports"])
         self.assertIsNone(result["summary"]["upward_imports"])
@@ -126,10 +130,10 @@ class CombinedModelTests(unittest.TestCase):
     def test_the_tracked_code_paths_of_each_tree_are_listed_whole(self) -> None:
         registry = {**fx.REGISTRY_FILES, "tools/z.py\nignored.py": "x = 1\n"}
         files = Fixture(self, registry_files=registry).collect()["files"]
-        self.assertEqual(files["registry"], [
+        self.assertEqual(files[fx.REGISTRY], [
             "src/gen/__init__.py", "src/gen/make.py", "src/ogs/run.py", "tools/run.py", "tools/z.py\nignored.py",
             "workflow/Snakefile", "workflow/run.sh"])
-        self.assertEqual(files["engine"], [
+        self.assertEqual(files[fx.ENGINE], [
             "opengwasdb/__init__.py", "opengwasdb/check/run.py", "opengwasdb/cli/__init__.py", "opengwasdb/cli/main.py",
             "opengwasdb/model/__init__.py", "opengwasdb/model/enums.py", "opengwasdb/model/store/util.py",
             "opengwasdb/query/__init__.py", "opengwasdb/query/facade.py", "opengwasdb/store/__init__.py",
@@ -138,7 +142,7 @@ class CombinedModelTests(unittest.TestCase):
     def test_the_engine_commit_date_is_recorded(self) -> None:
         fixture = Fixture(self)
         committed = fx.git(fixture.engine, "show", "-s", "--format=%cI", "HEAD")
-        self.assertEqual(fixture.collect()["engine"]["committed"], committed)
+        self.assertEqual(fixture.collect()["repos"][fx.ENGINE]["committed"], committed)
 
 
 class SystemModelTests(unittest.TestCase):
@@ -167,8 +171,7 @@ class SystemModelTests(unittest.TestCase):
 
     @classmethod
     def collect(cls, registry: Path, system: Path | None = None) -> dict:
-        return architecture.collect(staging.registry_root(registry), engine_git=cls.engine, engine_ref="main",
-                                    system_file=system or cls.system)
+        return architecture.collect(fx.repositories(registry, cls.engine), system_file=system or cls.system)
 
     def test_the_models_system_keys_are_systems_yamls_and_the_stages_are_the_registrys(self) -> None:
         model = self.results["plain"]["model"]
@@ -197,21 +200,21 @@ class SystemModelTests(unittest.TestCase):
 
     def test_system_sections_left_in_a_components_file_are_ignored_and_reported(self) -> None:
         result = self.results["sections"]
-        self.assertEqual(result["gaps"]["registry"]["system_sections"],
+        self.assertEqual(result["gaps"][fx.REGISTRY]["system_sections"],
                          ["system", "people", "external", "containers", "container_relations"])
         self.assertEqual(result["model"]["system"]["name"], "OpenGWAS")
         self.assertNotIn("old_only", [c["id"] for c in result["model"]["containers"]])
         self.assertEqual(len(result["components"]), 8)  # the rest is collected
-        self.assertIn("SYSTEM GAPS: registry system sections ignored: system, people, external, containers, "
+        self.assertIn("SYSTEM GAPS: opengwasdb-stores system sections ignored: system, people, external, containers, "
                       "container_relations (system sections belong in og-dev-hub's `system.yaml`)",
                       command._describe_architecture(result))
-        self.assertEqual(result["gaps"]["engine"]["system_sections"], [])
+        self.assertEqual(result["gaps"][fx.ENGINE]["system_sections"], [])
 
     def test_a_component_naming_a_container_system_yaml_lacks_is_a_gap_naming_both(self) -> None:
         result = self.results["unknown"]
-        self.assertEqual(result["gaps"]["registry"]["containers"], [{"component": "tools", "container": "site"}])
-        self.assertEqual(result["gaps"]["engine"]["containers"], [])
-        self.assertIn("registry tools names container site, which `system.yaml` does not have",
+        self.assertEqual(result["gaps"][fx.REGISTRY]["containers"], [{"component": "tools", "container": "site"}])
+        self.assertEqual(result["gaps"][fx.ENGINE]["containers"], [])
+        self.assertIn("opengwasdb-stores tools names container site, which `system.yaml` does not have",
                       command._describe_architecture(result))
 
 
@@ -241,10 +244,12 @@ class RefreshTests(unittest.TestCase):
     def test_a_refresh_that_fails_is_recorded_with_gits_error(self) -> None:
         fixture = Fixture(self)
         bare = self.clone(fixture, str(fixture.engine.parent / "no-such-origin"))
-        result = architecture.collect(staging.registry_root(fixture.registry), engine_git=bare, refresh_engine=True)
-        self.assertFalse(result["engine"]["refresh"]["ok"])
-        self.assertIn("no-such-origin", result["engine"]["refresh"]["error"])
-        self.assertEqual(result["engine"]["commit"], fixture.engine_commit)
+        result = architecture.collect(
+            staging.Repositories(checkouts={fx.REGISTRY: fixture.registry}, git_dirs={fx.ENGINE: bare}, refresh=True),
+            system_file=fixture.system)
+        self.assertFalse(result["repos"][fx.ENGINE]["refresh"]["ok"])
+        self.assertIn("no-such-origin", result["repos"][fx.ENGINE]["refresh"]["error"])
+        self.assertEqual(result["repos"][fx.ENGINE]["commit"], fixture.engine_commit)
 
     def test_a_refresh_that_works_reads_the_new_main(self) -> None:
         fixture = Fixture(self)
@@ -253,13 +258,15 @@ class RefreshTests(unittest.TestCase):
         fx.git(fixture.engine, "add", "opengwasdb/store/extra.py")
         fx.git(fixture.engine, "-c", "user.name=t", "-c", "user.email=t@e.org", "commit", "-q", "-m", "more")
         head = fx.git(fixture.engine, "rev-parse", "HEAD")
-        result = architecture.collect(staging.registry_root(fixture.registry), engine_git=bare, refresh_engine=True)
-        self.assertEqual(result["engine"]["refresh"], {"ok": True, "error": None})
-        self.assertEqual(result["engine"]["commit"], head)
+        result = architecture.collect(
+            staging.Repositories(checkouts={fx.REGISTRY: fixture.registry}, git_dirs={fx.ENGINE: bare}, refresh=True),
+            system_file=fixture.system)
+        self.assertEqual(result["repos"][fx.ENGINE]["refresh"], {"ok": True, "error": None})
+        self.assertEqual(result["repos"][fx.ENGINE]["commit"], head)
         self.assertNotEqual(head, fixture.engine_commit)
 
     def test_no_refresh_is_recorded_as_not_attempted(self) -> None:
-        self.assertIsNone(Fixture(self).collect()["engine"]["refresh"])
+        self.assertIsNone(Fixture(self).collect()["repos"][fx.ENGINE]["refresh"])
 
 
 if __name__ == "__main__":

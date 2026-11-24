@@ -22,6 +22,9 @@ placement, gaps), so a reader knows which part can drift and which cannot.
 On every page a component, its box in a diagram or its name in a list or
 table, opens the component panel (#435, `architecture_panel.py`): its code,
 the work on it, its imports each way and its ADRs.
+
+Every repository `system.yaml` lists is drawn (og-dev-hub#9): a planned one as
+a planned container, and one that could not be read or has no model as a gap.
 """
 
 from __future__ import annotations
@@ -33,7 +36,7 @@ from itertools import pairwise
 from typing import Any, Mapping
 
 from project_site import architecture_panel, pages
-from project_site.collect import architecture_model as model_rules
+from project_site.collect import architecture_graph, architecture_model as model_rules
 
 Document = Mapping[str, Any]
 
@@ -47,13 +50,13 @@ HEAD = (
 
 PIPELINE_INTRO = (
     "The path data takes through the system, from a source file to a query: the stages, the "
-    "components that do each one in both repositories, and the architecture decisions (ADRs) "
+    "components that do each one in every repository with a model, and the architecture decisions (ADRs) "
     "that govern them."
 )
 STRUCTURE_INTRO = (
     "How the system fits together at three levels (C4): who and what it talks to, its "
-    "containers, and the components inside the engine and this repository, with the imports "
-    "between them."
+    "containers, and the components inside each repository with a model, with the imports "
+    "within and between them."
 )
 
 
@@ -68,9 +71,9 @@ def render_pipeline(documents: Mapping[str, Document | None]) -> str:
         hand="the stages and their order, which stages each component serves, each component's name, "
         "summary and the code paths it claims",
         measured="each component's code size, the ADRs placed on it (by the code an ADR cites and by "
-        "component names in its title), and the engine commit read",
+        "component names in its title), and the commit read in each repository",
     )
-    lines += _engine_notice(data)
+    lines += _read_notice(data)
     lines += ["## The stages", ""]
     components = [c for c in data.get("components") or [] if isinstance(c, Mapping)]
     stages = list((data.get("model") or {}).get("stages") or [])
@@ -83,7 +86,7 @@ def render_pipeline(documents: Mapping[str, Document | None]) -> str:
             continue
         for c in members:
             lines.append(f"- **{panel.link(c['name'], c['id'])}** ({c['repo']}; {_size(c)}): {pages.escape(str(c['summary']))}")
-            lines += [f"  - {_adr_link(a, [c])}" for a in _adrs_for(data, {c["id"]})]
+            lines += [f"  - {_adr_link(a, [c], data)}" for a in _adrs_for(data, {c["id"]})]
         lines.append("")
     lines += ["## ADRs the map cannot place", ""]
     unplaced = [a for a in data.get("adrs") or [] if not a["components"]]
@@ -93,53 +96,62 @@ def render_pipeline(documents: Mapping[str, Document | None]) -> str:
         "component. These cite no code a component claims and name none in their title:"
     )
     lines.append("")
-    lines += [f"- [{pages.escape(str(a['title']))}]({a['url']}) ({a['repo']})" for a in unplaced] or ["_None._"]
+    lines += [f"- [{pages.escape(str(a['title']))}]({a['url']}) ({a['repo']}){_cites(data, a)}" for a in unplaced] or ["_None._"]
     lines += ["", _as_of(data), ""]
     lines += panel.block()
     return "\n".join(lines).rstrip() + "\n"
 
 
 def render_structure(documents: Mapping[str, Document | None]) -> str:
-    """The structure of both repositories, and the measured health of the claims and layering."""
+    """The structure of every listed repository, and the measured health of the claims and layering."""
     lines = [pages.GENERATED, "", STRUCTURE_INTRO, "", "See also the [Pipeline](architecture.qmd).", ""]
     data = pages.available(documents, "architecture")
     if data is None:
         return "\n".join(lines + pages.notices(documents, ("architecture",))).rstrip() + "\n"
     panel = _panel(documents)
     lines += _hand_and_measured(
-        hand="the system context, the containers and how they relate, the engine's layers (the "
+        hand="the system context, the containers and how they relate, the layers a model declares (the "
         "intended layering, a decision rather than a measurement) and the code each component claims",
-        measured="the imports between components (counts, read from the code of both repositories), "
-        "which of them go against the layering, the seam between the repositories, and the gaps in the claims",
-        where="The system context and containers are og-dev-hub's `system.yaml`; the layers and claims "
-        "are in each repository's `docs/architecture/components.yaml`.",
+        measured="the imports between components (counts, read from the code of every repository with a model), "
+        "which of them go against the layering, the imports across repositories, and the gaps in the claims",
+        where="The system context, the containers and the list of repositories are og-dev-hub's `system.yaml`; "
+        "the layers and claims are in each repository's `docs/architecture/components.yaml`.",
     )
-    lines += _engine_notice(data)
+    lines += _read_notice(data)
     model = data.get("model") or {}
     components = [c for c in data.get("components") or [] if isinstance(c, Mapping)]
     edges = [e for e in data.get("edges") or [] if isinstance(e, Mapping)]
-    engine_model = bool((data.get("engine") or {}).get("model"))
     summary = data.get("summary") or {}
+    repos = _repos(data)
+    layers = model.get("layers") if isinstance(model.get("layers"), Mapping) else {}
 
-    lines += ["## System context", "", _cell(_context(model)), "## Containers", "", _cell(_containers(model))]
-    if engine_model:
-        lines += [
-            "## The engine by layer",
-            "",
-            "Each row is a layer, the top layer first; a component may import from its own layer or "
-            f"below. <span style=\"color:{UPWARD}\">Red</span> arrows are imports that go **against** "
-            "that layering, labelled with their import count. Dashed arrows are imports within a "
-            "layer. Imports that follow the layering are not drawn.",
-            "",
-            _cell(_engine(components, edges, model)),
-        ]
-    lines += [
-        "## This repository, and its seam with the engine",
-        "",
-        "Numbers on the arrows into the engine are imports of engine modules.",
-        "",
-        _cell(_registry(components, edges, model, engine_model)),
-    ]
+    lines += ["## System context", "", _cell(_context(model)), "## Containers", "", _container_key(), "",
+              _cell(_containers(model, repos))]
+    # The layered repositories first (the engine), then the others, each in system.yaml's order.
+    for name, repo in sorted(repos.items(), key=lambda item: not layers.get(item[0])):
+        mine = [c for c in components if c.get("repo") == name]
+        if not repo.get("model") or not mine:
+            continue
+        label = repo_label(model, name)
+        if layers.get(name):
+            lines += [
+                f"## {pages.escape(label)} by layer",
+                "",
+                "Each row is a layer, the top layer first; a component may import from its own layer or "
+                f"below. <span style=\"color:{UPWARD}\">Red</span> arrows are imports that go **against** "
+                "that layering, labelled with their import count. Dashed arrows are imports within a "
+                "layer. Imports that follow the layering are not drawn.",
+                "",
+                _cell(_layered(name, components, edges, layers[name], repos, model)),
+            ]
+        else:
+            lines += [
+                f"## {pages.escape(label)}, and its imports of other repositories",
+                "",
+                "Its components by container. Numbers on the arrows into another repository are imports of its modules.",
+                "",
+                _cell(_by_container(name, components, edges, model, repos)),
+            ]
     lines += _health(data, components, edges, summary, panel)
     lines += _planned(documents)
     lines += [_as_of(data), ""]
@@ -218,11 +230,14 @@ def render_work(documents: Mapping[str, Document | None]) -> str:
 def _measured_at(data: Document) -> list[str]:
     inputs = data.get("inputs") or {}
     architecture = inputs.get("architecture") or {}
-    engine = architecture.get("engine") or {}
+    unmeasured = data.get("unmeasured") or {}
+    read = [f"{pages.escape(str(name))} {pages._code(r.get('ref'))} ({pages._code(str(r.get('commit'))[:12])})"
+            for name, r in (architecture.get("repos") or {}).items()
+            if isinstance(r, Mapping) and r.get("commit") and name not in unmeasured]
     days = next((s.get("days") for s in (data.get("branches") or {}).get("sources") or [] if s.get("days")), None)
     return [
         f"Measured {pages._cell(data.get('collected_at'))}, from the board (collected {pages._cell((inputs.get('board') or {}).get('collected_at'))}) "
-        f"and the claims at engine {pages._code(engine.get('ref'))} ({pages._code(str(engine.get('commit'))[:12])}). "
+        f"and the claims at {', '.join(read) or 'no repository with a model'}. "
         f"Branches are pushed ones ahead of `main` whose newest commit is within {pages._figure(days)} days; branches that "
         "exist only on a build host are not shown. On that host, `pixi run architecture conflicts --branch NAME --local GIT_DIR` includes them.",
         "",
@@ -239,19 +254,26 @@ def _fetch_failures(data: Document) -> list[str]:
                 "The branches shown are the ones already there, so they may be out of date.",
                 "",
             ]
+        if source.get("error"):
+            lines += [
+                f"> **The branches of {pages.escape(str(source.get('repo')))} could not be read**: {pages._cell(source.get('error'))}.",
+                "",
+            ]
     return lines
 
 
 def _unmeasured(data: Document) -> list[str]:
     """Work that could not be placed: unknown, so the page says so instead of showing no meets."""
-    reason = (data.get("unmeasured") or {}).get("engine")
-    if not reason:
+    unmeasured = data.get("unmeasured") or {}
+    if not unmeasured:
         return []
-    return [
-        f"> **Engine-side work was not measured**: {pages._cell(reason)}. Without the engine's claims no engine file "
-        "belongs to a component, so the meets shown are this repository's only; an engine meet is not ruled out.",
+    names = ", ".join(pages.escape(str(name)) for name in unmeasured)
+    lines = [
+        f"> **Work was not measured in {names}**: without a repository's claims none of its files belongs to a "
+        "component, so the meets shown are the other repositories' only; a meet there is not ruled out.",
         "",
     ]
+    return lines + [f"- {pages.escape(str(name))}: {pages._cell(why)}" for name, why in unmeasured.items()] + [""]
 
 
 def _unresolved(data: Document) -> list[str]:
@@ -397,7 +419,7 @@ def _planned(documents: Mapping[str, Document | None]) -> list[str]:
     plans = [p for p in data["plans"] if isinstance(p, Mapping)]
     if not plans:
         return lines + ["No ticket carries an `architecture` block yet.", ""]
-    reads = (data.get("inputs") or {}).get("architecture") or {}
+    reads = ((data.get("inputs") or {}).get("architecture") or {}).get("repos") or {}
     for plan in plans:
         lines += [f"### {pages._link(plan.get('ticket'), plan.get('url'))} {pages.escape(str(plan.get('title') or ''))} ({pages.escape(str(plan.get('state')))})", ""]
         body = plan.get("plan") or {}
@@ -407,8 +429,8 @@ def _planned(documents: Mapping[str, Document | None]) -> list[str]:
         lines += [_cell(_plan_dot(plan)), *_plan_items(plan)]
         if body.get("absorbs"):
             lines += ["Absorbs (drawn here, not checked): " + "; ".join(pages._code(a) for a in body["absorbs"]), ""]
-        for repo in ("registry", "engine"):
-            unmet = [c for c in plan.get("checks") or [] if c.get("held") is False and (c.get("repo") or "engine") == repo]
+        for repo in dict.fromkeys(str(c.get("repo")) for c in plan.get("checks") or []):
+            unmet = [c for c in plan.get("checks") or [] if c.get("held") is False and str(c.get("repo")) == repo]
             if unmet:
                 n = len(unmet)
                 read = reads.get(repo) or {}
@@ -484,39 +506,57 @@ def _hand_and_measured(*, hand: str, measured: str, where: str = "Each is in a r
     ]
 
 
-def _engine_notice(data: Document) -> list[str]:
-    engine = data.get("engine") or {}
-    lines = [
-        f"Read from engine {pages._code(engine.get('ref'))} at {pages._code(str(engine.get('commit'))[:12])}, "
-        f"committed {pages._cell(engine.get('committed'))}.",
-        "",
-    ]
-    # The registry is read from the site's clone too (og-dev-hub#7), and a refresh of
-    # it that failed is as visible as the engine's.
-    registry = data.get("registry") or {}
-    registry_refresh = registry.get("refresh")
-    if isinstance(registry_refresh, Mapping) and registry_refresh.get("ok") is False:
+def _repos(data: Document) -> dict[str, Mapping[str, Any]]:
+    """`architecture.json`'s repositories, in `system.yaml`'s order."""
+    return {str(name): r for name, r in (data.get("repos") or {}).items() if isinstance(r, Mapping)}
+
+
+def repo_label(model: Mapping[str, Any], name: str) -> str:
+    """A repository's name, with its container's name or id where that says more: `opengwasdb (the engine)`.
+
+    Drawn from `system.yaml`'s containers, never written here: a repository with
+    one container whose name is not the repository's is labelled with that name;
+    one whose container's name is its own, with the container's id.
+    """
+    mine = [c for c in model.get("containers") or [] if isinstance(c, Mapping) and c.get("repo") == name]
+    if len(mine) != 1:
+        return name
+    container = mine[0]
+    if str(container.get("name")) != name:
+        return str(container["name"]) if str(container["name"]).startswith(name) else f"{name} ({container['name']})"
+    if str(container.get("id")) != name:
+        return f"{name} (the {str(container['id']).replace('_', ' ')})"
+    return name
+
+
+def _read_notice(data: Document) -> list[str]:
+    """Which commit of each repository was read, and every repository that could not be, or has no model."""
+    repos = _repos(data)
+    read = [f"{pages.escape(name)} {pages._code(r.get('ref'))} at {pages._code(str(r.get('commit'))[:12])} "
+            f"(committed {pages._cell(r.get('committed'))})" for name, r in repos.items() if r.get("model")]
+    lines = [f"Read from {', '.join(read) or 'no repository with a model'}.", ""]
+    for name, r in repos.items():
+        refresh = r.get("refresh")
+        if isinstance(refresh, Mapping) and refresh.get("ok") is False:
+            lines += [
+                f"> **The {pages.escape(name)} refresh failed**: {pages._cell(refresh.get('error'))}. "
+                f"This is the {pages._code(r.get('ref'))} its clone already had ({pages._code(str(r.get('commit'))[:12])}), "
+                "so it may be behind.",
+                "",
+            ]
+    for name, r in repos.items():
+        if r.get("error"):
+            lines += [f"> **{pages.escape(name)} could not be read**: {pages._cell(r['error'])}. It is drawn as its "
+                      "containers only.", ""]
+    missing = [name for name, r in repos.items() if r.get("model") is False]
+    if missing:
         lines += [
-            f"> **The opengwasdb-stores refresh failed**: {pages._cell(registry_refresh.get('error'))}. "
-            f"This is the commit this clone already had ({pages._code(str(registry.get('commit'))[:12])}), "
-            "so it may be behind.",
+            f"> **{len(missing)} {'repository has' if len(missing) == 1 else 'repositories have'} no architecture model "
+            f"yet**: {', '.join(pages.escape(n) for n in missing)}. Their components, layers and imports are unknown, "
+            "not none, and each is drawn as its containers only.",
             "",
         ]
-    refresh = engine.get("refresh")
-    if isinstance(refresh, Mapping) and refresh.get("ok") is False:
-        lines += [
-            f"> **The engine refresh failed**: {pages._cell(refresh.get('error'))}. "
-            f"This is the {pages._code(engine.get('ref'))} this clone already had, so it may be behind.",
-            "",
-        ]
-    if engine.get("model"):
-        return lines
-    return lines + [
-        f"> **The engine has no architecture model yet**: no architecture model at {pages._code(engine.get('ref'))} "
-        f"(commit {pages._code(str(engine.get('commit'))[:12])}) of {pages._code(engine.get('repo'))}. Its components, layers and "
-        "imports are not drawn; this repository's are.",
-        "",
-    ]
+    return lines
 
 
 def _size(component: Mapping[str, Any]) -> str:
@@ -529,54 +569,71 @@ def _adrs_for(data: Document, ids: set[str]) -> list[Mapping[str, Any]]:
     return [a for a in data.get("adrs") or [] if ids & set(a["components"])]
 
 
-def _adr_link(adr: Mapping[str, Any], members: list[Mapping[str, Any]]) -> str:
-    """An ADR as a link, with how it was placed on `members` (code it cites, or a name in its title)."""
+def _adr_link(adr: Mapping[str, Any], members: list[Mapping[str, Any]], data: Document | None = None) -> str:
+    """An ADR as a link, with how it was placed on `members` (code it cites, or a name in its title), and what it cites."""
     note = "" if adr.get("status") in (None, "current") else f" _{adr['status']}_"
     via = sorted({adr["components"][c["id"]] for c in members if c["id"] in adr["components"]})
-    return f"[{pages.escape(str(adr['title']))}]({adr['url']}) ({adr['repo']}; placed by {' and '.join(via)}){note}"
+    return (f"[{pages.escape(str(adr['title']))}]({adr['url']}) ({adr['repo']}; placed by {' and '.join(via)}){note}"
+            f"{_cites(data or {}, adr)}")
+
+
+def cited_adrs(data: Document, adr: Mapping[str, Any]) -> list[tuple[str, str | None]]:
+    """`(text, url)` of each ADR another repository's ADR cites (`<repo> ADR NNNN`); `url` is `None` when it was not collected."""
+    urls = {(str(a.get("repo")), str(a.get("number"))): a.get("url") for a in data.get("adrs") or [] if isinstance(a, Mapping)}
+    return [(f"{c['repo']} ADR {c['number']}", urls.get((str(c["repo"]), str(c["number"]))))
+            for c in adr.get("cites") or [] if isinstance(c, Mapping)]
+
+
+def _cites(data: Document, adr: Mapping[str, Any]) -> str:
+    found = cited_adrs(data, adr)
+    if not found:
+        return ""
+    return "; cites " + ", ".join(pages._link(text, url) if url else pages.escape(text) for text, url in found)
 
 
 def _as_of(data: Document) -> str:
-    registry, engine = data.get("registry") or {}, data.get("engine") or {}
-    return (
-        f"Read from this repository at {pages._code(registry.get('ref'))} ({pages._code(str(registry.get('commit'))[:12])}) and the engine at "
-        f"{pages._code(engine.get('ref'))} ({pages._code(str(engine.get('commit'))[:12])}); collected {pages._cell(data.get('collected_at'))}."
-    )
+    read = [f"{pages.escape(name)} at {pages._code(r.get('ref'))} ({pages._code(str(r.get('commit'))[:12])})"
+            for name, r in _repos(data).items() if r.get("model")]
+    return f"Read from {', '.join(read) or 'no repository with a model'}; collected {pages._cell(data.get('collected_at'))}."
 
 
 def _seam(summary: Mapping[str, Any]) -> str:
-    """The seam's import count, and the component pairs when the engine's model says which they are (#421).
+    """The seam's import count, and the component pairs when its target's model says which they are (#421).
 
-    The count is measured from the names, so it stands with or without the
-    engine's model; the pairs are resolved through the engine's claims, and an
-    unknown number of them is said to be unknown, never 0.
+    The count is measured from the names, so it stands without opengwasdb's
+    model; the pairs are resolved through opengwasdb's claims, and an unknown
+    number of them is said to be unknown, never 0.
     """
-    imports = f"{pages._figure(summary.get('registry_to_engine_imports'))} imports from this repository into the engine"
+    source, target = architecture_graph.SEAM
+    if summary.get("registry_to_engine_imports") is None:
+        return f"The imports from {source} into {target} are unknown: {source} has no model at the ref read."
+    imports = f"{pages._figure(summary.get('registry_to_engine_imports'))} imports from {source} into {target}"
     pairs = summary.get("registry_to_engine_edges")
     if pairs is None:
-        return imports + "; the component pairs cannot be drawn until the engine's model is at the ref read."
+        return imports + f"; the component pairs cannot be drawn until {target}'s model is at the ref read."
     return imports + f", across {pages._figure(pairs)} component pairs."
 
 
 def _baseline(baseline: Any) -> list[str]:
-    """The engine-import baseline's size, and what this repository makes, as one line (#421).
+    """The engine-import baseline's size, and what opengwasdb-stores makes, as one line (#421).
 
     The size is the committed file's entry count, which the collector read from
-    this repository; a file that is not there is unknown, never zero.
+    opengwasdb-stores; a file that is not there is unknown, never zero.
     """
     if not isinstance(baseline, Mapping):
         return []
+    source = baseline.get("from") or architecture_graph.SEAM[0]
     entries, measured = baseline.get("entries"), baseline.get("measured")
     if not isinstance(entries, int) or isinstance(entries, bool):
         return [
             f"**The engine-import baseline is unknown**: {pages._cell(baseline.get('note'))}. "
-            f"This repository makes {pages._figure(measured)} imports of engine modules.",
+            f"{source} makes {pages._figure(measured)} imports of engine modules.",
             "",
         ]
     return [
-        f"**The engine-import baseline** ({pages._code(baseline.get('path'))}) lists "
+        f"**The engine-import baseline** ({pages._code(baseline.get('path'))}, in {source}) lists "
         f"{pages._figure(entries)} imports of engine modules, one per importing file and imported name; "
-        f"this repository makes {pages._figure(measured)} of them.",
+        f"{source} makes {pages._figure(measured)} of them.",
         "",
     ]
 
@@ -590,37 +647,46 @@ def _system_gap_lines(found: Mapping[str, Any]) -> list[str]:
 def _health(
     data: Document, components: list, edges: list, summary: Mapping[str, Any], panel: architecture_panel.Panel
 ) -> list[str]:
-    lines = ["## Health", ""]
+    lines = ["## Health", "", "### Claims", ""]
     gaps = data.get("gaps") or {}
-    names = {"registry": "This repository", "engine": "The engine"}
-    for repo in ("registry", "engine"):
-        found = gaps.get(repo) or {}
-        unclaimed, stale = found.get("unclaimed") or [], found.get("stale") or []
-        lines.append(f"### {names[repo]}: claims")
-        lines.append("")
-        if repo == "engine" and not (data.get("engine") or {}).get("model"):
-            lines += ["No model to check the engine's files against.", ""]
+    model = data.get("model") or {}
+    for name, repo in _repos(data).items():
+        label = pages.escape(repo_label(model, name))
+        found = gaps.get(name) or {}
+        if repo.get("planned"):
+            lines += [f"- **{label}**: planned, not created yet.", ""]
             continue
-        lines.append(f"{len(unclaimed)} code files no component claims; {len(stale)} claims that match no tracked file.")
+        if repo.get("private"):
+            lines += [f"- **{label}**: private, so drawn as its container only.", ""]
+            continue
+        if found.get("unreadable") or repo.get("error"):
+            lines += [f"- **{label}**: could not be read: {pages._cell(found.get('unreadable') or repo.get('error'))}.", ""]
+            continue
+        if not repo.get("model"):
+            why = found.get("no_model") or repo.get("note")
+            lines += [f"- **{label}**: no model, so its components are unknown: {pages._cell(why)}.", ""]
+            continue
+        unclaimed, stale = found.get("unclaimed") or [], found.get("stale") or []
+        lines.append(f"- **{label}**: {len(unclaimed)} code files no component claims; {len(stale)} claims that match no tracked file.")
+        lines += [f"  - Unclaimed: {pages._code(path)}" for path in unclaimed]
+        lines += [f"  - Stale: {pages._code(c['path'])} (claimed by {pages._code(c['component'])})" for c in stale]
+        lines += [f"  {line}" for line in _system_gap_lines(found) if line]
         lines.append("")
-        lines += [f"- Unclaimed: {pages._code(path)}" for path in unclaimed]
-        lines += [f"- Stale: {pages._code(c['path'])} (claimed by {pages._code(c['component'])})" for c in stale]
-        if unclaimed or stale:
-            lines.append("")
-        lines += _system_gap_lines(found)
     by_id = {c["id"]: c for c in components}
-    upward = [e for e in edges if e.get("upward")]
-    lines += ["### The engine's layering", ""]
-    if not (data.get("engine") or {}).get("model"):
+    layers = model.get("layers") if isinstance(model.get("layers"), Mapping) else {}
+    lines += ["### Layering", ""]
+    if not layers:
         lines += [
-            "The engine's layering cannot be measured until its model is at the ref read: a component "
+            "The layering cannot be measured until a model that declares layers is at the ref read: a component "
             "without a layer has no upward for an import to cross, so there is no figure to give.",
             "",
         ]
-    else:
+    for name in layers:
+        mine = [e for e in edges if e.get("scope") == "within" and e.get("repo") == name]
+        upward = [e for e in mine if e.get("upward")]
         lines.append(
-            f"{summary.get('upward_edges', 0)} edges ({summary.get('upward_imports', 0)} imports) go against the layering, "
-            f"of {sum(1 for e in edges if e.get('scope') == 'engine')} edges between engine components."
+            f"{pages.escape(repo_label(model, name))}: {len(upward)} edges ({sum(e['imports'] for e in upward)} imports) "
+            f"go against the layering, of {len(mine)} edges between its components."
         )
         lines.append("")
         if upward:
@@ -629,10 +695,19 @@ def _health(
                 a, b = by_id[e["from"]], by_id[e["to"]]
                 lines.append(f"| {panel.link(a['name'], a['id'])} (layer {a['layer']}) | {panel.link(b['name'], b['id'])} (layer {b['layer']}) | {e['imports']} |")
             lines.append("")
-    lines += ["### The seam between the repositories", ""]
+    lines += ["### Imports across repositories", ""]
     lines.append(_seam(summary))
     lines.append("")
     lines += _baseline(data.get("baseline"))
+    pairs: dict[tuple[str, str], list[int]] = defaultdict(list)
+    for e in edges:
+        if e.get("scope") == "across":
+            pairs[(str(e.get("from_repo")), str(e.get("to_repo")))].append(e["imports"])
+    if pairs:
+        lines += ["| From | Into | Imports | Component pairs |", "|---|---|---:|---:|"]
+        for (a, b), counts in sorted(pairs.items()):
+            lines.append(f"| {pages.escape(a)} | {pages.escape(b)} | {sum(counts)} | {len(counts)} |")
+        lines.append("")
     lines += ["### ADRs", ""]
     lines.append(f"{summary.get('adrs_placed', 0)} of {summary.get('adrs_total', 0)} ADRs are placed on a component.")
     lines.append("")
@@ -680,15 +755,30 @@ def _context(model: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _containers(model: Mapping[str, Any]) -> str:
+def _container_key() -> str:
+    return ("A dashed box is a container whose repository is **planned** (not created yet); a grey one is a "
+            "**private** repository's, drawn as its container only; a cylinder is data.")
+
+
+def _containers(model: Mapping[str, Any], repos: Mapping[str, Mapping[str, Any]] | None = None) -> str:
     system = model.get("system") or {}
+    repos = repos or {}
     lines = ["digraph containers {", HEAD, "rankdir=TB; compound=true;"]
     for p in model.get("people") or []:
         lines.append(f'"{_dq(p["id"])}" [label={_label(p["name"], "Person", None)} fillcolor="#dbe9f7"];')
     lines.append(f'subgraph cluster_system {{ label="{_dq(system.get("name", "System"))}"; fontname="Arial"; fontsize=11; margin=16; color="{GREY}";')
     for c in model.get("containers") or []:
-        shape = ' shape=cylinder style="filled"' if c.get("repo") is None else ""
-        lines.append(f'"{_dq(c["id"])}" [{shape.strip()} label={_label(c["name"], c.get("tech"), c.get("summary"), 28)} fillcolor="#c5dcf2"];')
+        repo = repos.get(str(c.get("repo"))) or {}
+        tech = c.get("tech")
+        if c.get("repo") is None:
+            style = ' shape=cylinder style="filled" fillcolor="#c5dcf2"'
+        elif repo.get("planned"):
+            style, tech = ' style="rounded,filled,dashed" fillcolor="#ffffff"', f"planned; {tech}" if tech else "planned"
+        elif repo.get("private"):
+            style, tech = ' fillcolor="#e5e5e5"', f"private; {tech}" if tech else "private"
+        else:
+            style = ' fillcolor="#c5dcf2"'
+        lines.append(f'"{_dq(c["id"])}" [{style.strip()} label={_label(c["name"], tech, c.get("summary"), 28)}];')
     lines.append("}")
     for x in model.get("external") or []:
         lines.append(f'"{_dq(x["id"])}" [label={_label(x["name"], "External", None)} fillcolor="#eeeeee"];')
@@ -716,12 +806,32 @@ def _panel(documents: Mapping[str, Document | None]) -> architecture_panel.Panel
     return architecture_panel.Panel(documents, states=STATE_MEANING, size=_size)
 
 
-def _engine(components: list, edges: list, model: Mapping[str, Any]) -> str:
-    """The engine's components, one row per layer, with the imports that go against the layering."""
-    engine = [c for c in components if c["repo"] == "engine"]
-    layers = model.get("layers") or []
+def _across(name: str, components: list, edges: list, mine: Mapping[str, Any], model: Mapping[str, Any],
+            repos: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    """One node per repository `name`'s components import, and an arrow from each importing component, with its count."""
+    lines: list[str] = []
+    into: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for e in edges:
+        if e.get("scope") == "across" and e.get("from_repo") == name and e["from"] in mine:
+            into[str(e.get("to_repo"))][e["from"]] += e["imports"]
+    for target, sources in sorted(into.items()):
+        theirs = [c for c in components if c.get("repo") == target]
+        reached = {e["to"] for e in edges if e.get("scope") == "across" and e.get("from_repo") == name and e.get("to_repo") == target}
+        summary = (f"{len(reached)} of {len(theirs)} components" if (repos.get(target) or {}).get("model")
+                   else "no architecture model yet")
+        node = f"repo:{target}"
+        lines.append(f'"{_dq(node)}" [fillcolor="#eeeeee" label=' + _label(repo_label(model, target), "imported directly", summary, 28) + "];")
+        for source, n in sorted(sources.items()):
+            lines.append(f'"{_dq(source)}" -> "{_dq(node)}" [label="{n}" penwidth={0.6 + min(n, 30) / 30:.2f}];')
+    return lines
+
+
+def _layered(name: str, components: list, edges: list, layers: list, repos: Mapping[str, Mapping[str, Any]],
+             model: Mapping[str, Any]) -> str:
+    """Repository `name`'s components, one row per layer, with the imports that go against the layering."""
+    engine = [c for c in components if c["repo"] == name]
     by_id = {c["id"]: c for c in engine}
-    lines = ["digraph engine {", HEAD, "rankdir=TB; newrank=true; ranksep=0.45;"]
+    lines = [f"digraph {_dq(name).replace('-', '_')} {{", HEAD, "rankdir=TB; newrank=true; ranksep=0.45;"]
     for layer in layers:
         lines.append(
             f'"L{layer["layer"]}" [shape=plaintext style="" fontcolor="{GREY}" '
@@ -740,7 +850,7 @@ def _engine(components: list, edges: list, model: Mapping[str, Any]) -> str:
         if top and bottom:
             lines.append(f'"{_dq(top)}" -> "{_dq(bottom)}" [style=invis weight=0];')
     for e in edges:
-        if e.get("scope") != "engine" or e["from"] not in by_id or e["to"] not in by_id:
+        if e.get("scope") != "within" or e["from"] not in by_id or e["to"] not in by_id:
             continue
         a, b, n = by_id[e["from"]], by_id[e["to"]], e["imports"]
         if e.get("upward"):
@@ -750,40 +860,29 @@ def _engine(components: list, edges: list, model: Mapping[str, Any]) -> str:
             )
         elif a["layer"] == b["layer"]:
             lines.append(f'"{_dq(e["from"])}" -> "{_dq(e["to"])}" [style=dashed constraint=false label=" {n}"];')
+    lines += _across(name, components, edges, by_id, model, repos)
     lines.append("}")
     return "\n".join(lines)
 
 
-def _registry(components: list, edges: list, model: Mapping[str, Any], engine_model: bool) -> str:
-    """This repository's components by container, and the imports they make into the engine."""
-    mine = [c for c in components if c["repo"] == "registry"]
+def _by_container(name: str, components: list, edges: list, model: Mapping[str, Any],
+                  repos: Mapping[str, Mapping[str, Any]]) -> str:
+    """Repository `name`'s components by container, the imports between them, and the imports they make of other repositories."""
+    mine = [c for c in components if c["repo"] == name]
     containers = {c["id"]: c for c in model.get("containers") or []}
     by_container: dict[str, list[str]] = defaultdict(list)
     for c in mine:
         by_container[c["container"]].append(c["id"])
     by_id = {c["id"]: c for c in mine}
-    lines = ["digraph registry {", HEAD, "rankdir=TB; newrank=true;"]
+    lines = [f"digraph {_dq(name).replace('-', '_')} {{", HEAD, "rankdir=TB; newrank=true;"]
     for container, ids in by_container.items():
-        name = containers.get(container, {}).get("name", container)
-        lines.append(f'subgraph "cluster_{_dq(container)}" {{ label="{_dq(name)}"; fontname="Arial"; fontsize=11; margin=12; color="{GREY}";')
+        label = containers.get(container, {}).get("name", container)
+        lines.append(f'subgraph "cluster_{_dq(container)}" {{ label="{_dq(label)}"; fontname="Arial"; fontsize=11; margin=12; color="{GREY}";')
         lines += [_node(by_id[i]) for i in ids]
         lines.append("}")
-    engine_ids = {c["id"] for c in components if c["repo"] == "engine"}
-    lines.append(
-        '"engine" [fillcolor="#eeeeee" label='
-        + _label("Engine (opengwasdb)", "imported directly",
-                 f"{len({e['to'] for e in edges if e.get('scope') == 'registry_to_engine'})} of {len(engine_ids)} engine components"
-                 if engine_model else "no architecture model yet", 28)
-        + "];"
-    )
     for e in edges:
-        if e.get("scope") == "registry" and e["from"] in by_id and e["to"] in by_id:
+        if e.get("scope") == "within" and e["from"] in by_id and e["to"] in by_id:
             lines.append(f'"{_dq(e["from"])}" -> "{_dq(e["to"])}";')
-    seam: dict[str, int] = defaultdict(int)
-    for e in edges:
-        if e.get("scope") == "registry_to_engine" and e["from"] in by_id:
-            seam[e["from"]] += e["imports"]
-    for source, n in sorted(seam.items()):
-        lines.append(f'"{_dq(source)}" -> "engine" [label="{n}" penwidth={0.6 + min(n, 30) / 30:.2f}];')
+    lines += _across(name, components, edges, by_id, model, repos)
     lines.append("}")
     return "\n".join(lines)

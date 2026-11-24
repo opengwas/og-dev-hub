@@ -137,7 +137,7 @@ class UnmeasuredEngineTests(unittest.TestCase):
     def test_engine_side_work_is_reported_unmeasured_with_the_reason(self) -> None:
         self.assertEqual(
             self.result()["unmeasured"],
-            {"engine": "docs/architecture/components.yaml is not in opengwas/opengwasdb at main (eeeeeeeeeeee)"},
+            {"opengwasdb": "docs/architecture/components.yaml is not in opengwasdb at main (eeeeeeeeeeee)"},
         )
 
     def test_a_measured_engine_has_nothing_unmeasured(self) -> None:
