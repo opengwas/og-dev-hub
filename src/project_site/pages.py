@@ -542,6 +542,8 @@ def _versions_section(documents: Mapping[str, Document | None]) -> list[str]:
 
 def _catalog_section(documents: Mapping[str, Document | None]) -> list[str]:
     lines = ["### The Analysis Catalog", ""]
+    # LD Stores are not in the catalog: the figure is a gap whatever the catalog holds.
+    lines += ["| Figure | Value |", "| --- | --- |", f"| LD Stores | {LD_STORES_UNKNOWN} |", ""]
     catalog = available(documents, "catalog")
     if catalog is None:
         return lines + ["No catalog figure can be shown while the Catalog data is unavailable.", ""]
@@ -559,11 +561,11 @@ def _catalog_section(documents: Mapping[str, Document | None]) -> list[str]:
         lines += [
             f"The current version is `{_cell(current.get('version'))}`, built {_cell(built)}:"
             f" **{_figure(totals.get('analyses'))}** listed Analyses in"
-            f" **{_figure(totals.get('stores'))}** Stores.",
+            f" **{_figure(totals.get('stores'))}** GWAS Stores.",
             "",
         ]
     lines += ["| Figure | Newest collected | Movement |", "| --- | --- | --- |"]
-    figures = (("Analyses", "analyses"), ("Stores", "stores"))
+    figures = (("Analyses", "analyses"), ("GWAS Stores", "stores"))
     for label, field in figures:
         series = [(version.get("totals") or {}).get(field) for version in versions]
         lines.append(f"| {label} | {_figure(series[-1])} | {_movement(series)} |")
@@ -1408,16 +1410,46 @@ def column_total(values: Sequence[Any]) -> str:
     return _figure(sum(numbers))
 
 
+LD_REGISTRY_ISSUE = "https://github.com/opengwas/opengwasdb-stores/issues/496"
+
+
+LD_STORES_UNKNOWN = "unknown"
+
+
+def _ld_stores_gap() -> list[str]:
+    """The LD Stores section: a gap until opengwasdb-stores#496 holds the LD Store Registry.
+
+    Static text, never a count: the number of LD Stores is unknown, never 0.
+    """
+    return [
+        "## LD Stores",
+        "",
+        "The LD Store Registry is not yet in opengwasdb-stores",
+        f"([opengwasdb-stores#496]({LD_REGISTRY_ISSUE})), so LD Stores are not listed.",
+        "Their number is unknown, never 0.",
+        "",
+    ]
+
+
 def render_stores_index(documents: Mapping[str, Document | None]) -> str:
-    """The Stores section's index: every registered Store Release and the totals it may report."""
+    """The Stores section's index: the GWAS Stores, then the LD Stores gap."""
     lines = [GENERATED, ""]
     lines += notices(documents, ("stores", "catalog"))
+    lines += ["## GWAS Stores", ""]
+    lines += _gwas_stores(documents)
+    lines += _ld_stores_gap()
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _gwas_stores(documents: Mapping[str, Document | None]) -> list[str]:
+    """Every registered Store Release and the totals it may report."""
+    lines: list[str] = []
     stores = available(documents, "stores")
     if stores is None:
-        return "\n".join(lines + ["No Store Release can be listed while the Stores data is unavailable.", ""])
+        return ["No Store Release can be listed while the Stores data is unavailable.", ""]
     rows = [entry for entry in stores.get("stores") or [] if isinstance(entry, Mapping)]
     if not rows:
-        return "\n".join(lines + ["The registry holds no Store Release.", ""])
+        return ["The registry holds no Store Release.", ""]
     lines += [
         f"The registry holds **{len(rows)}** Store Releases.",
         "",
@@ -1458,7 +1490,7 @@ def render_stores_index(documents: Mapping[str, Document | None]) -> str:
         "(`docs/spec/analysis-catalog.md`).",
         "",
     ]
-    return "\n".join(lines).rstrip() + "\n"
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -1550,7 +1582,7 @@ def _catalog_by_version(documents: Mapping[str, Document | None]) -> list[str]:
     if not versions:
         return lines + ["No Analysis Catalog version has been built yet.", ""]
     lines += [
-        "| Version | Built at | Listed Analyses | Stores | Changes | Current |",
+        "| Version | Built at | Listed Analyses | GWAS Stores | Changes | Current |",
         "| --- | --- | --- | --- | --- | --- |",
     ]
     for version in versions:
@@ -1567,10 +1599,10 @@ def _catalog_by_version(documents: Mapping[str, Document | None]) -> list[str]:
     lines += [
         "",
         f"- **Listed Analyses**: {_movement(analyses)}",
-        f"- **Stores**: {_movement(stores)}",
+        f"- **GWAS Stores**: {_movement(stores)}",
         "",
     ]
-    for label, series in (("Listed Analyses", analyses), ("Stores", stores)):
+    for label, series in (("Listed Analyses", analyses), ("GWAS Stores", stores)):
         lines += _trend_block(series, label=f"{label} per version", caption=f"{label} per version: {_movement(series)}.")
     for dimension, title in DIMENSIONS:
         lines += _dimension_table(versions, dimension, title)
