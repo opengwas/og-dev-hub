@@ -98,8 +98,8 @@ containers:
      summary: "opengwas.io: browsing GWAS Stores and LD Stores, for researchers."}
   - {id: ops_dashboard, name: ogdb-dashboard, repo: ogdb-dashboard, tech: web app,
      summary: "Running state for developers: the Data API's workers and queue, the server, the loaded catalog version, and audited operations."}
-  - {id: dev_hub, name: Dev Hub, repo: og-dev-hub, tech: Quarto website,
-     summary: "Built state for developers, with the board's plan over it, the epics and both Store Registries."}
+  - {id: dev_hub, name: Dev Hub, repo: og-dev-hub, tech: Static site (HTML and plain JS) built in CI,
+     summary: "Built state only: the GWAS Stores and LD Stores, the architecture, and the decisions and terms, collected from every public repository. No plan and no epics."}
 
 container_relations:
   - [curator, gwas_generation, "selects sources and maps traits with"]
@@ -136,4 +136,4 @@ container_relations:
   - [ops_dashboard, data_api, "monitors and operates"]
   - [dev_hub, gwas_registry, "collects"]
   - [dev_hub, ld_registry, "collects"]
-  - [dev_hub, github, "collects the board and every repository from"]
+  - [dev_hub, github, "collects every public repository from"]
