@@ -41,6 +41,48 @@ def load_model(text: str) -> dict[str, Any]:
     return model
 
 
+# The keys of a components file that belong to og-dev-hub's `system.yaml` (#8).
+SYSTEM_SECTIONS = ("system", "people", "external", "containers", "container_relations")
+
+
+def system_sections_in(model: Mapping[str, Any]) -> list[str]:
+    """The system sections a components file still holds: ignored, and reported as a gap."""
+    return [key for key in SYSTEM_SECTIONS if key in model]
+
+
+def load_system(text: str) -> dict[str, Any]:
+    """`system.yaml`'s content: the five system keys checked, and `repos` carried along.
+
+    Ids are unique across `people`, `external` and `containers`, and every
+    `container_relations` endpoint names one of them. A file that fails any of
+    this is an error naming the problem.
+    """
+    doc = yaml.safe_load(text)
+    if not isinstance(doc, dict):
+        raise ValueError("system.yaml must be a mapping")
+    if not isinstance(doc.get("system"), dict):
+        raise ValueError("system.yaml: `system` must be a mapping with a name and a summary")
+    seen: set[str] = set()
+    for key in ("people", "external", "containers"):
+        entries = doc.get(key)
+        if not isinstance(entries, list) or not all(isinstance(e, dict) and "id" in e for e in entries):
+            raise ValueError(f"system.yaml: `{key}` must be a list of mappings, each with an `id`")
+        for entry in entries:
+            if str(entry["id"]) in seen:
+                raise ValueError(f"system.yaml: duplicate id {str(entry['id'])!r} (in `{key}`)")
+            seen.add(str(entry["id"]))
+    relations = doc.get("container_relations")
+    if not isinstance(relations, list) or not all(isinstance(r, list) and len(r) == 3 for r in relations):
+        raise ValueError("system.yaml: `container_relations` must be a list of [from, to, text]")
+    for a, b, _ in relations:
+        for end in (a, b):
+            if str(end) not in seen:
+                raise ValueError(f"system.yaml: `container_relations` names {str(end)!r}, which is no person, external system or container")
+    if "repos" in doc and not isinstance(doc["repos"], list):
+        raise ValueError("system.yaml: `repos` must be a list")
+    return doc
+
+
 def claims_of(components: Iterable[Mapping[str, Any]]) -> Claims:
     """Every `(claimed path, component id)` of `components`, in file order."""
     return [(path, str(component["id"])) for component in components for path in component.get("paths") or []]
