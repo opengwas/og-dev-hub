@@ -431,18 +431,14 @@ def rewrite_mirror(
     registry: Path,
     commit: str,
     registry_url: str,
-    engine: Path,
-    engine_commit: str,
-    engine_url: str,
-    engine_prefix: str,
     sections: Sequence[tuple[str, Path, str, str]] = (),
 ) -> LinkReport:
     """Rewrite the mirror's outbound links, spelling Mermaid fences for Quarto.
 
-    A page under `engine_prefix` came from the engine at `engine_commit`; a page
-    under the prefix of one of `sections`, each `(prefix, git directory, commit,
-    url)`, came from that repository (og-dev-hub's own docs, og-dev-hub#7); every
-    other page came from the registry at `commit`. A rewritten target that the
+    A page under the prefix of one of `sections`, each `(prefix, git directory,
+    commit, url)`, came from that repository (the engine's docs at the revision
+    the registry pins; og-dev-hub's own docs, og-dev-hub#7); every other page
+    came from the registry at `commit`. A rewritten target that the
     commit does not have is reported rather than hidden: its GitHub link will 404
     exactly as the relative one would have.
 
@@ -455,7 +451,7 @@ def rewrite_mirror(
     # the paths that commit has, and the pages of it staged under another name.
     trees = [
         (prefix, url, at, set(_git(git_dir, "ls-tree", "-r", "--name-only", at).splitlines()), {})
-        for prefix, git_dir, at, url in [(engine_prefix, engine, engine_commit, engine_url), *sections]
+        for prefix, git_dir, at, url in sections
     ]
     registry_tree = ("", registry_url, commit, set(_git(registry, "ls-tree", "-r", "--name-only", commit).splitlines()), {})
 

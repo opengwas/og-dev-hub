@@ -310,11 +310,10 @@ def rewrite(stage: Stage) -> LinkReport:
         registry=stage.registry.git_dir,
         commit=stage.registry_commit,
         registry_url=paths.REGISTRY_URL,
-        engine=stage.engine_clone,
-        engine_commit=stage.engine_commit,
-        engine_url=paths.ENGINE_URL,
-        engine_prefix=f"{ENGINE_SECTION}/",
-        sections=[(f"{HUB_SECTION}/", stage.hub, stage.hub_commit, paths.HUB_URL)],
+        sections=[
+            (f"{ENGINE_SECTION}/", stage.engine_clone, stage.engine_commit, paths.ENGINE_URL),
+            (f"{HUB_SECTION}/", stage.hub, stage.hub_commit, paths.HUB_URL),
+        ],
     )
 
 

@@ -258,10 +258,7 @@ class MermaidPageReachabilityTest(unittest.TestCase):
             registry=self.repo,
             commit=self.commit,
             registry_url="https://github.com/opengwas/opengwasdb-stores",
-            engine=self.engine,
-            engine_commit=self.engine_commit,
-            engine_url="https://github.com/opengwas/opengwasdb",
-            engine_prefix="opengwasdb/",
+            sections=[("opengwasdb/", self.engine, self.engine_commit, "https://github.com/opengwas/opengwasdb")],
         )
 
         self.assertTrue((mirror / "site.qmd").is_file())
