@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: pixi test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Installs strictly from the committed pixi.lock; fails instead of
+      # silently re-solving if pixi.toml and pixi.lock have drifted apart.
+      - uses: prefix-dev/setup-pixi@v0.10.1
+        with:
+          locked: true
+
+      # The suites that need Quarto run here too, because the environment has it;
+      # the one that needs graphviz's `dot` skips without it.
+      - name: Run the suites
+        run: pixi run test
