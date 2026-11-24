@@ -102,8 +102,6 @@ def run(
     epics_dir: Path | None = None,
     yardstick_dir: Path | None = None,
     repositories: staging.Repositories | None = None,
-    engine_git: Path | None = None,
-    engine_ref: str = architecture.DEFAULT_REF,
     refresh: bool = False,
     out: Callable[[str], Any] = print,
     checkout: Path | None = None,
@@ -112,17 +110,14 @@ def run(
     """Run every collector into `data_dir`.
 
     `repositories` is the run's read handles; left out, they are made here, with
-    opengwasdb-stores read from `checkout` when one is named, opengwasdb from
-    `engine_git` at `engine_ref`, and every repository fetched once when
-    `refresh` asks. `registry` (the Release Bundles), `epics_dir`,
+    opengwasdb-stores read from `checkout` when one is named, and every
+    repository fetched once when `refresh` asks. `registry` (the Release Bundles), `epics_dir`,
     `yardstick_dir` and `catalog_root` name other directories to read instead.
     `system_file` is the `system.yaml` read (by default this checkout's). A
     registry that cannot be read makes each source that needs its files
     unavailable, and no other.
     """
-    repositories = repositories or staging.Repositories(
-        refresh=refresh, checkouts={paths.REGISTRY: checkout}, git_dirs={paths.ENGINE: engine_git},
-        refs={paths.ENGINE: engine_ref})
+    repositories = repositories or staging.Repositories(refresh=refresh, checkouts={paths.REGISTRY: checkout})
 
     def files(*parts: str) -> Path:
         root = repositories.get(paths.REGISTRY, files=True).require().root
@@ -156,17 +151,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="the catalog's versions directory (default: <artifact root>/catalog/versions)")
     parser.add_argument("--registry", type=Path, default=None,
                         help="an opengwasdb-stores checkout to read (default: its main, from the site's clone)")
-    parser.add_argument("--engine-git", type=Path, default=None,
-                        help="the engine's git directory (default: the site's bare clone under the work root)")
-    parser.add_argument("--engine-ref", default=architecture.DEFAULT_REF,
-                        help="the engine ref the architecture is read at (default: main)")
-    parser.add_argument("--refresh", "--refresh-engine", dest="refresh", action="store_true",
+    parser.add_argument("--refresh", action="store_true",
                         help="fetch every listed repository once first (`main` and its branches), and record whether that worked")
     parser.add_argument("--strict", action="store_true", help="exit 1 when any source is unavailable")
     args = parser.parse_args(argv)
     results = run(args.data_dir or common.data_dir(), catalog_root=args.catalog_root,
-                  checkout=args.registry, engine_git=args.engine_git, engine_ref=args.engine_ref,
-                  refresh=args.refresh)
+                  checkout=args.registry, refresh=args.refresh)
     return 1 if args.strict and not all(r["available"] for r in results) else 0
 
 

@@ -1,6 +1,6 @@
 """`python3 -m project_site.architecture`: ask the architecture map from a terminal (#419, epic #416, og-dev-hub#9).
 
-    check      [--repo NAME] [--registry P] [--engine-git P] [--engine-ref R] [--data DIR] [--system FILE]
+    check      [--repo NAME] [--registry P] [--data DIR] [--system FILE] [--refresh]
     conflicts  (--branch B [--repo NAME] | --files PATH... --repo NAME [--ticket repo#n])
                [--local GIT_DIR...] [--data DIR] [--refresh] [--days N]
 
@@ -180,8 +180,8 @@ def _baseline(args: argparse.Namespace, document: Mapping[str, Any], name: str, 
     """Print how repository `name`'s layering baseline compares with its measured upward imports; True when it does not match."""
     repo = document["repos"][name]
     try:
-        git_dir = args.repositories.git_dir(name)
-        text = architecture.Tree(Path(git_dir), repo["commit"]).read([BASELINE_PATH]).get(BASELINE_PATH)
+        handle = args.repositories.get(name).require()
+        text = architecture.Tree(handle.git_dir, repo["commit"]).read([BASELINE_PATH]).get(BASELINE_PATH)
     except (common.CollectError, OSError) as error:
         # An unreadable repository is not an absent baseline: never certify the check.
         raise Unavailable(f"{name} layering baseline: not read ({error})") from error
@@ -373,8 +373,6 @@ def main(argv: Sequence[str] | None = None, *, stdout: TextIO | None = None) -> 
         p.add_argument("--data", type=Path, default=None, help="read this collection (docs/_data) instead of collecting now")
         p.add_argument("--registry", type=Path, default=None,
                        help="an opengwasdb-stores checkout or git directory (default: the site's clone of it, at main)")
-        p.add_argument("--engine-git", type=Path, default=None, help="opengwasdb's git directory (default: the site's bare clone)")
-        p.add_argument("--engine-ref", default=architecture.DEFAULT_REF)
         p.add_argument("--system", type=Path, default=None, help="the system.yaml to read (default: this checkout's)")
         p.add_argument("--refresh", action="store_true", help="fetch every listed repository once first")
         p.add_argument("--repo", type=repo_name, help=repo_help)
@@ -388,9 +386,7 @@ def main(argv: Sequence[str] | None = None, *, stdout: TextIO | None = None) -> 
     conflict.add_argument("--days", type=int, default=branches.WINDOW_DAYS)
     args = parser.parse_args(argv)
     # One read handle per repository for the whole command, by its one owner.
-    args.repositories = staging.Repositories(
-        refresh=args.refresh, checkouts={site_paths.REGISTRY: args.registry},
-        git_dirs={site_paths.ENGINE: args.engine_git}, refs={site_paths.ENGINE: args.engine_ref})
+    args.repositories = staging.Repositories(refresh=args.refresh, checkouts={site_paths.REGISTRY: args.registry})
     try:
         if args.repo and args.repo not in _listed(args):
             raise Unavailable(f"{args.repo} is not a repository system.yaml lists")

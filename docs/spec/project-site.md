@@ -19,8 +19,8 @@ reads, because an installed package knows no checkout. It reads
 og-dev-hub's `system.yaml` lists in `repos` is read from `main` of the site's
 bare clone of it, `/data/opengwasdb/work/site/<name>.git`, cloned the first time
 it is needed and fetched only by a render (`pixi run site`, `site-preview`,
-`site-publish`) and by `--refresh` (also spelled `--refresh-engine` for
-`site-data`), **once per run**. One read handle per repository per run is the one
+`site-publish`) and by `--refresh` (`site-data`, `architecture`), **once per
+run**. One read handle per repository per run is the one
 owner of this (`project_site.staging.Repositories`: given a name, the handle's
 clone, ref, commit and fetch record), so the architecture, the work and the
 render's engine docs read the same commit of each. A repository with
@@ -338,8 +338,9 @@ The architecture of every repository og-dev-hub's `system.yaml` lists (#418, epi
 `docs/architecture/components.yaml` and the code it claims. It reads **git, not
 checkouts**, through each repository's read handle (above): `main` of its clone,
 or `HEAD` of the checkout `--registry` names for opengwasdb-stores (tracked
-files only); `--engine-git` and `--engine-ref` name another git directory and ref
-for opengwasdb. `pixi run site` fetches every clone first; a failed fetch leaves
+files only). A clone is `<work root>/<name>.git`, so `OPENGWASDB_SITE_ROOT` names
+another set of clones (the tests' fixtures); no flag names one repository's git
+by its kind. `pixi run site` fetches every clone first; a failed fetch leaves
 the `main` the clone has and is recorded in `repos.<name>.refresh`. The site's
 *docs* mirror stays at the engine revision `pixi.lock` pins; the map shows
 current work, so it does not.
@@ -603,10 +604,22 @@ The other repositories' meets are still measured.
 The page's tiles are `summary`; every other figure on it is a count of these rows.
 
 **The command line.** `pixi run architecture` (`python3 -m project_site.architecture`)
-runs the same collectors on the spot, or reads a collection with `--data DIR`: `--repo NAME` takes a repository `system.yaml` lists; `engine` and
+runs the same collectors on the spot, or reads a collection with `--data DIR`:
+
+```text
+pixi run architecture check [--repo NAME] [--registry PATH] [--system FILE] [--refresh] [--data DIR]
+pixi run architecture conflicts (--branch B [--repo NAME] | --files PATH... --repo NAME [--ticket repo#n])
+                                [--local GIT_DIR...] [--registry PATH] [--system FILE] [--refresh] [--days N] [--data DIR]
+```
+
+`--repo NAME` takes a repository `system.yaml` lists; `engine` and
 `registry` are accepted for `opengwasdb` and `opengwasdb-stores` **for this
 release only** (og-dev-hub#9), because the orchestrate preflight still passes
-them.
+them. `--system FILE` reads another `system.yaml` than this checkout's: its
+`repos` are the repositories collected and the names `--repo` accepts, so a
+test, or a question about a few repositories, reads only those. `--registry PATH`
+reads that opengwasdb-stores checkout instead of its clone, and `--refresh`
+fetches every listed repository once first.
 
 - `check [--repo NAME]`: for each repository with a model (or the one `--repo` names), the code files no component claims and the
   claims that match no tracked file, and the `docs/architecture/layering-baseline.yaml`

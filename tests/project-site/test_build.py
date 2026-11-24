@@ -102,6 +102,7 @@ class ServedPathGateTest(unittest.TestCase):
             engine_clone=self.root / "engine",
             engine_commit="1" * 40,
             mirror=self.root / "mirror",
+            repositories=staging.Repositories(),
         )
 
         with mock.patch.object(build, "stage_everything", return_value=stage), \

@@ -236,7 +236,7 @@ class Stage:
     engine_clone: Path
     engine_commit: str
     mirror: Path
-    repositories: staging.Repositories | None = None
+    repositories: staging.Repositories
 
 
 def stage_everything(
@@ -287,14 +287,14 @@ def stage_everything(
     )
 
 
-def _engine_clone(revision: str, repositories: staging.Repositories | None = None) -> Path:
+def _engine_clone(revision: str, repositories: staging.Repositories) -> Path:
     """The engine's git, holding `revision`, through its read handle: fetched for it only when it lacks it, since a pin never moves.
 
     The fetch never raises. But a clone still without the pinned revision has no
     older engine to fall back to, so the render stops with git's message: a
     `CollectError`, which `main` and `publish.main` turn into exit status 2.
     """
-    handle = (repositories or staging.Repositories()).get(paths.ENGINE, revision=revision)
+    handle = repositories.get(paths.ENGINE, revision=revision)
     if not staging.has_revision(handle.git_dir, revision):
         fetched = handle.fetch
         why = f": {fetched['error']}" if fetched and not fetched["ok"] else f": {handle.error}" if handle.error else ""

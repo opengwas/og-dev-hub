@@ -31,6 +31,23 @@ from project_site.collect import architecture as architecture_collector, common
 CITED = ["opengwasdb/encoding/se_range.py"]
 
 
+def clone_into_work_root(test: unittest.TestCase, root: Path, engine: Path, *, origin: Path | None = None) -> Path:
+    """A work root under `root` holding opengwasdb's clone, made from the fixture `engine`, for this test only.
+
+    The commands read every repository through its read handle, whose clone is
+    `<work root>/<name>.git`: this is how a test points them at a fixture
+    (og-dev-hub#9). `origin` is where a `--refresh` fetches from; by default a
+    path that does not exist, so no test reaches the network.
+    """
+    work = root / "work"
+    work.mkdir(exist_ok=True)
+    subprocess.run(["git", "clone", "-q", "--bare", str(engine), str(work / "opengwasdb.git")], check=True)
+    afx.git(work / "opengwasdb.git", "remote", "set-url", "origin", str(origin or root / "no-such-origin"))
+    test.enterContext(mock.patch.dict(os.environ, {cli.site_paths.WORK_ROOT_ENV: str(work)}))
+    test.enterContext(mock.patch.object(cli.site_paths, "GITHUB", str(root / "no-network")))
+    return work
+
+
 def run(*argv: str) -> tuple[int, str]:
     out = io.StringIO()
     code = cli.main(list(argv), stdout=out)
@@ -297,8 +314,9 @@ class GitFailureTests(unittest.TestCase):
         self.system.write_text(afx.SYSTEM_YAML, encoding="utf-8")
         common.write_source(self.data, common.collect_source("architecture", lambda: architecture_collector.collect(
             afx.repositories(self.root / "registry", self.root / "engine"), system_file=self.system)))
+        self.work = clone_into_work_root(self, self.root, self.root / "engine")
         self.args = ["--data", str(self.data), "--registry", str(self.root / "registry"), "--system", str(self.system),
-                     "--engine-git", str(self.root / "engine"), "--repo", "registry", "--files", "src/gen/x.py"]
+                     "--repo", "registry", "--files", "src/gen/x.py"]
 
     def test_an_inaccessible_local_directory_exits_2_with_a_reason(self) -> None:
         code, text = run("conflicts", *self.args, "--local", str(self.root / "no-such-clone"))
@@ -327,7 +345,7 @@ class GitFailureTests(unittest.TestCase):
 
     def test_collecting_on_the_spot_with_no_usable_work_root_exits_2_naming_the_path_and_the_variable(self) -> None:
         root = self.unusable_work_root()
-        code, text = run("conflicts", "--registry", str(self.root / "registry"), "--engine-git", str(self.root / "engine"),
+        code, text = run("conflicts", "--registry", str(self.root / "registry"),
                          "--system", str(self.system), "--repo", "registry", "--files", "src/gen/x.py")
         self.assertEqual(code, 2)
         self.assertEqual(len(text.strip().splitlines()), 1)
@@ -349,10 +367,10 @@ class GitFailureTests(unittest.TestCase):
         self.assertEqual((code, text), (0, "1 files on 1 components\nmeets no other work\n"))
 
     def test_check_with_an_unreadable_engine_exits_2_naming_it(self) -> None:
-        code, text = run("check", "--data", str(self.data), "--system", str(self.system),
-                         "--engine-git", str(self.root / "no-such-engine.git"))
+        shutil.rmtree(self.work / "opengwasdb.git")  # and no network to clone it again
+        code, text = run("check", "--data", str(self.data), "--system", str(self.system))
         self.assertEqual(code, 2)
-        self.assertIn("no-such-engine.git", text)
+        self.assertIn("opengwasdb.git", text)
         self.assertIn("layering baseline", text)
 
 
@@ -379,8 +397,8 @@ class CheckTests(unittest.TestCase):
         afx.make_repo(root / "registry", registry or afx.REGISTRY_FILES, branch="trunk")
         afx.make_repo(root / "engine", engine or afx.ENGINE_FILES)
         (root / "system.yaml").write_text(afx.SYSTEM_YAML, encoding="utf-8")
-        return ["--registry", str(root / "registry"), "--engine-git", str(root / "engine"), "--engine-ref", "main",
-                "--system", str(root / "system.yaml")]
+        self.work = clone_into_work_root(self, root, root / "engine")
+        return ["--registry", str(root / "registry"), "--system", str(root / "system.yaml")]
 
     def test_clean_claims_exit_0(self) -> None:
         code, text = run("check", *self.fixtures())
@@ -494,12 +512,11 @@ class CheckTests(unittest.TestCase):
         root = Path(tempfile.mkdtemp(prefix="stale-registry-"))
         self.addCleanup(shutil.rmtree, root, True)
         afx.make_repo(root / "origin", afx.REGISTRY_FILES, branch="main")
-        clone = root / "work" / "opengwasdb-stores.git"
+        args = self.fixtures()[2:]  # without --registry: the site's clone is read
+        clone = self.work / "opengwasdb-stores.git"
         subprocess.run(["git", "clone", "-q", "--bare", str(root / "origin"), str(clone)], check=True)
         shutil.rmtree(root / "origin")
-        args = self.fixtures()[2:]  # without --registry: the site's clone is read
-        with mock.patch.dict(os.environ, {cli.site_paths.WORK_ROOT_ENV: str(root / "work")}):
-            code, text = run("check", *args, "--refresh")
+        code, text = run("check", *args, "--refresh")
         self.assertEqual(code, 2, text)
         self.assertIn("cannot check: the fetch failed for opengwasdb-stores' main", text)
 

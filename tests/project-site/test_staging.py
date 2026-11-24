@@ -548,16 +548,16 @@ class EngineRevisionTest(unittest.TestCase):
         self.clone = paths.clone_dir("opengwasdb")
 
     def test_a_pinned_revision_the_clone_lacks_is_fetched(self) -> None:
-        build._engine_clone(self.first)
+        build._engine_clone(self.first, staging.Repositories())
         newer = self.hub.commit("opengwasdb", {"docs/later.md": "# Later\n"})
 
-        self.assertEqual(build._engine_clone(newer), self.clone)
+        self.assertEqual(build._engine_clone(newer, staging.Repositories()), self.clone)
 
         self.assertTrue(staging.has_revision(self.clone, newer))
 
     def test_the_engine_handle_a_refresh_fetched_is_not_fetched_again_for_the_pin(self) -> None:
         # og-dev-hub#9: the build's refresh, the pinned revision and the collectors share one handle.
-        build._engine_clone(self.first)
+        build._engine_clone(self.first, staging.Repositories())
         newer = self.hub.commit("opengwasdb", {"docs/later.md": "# Later\n"})
         run = staging.Repositories(refresh=True)
         calls = []
@@ -575,18 +575,18 @@ class EngineRevisionTest(unittest.TestCase):
 
     def test_a_revision_the_engine_does_not_have_stops_the_render_naming_it(self) -> None:
         with self.assertRaises(CollectError) as caught:
-            build._engine_clone("f" * 40)
+            build._engine_clone("f" * 40, staging.Repositories())
 
         self.assertIn("f" * 40, str(caught.exception))
 
     def test_a_pin_fetch_that_fails_stops_the_render_with_gits_message(self) -> None:
         # There is no older engine to fall back to: without the pinned revision there
         # are no engine docs to stage, so the render stops, saying why (exit 2).
-        build._engine_clone(self.first)
+        build._engine_clone(self.first, staging.Repositories())
         self.hub.offline()
 
         with self.assertRaises(CollectError) as caught:
-            build._engine_clone("e" * 40)
+            build._engine_clone("e" * 40, staging.Repositories())
 
         self.assertIn("e" * 40, str(caught.exception))
         self.assertIn("opengwasdb", str(caught.exception))

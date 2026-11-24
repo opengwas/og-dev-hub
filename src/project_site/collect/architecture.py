@@ -47,10 +47,10 @@ class Tree:
     def __init__(self, git_dir: Path, ref: str) -> None:
         self.git = ["git", "-C", str(git_dir)]
         self.ref = ref
-        try:
-            self.commit = self._run(["rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"]).decode().strip()
-        except CollectError as error:
-            raise CollectError(f"{git_dir} has no ref {ref}: {error}") from error
+        commit, why = staging.resolve_ref(git_dir, ref)
+        if commit is None:
+            raise CollectError(f"{git_dir} has no ref {ref}: {why}")
+        self.commit = commit
         # `<mode> <type> <oid>\t<path>` per NUL-terminated record: the object id is how a file is read
         # back, because a path can hold a newline and an id cannot.
         self.oids: dict[str, str] = {}

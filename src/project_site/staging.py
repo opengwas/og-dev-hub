@@ -170,7 +170,9 @@ def extract_tree(clone: Path, ref: str, dest: Path) -> str:
     `dest` is rebuilt, so a file the ref no longer has is never left behind. A
     path the ref does not hold is left out rather than failing the archive.
     """
-    commit = _git(clone, "rev-parse", "--verify", f"{ref}^{{commit}}").strip()
+    commit, why = resolve_ref(clone, ref)
+    if commit is None:
+        raise CollectError(f"{clone} cannot be extracted at {ref}: {why}")
     present = [path for path in REGISTRY_TREE if _git(clone, "ls-tree", "--name-only", commit, "--", path).strip()]
     if dest.exists():
         shutil.rmtree(dest)
@@ -210,6 +212,10 @@ class Repository:
     def readable(self) -> bool:
         return self.commit is not None
 
+    def resolve(self, ref: str) -> str | None:
+        """The commit `ref` names in this repository's git, or `None` (`resolve_ref`)."""
+        return resolve_ref(self.git_dir, ref)[0]
+
     def require(self) -> "Repository":
         """This handle, or a `CollectError` saying why the repository cannot be read."""
         if self.commit is None:
@@ -230,9 +236,9 @@ class Repositories:
 
     `checkouts` names a checkout to read instead of a clone (`--registry PATH`),
     at `HEAD` with its own files; a refresh fetches its remote-tracking branches
-    only. `git_dirs` names another git directory to read a repository from
-    (`--engine-git`), never cloned into; `refs` another ref than `main`
-    (`--engine-ref`). `tree` is where opengwasdb-stores' files are extracted, by
+    only. `git_dirs` names another git directory to read a repository from,
+    never cloned into, and `refs` another ref than `main` (a caller's, such as
+    a test's fixture repositories). `tree` is where opengwasdb-stores' files are extracted, by
     default beside this hub checkout's mirror: only its readers need files
     (`stores/`, `docs/_epics`, `CONTEXT.md`).
     """
@@ -269,10 +275,6 @@ class Repositories:
             handle = self.handles[name] = replace(handle, root=root)
         return handle
 
-    def git_dir(self, name: str) -> Path:
-        """Where `name`'s git is read from, without reading it: a named checkout, a named git directory or its clone."""
-        return self.checkouts.get(name) or self.git_dirs.get(name) or paths.clone_dir(name)
-
     def _fetch(self, name: str, git_dir: Path, *, url: str | None, fetch: bool, refspec: str = BRANCHES) -> dict[str, Any] | None:
         done = ensure_clone(git_dir, url=url, fetch=fetch and name not in self.fetched, refspec=refspec)
         if done is not None:
@@ -283,7 +285,7 @@ class Repositories:
         if name in self.checkouts:
             checkout = self.checkouts[name]
             fetched = self._fetch(name, checkout, url=None, fetch=self.refresh, refspec=CHECKOUT_FETCH)
-            commit, why = _commit(checkout, "HEAD")
+            commit, why = resolve_ref(checkout, "HEAD")
             return Repository(name=name, git_dir=checkout, ref="HEAD", commit=commit, root=checkout, clone=False,
                               fetch=fetched, error=None if commit else f"{name} cannot be read from {checkout}: {why}")
         named = name in self.git_dirs
@@ -292,7 +294,7 @@ class Repositories:
         url = None if named else paths.clone_url(name)
         wanted = revision is not None and (git_dir / "HEAD").exists() and not has_revision(git_dir, revision)
         fetched = self._fetch(name, git_dir, url=url, fetch=self.refresh or wanted)
-        commit, why = _commit(git_dir, ref)
+        commit, why = resolve_ref(git_dir, ref)
         if commit is None and fetched and not fetched["ok"]:
             why = fetched["error"]
         return Repository(
@@ -308,22 +310,23 @@ def registry_files() -> Path:
     return root
 
 
-def _commit(git_dir: Path, ref: str) -> tuple[str | None, str]:
-    """`(commit, "")` that `ref` names in `git_dir`, or `(None, why)`."""
+def resolve_ref(git_dir: Path, ref: str) -> tuple[str | None, str]:
+    """The one owner of "does this ref resolve": `(commit, "")` that `ref` names in `git_dir`, or `(None, why)`.
+
+    `why` is git's own message, or says the ref is not there. It never raises.
+    """
     try:
-        return _git(git_dir, "rev-parse", "--verify", f"{ref}^{{commit}}").strip(), ""
-    except (OSError, subprocess.CalledProcessError) as error:
-        return None, (getattr(error, "stderr", "") or str(error)).strip()
+        done = subprocess.run(["git", "-C", str(git_dir), "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
+                              capture_output=True, text=True, check=False)
+    except OSError as error:
+        return None, f"{type(error).__name__}: {error}"
+    if done.returncode == 0 and done.stdout.strip():
+        return done.stdout.strip(), ""
+    return None, done.stderr.strip() or f"{git_dir} has no {ref}"
 
 
 def has_revision(clone: Path, revision: str) -> bool:
-    return (
-        subprocess.run(
-            ["git", "-C", str(clone), "cat-file", "-e", f"{revision}^{{commit}}"],
-            capture_output=True,
-        ).returncode
-        == 0
-    )
+    return resolve_ref(clone, revision)[0] is not None
 
 
 def stage_glossary(context: Path, dest: Path) -> Path:
