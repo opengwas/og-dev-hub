@@ -138,7 +138,7 @@ class ClosedTicketTests(unittest.TestCase):
         self.assertEqual([(c.get("path") or c["from"], c["held"], c["why"]) for c in entry["checks"]], [
             ("opengwasdb/encoding/association.py", None, f"no model read covers it, so whether it exists is not known: {MISSING}"),
             ("src/project_site/new.py", True, "claimed by `pages`"),
-            ("pages", None, f"`enc` is in no model read: {MISSING}"),
+            ("pages", None, "`enc` is in no model read, and the plan touches opengwasdb, which has no model at the ref read"),
         ])
 
     def test_a_component_the_plan_declares_is_not_unknown_to_it(self) -> None:
@@ -168,6 +168,56 @@ class ReviewFixTests(unittest.TestCase):
                                 architecture=NO_MODEL))
         self.assertEqual((entry["checks"][0]["held"], entry["checks"][0]["why"]), (
             None, f"no model read covers it, so whether it exists is not known: {MISSING}"))
+
+
+# A third repository read without a model, and a fourth with one whose code roots (`src/`) overlap opengwasdb-stores'.
+WITH_UNMODELLED = {
+    **ARCH,
+    "repos": {**ARCH["repos"], "opengwaspy": fx.repo("opengwaspy", commit="9" * 40, model=False),
+              "ogquery": fx.repo("ogquery", source_root="src/")},
+    "components": [*ARCH["components"], fx.component("oq_read", "Light reads", "ogquery", ["src/ogquery/"])],
+    "files": {**ARCH["files"], "ogquery": ["src/ogquery/read.py"], "opengwaspy": None},
+}
+
+
+def planned_in(key: str, body: dict) -> dict:
+    t = fx.ticket(key, state="CLOSED")
+    t["plan"] = body
+    return fx.board(fx.epic("opengwasdb#58", "Active", [t]))
+
+
+class PlanIdTests(unittest.TestCase):
+    """#422's component ids are judged against every model read, whatever repositories have none (og-dev-hub#9)."""
+
+    def test_an_unknown_id_is_invalid_when_the_plan_touches_only_repositories_with_a_model(self) -> None:
+        entry = only(fx.compute(planned_in("opengwasdb#350", plan(moves=[{"paths": ["opengwasdb/store/paths.py"], "to": "ghost"}])),
+                                architecture=WITH_UNMODELLED))
+        self.assertEqual(entry["plan"], {"invalid": "component `ghost` is neither an existing component nor declared in `adds`"})
+
+    def test_an_unknown_id_is_unknown_when_the_tickets_own_repository_has_no_model(self) -> None:
+        entry = only(fx.compute(planned_in("opengwaspy#7", plan(moves=[{"paths": ["src/opengwaspy/a.py"], "to": "ghost"}],
+                                                                  drops=[{"from": "ghost", "to": "enc"}])),
+                                architecture=WITH_UNMODELLED))
+        self.assertNotIn("invalid", entry["plan"])
+        why = "`ghost` is in no model read, and the plan touches opengwaspy, which has no model at the ref read"
+        self.assertEqual([(c["held"], c["why"]) for c in entry["checks"]], [(None, why), (None, why)])
+
+
+class RepositoryOfAPathTests(unittest.TestCase):
+    """Which repository a planned path is in: whose claims cover it, never the first in `system.yaml`'s order."""
+
+    def check(self, path: str, component: str) -> dict:
+        return only(fx.compute(planned_in("opengwasdb#350", plan(adds=[{"paths": [path], "component": component}])),
+                               architecture=WITH_UNMODELLED))["checks"][0]
+
+    def test_a_path_two_models_code_roots_cover_is_in_the_one_whose_claims_cover_it(self) -> None:
+        found = self.check("src/ogquery/read.py", "oq_read")
+        self.assertEqual((found["repo"], found["held"]), ("ogquery", True))
+
+    def test_a_path_both_or_neither_claims_cover_is_in_no_known_repository(self) -> None:
+        found = self.check("src/elsewhere/new.py", "pages")
+        self.assertEqual((found["held"], found["why"]), (
+            None, "both opengwasdb-stores and ogquery count it as code and neither claims it, so which repository it is in is not known"))
 
 
 class OpenAndInvalidTests(unittest.TestCase):

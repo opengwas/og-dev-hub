@@ -672,15 +672,19 @@ are non-empty lists of text; `name` and `container` are text and `layer` a whole
 number. A component id (`component`, `to`, either end of a drop) is lower-case
 letters, digits and `_`, starting with a letter (the model's form, so it can never
 be markup), and must be an existing component or declared in `adds`; a new one needs a
-`name`, and a new engine component (paths under `opengwasdb/`) a `container` and a
-`layer` too. The board
+`name`, and a new component of a repository whose model declares layers (paths under
+that repository's code roots, today `opengwasdb/`) a `container` and a `layer` too. The board
 collector parses the block into `children[].plan` with `adds`, `moves`, `drops`
 (each `{from, to}`) and `absorbs`, every key present as a list. A block that
 cannot be used is never dropped: `plan` is `{invalid: reason}` (not YAML, unknown
 key, empty, a malformed item, more than one block, a block never closed) and the
 page shows the reason. The board collector does not know the components, so the
-`work` collector judges their ids once it knows them: when the engine's model
-is missing it cannot, and an id it does not find is not called unknown.
+`work` collector judges their ids once it knows them, against the union of the
+components of every repository with a model (og-dev-hub#9). An id in none of them
+makes the plan invalid, unless the plan **touches a repository without a model**:
+the ticket's own repository, or the repository a path in `adds` or `moves` is in,
+read without a model or planned. Then the id is **unknown**: the checks that name it
+are `held: null`, and `why` names that repository.
 
 **Judging a plan.** The `work` collector lists every ticket that has a plan, of
 any epic, open or closed, as `work.json`'s `plans` (sorted by epic, ticket):
@@ -689,28 +693,30 @@ any epic, open or closed, as `work.json`'s `plans` (sorted by epic, ticket):
 true for one the plan declares) and `checks`. An open ticket's plan is carried
 as planned and `checks` is empty, as it is for an invalid plan; `absorbs` is
 carried and never checked. Once the ticket is closed each item is checked
-against what the architecture collector read (the engine at its ref, this
-repository at the site's checkout):
+against what the architecture collector read (each repository at its ref).
+**Which repository a path is in** is the one repository whose claims cover it,
+else the one whose code roots do. When two repositories' claims cover it, or two
+repositories' code roots do and no claim settles it, it is not known (`held: null`,
+`why` naming both), never the first in `system.yaml`'s order:
 
 - `adds`: for each path, `{kind: adds, path, component, held, why}`; held only when
   the path is a tracked file (in `architecture.files`) **and** the named component
-  claims it. A path that does not exist is not held, saying so with the ref; without
-the engine's model that is still a measured fact (the tree was read), and the
-`why` says the claims were not judged.
+  claims it. A path that does not exist is not held, saying so with the ref.
 - `moves`: the same, with `to` as the component.
 - `drops`: `{kind: drops, from, to, imports, held, why}`; held when no import goes
   from `from` into `to`, else not held, naming how many remain. Without `architecture.edges`
   (absent or `null`) it is unknown: absence is never zero imports.
 
-Every check also has `repo` (`registry` or `engine`), the tree it was read in;
+Every check also has `repo` (the repository's name), the tree it was read in;
 the page's warning names that repository's ref and commit.
 
-`held` is `true`, `false`, or `null` for **unknown**: without the engine's model
-(`architecture.engine.model` false) an engine path that no registry claim covers,
-a path whose existence is not known (no `architecture.files`, the tree not read,
-or not a code file, since only code files are listed), and a drop with an end that is not a registry component, cannot be judged, and
-`why` says the model is missing at that ref. Missing the model is never an unmet
-item. An unmet item is a warning on the page, never a build failure: the ticket
+`held` is `true`, `false`, or `null` for **unknown**: a path no model's code
+covers while a repository read has no model (the `why` names those repositories,
+never with a commit), a path whose existence is not known (no `architecture.files`,
+the tree not read, or not a code file, since only code files are listed), a path
+two repositories could hold (above), and an item naming an id no model has in a
+plan that touches a repository without one, cannot be judged. Missing a model is
+never an unmet item. An unmet item is a warning on the page, never a build failure: the ticket
 may have closed on an epic's integration branch whose PR has not merged to the
 ref read. The `plans` key is additive, so `schema_version` stays `1`.
 

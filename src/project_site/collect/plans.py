@@ -200,8 +200,16 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
     the repository a path or component is in has no model at the ref read, or no
     model covers it at all: absence of a model is not an unmet item. An open
     ticket's plan is carried and nothing is checked, and so is an invalid one.
-    `absorbs` is carried and never checked. Which repository a path is in is the
-    one whose claims cover it, else the first whose code roots do (og-dev-hub#9).
+    `absorbs` is carried and never checked.
+
+    Which repository a path is in (og-dev-hub#9) is the one repository whose
+    claims cover it, else the one whose code roots do; when two do, or two code
+    roots do and no claim settles it, it is not known, never the first listed.
+
+    A component id is judged against every component of the repositories with a
+    model. One in none of them makes the plan invalid, unless the plan touches a
+    repository without a model (the ticket's own, or the one a path in `adds` or
+    `moves` is in): then its items naming that id are unknown, naming it.
     """
     from project_site.collect import architecture_model as rules
 
@@ -216,6 +224,8 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
     layered = {repo: roots[repo] for repo in (layers if isinstance(layers, Mapping) else {}) if repo in roots}
     # A repository read with no model: nothing in it can be judged, so what is unplaced may be its.
     unmodelled = [name for name, r in repos.items() if not r.get("planned") and not r.get("model")]
+    # A repository whose components are not known at all: read without a model, or planned.
+    without_model = {name for name, r in repos.items() if not r.get("model")}
     # Named, never with a commit: a private repository's commit is not the public site's (og-dev-hub#9).
     missing = (f"{', '.join(unmodelled)} {'has' if len(unmodelled) == 1 else 'have'} no model at the ref read"
                if unmodelled else "")
@@ -224,14 +234,25 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
     edges = None if not isinstance(edge_list, list) else {
         (e["from"], e["to"]): e["imports"] for e in edge_list if isinstance(e, Mapping)}
 
-    def repo_of(path: str) -> str | None:
-        owned = next((r for r in names if rules.owner(claims[r], path)), None)
-        return owned or next((r for r in names if rules.is_code(path, roots[r])), None)
+    def repo_of(path: str) -> tuple[str | None, str]:
+        """`(repository, "")` a path is in, or `(None, why)` when two repositories could hold it."""
+        owned = [r for r in names if rules.owner(claims[r], path)]
+        if len(owned) == 1:
+            return owned[0], ""
+        rooted = [r for r in names if rules.is_code(path, roots[r])]
+        if len(owned) > 1:
+            return None, f"both {' and '.join(owned)} claim it, so which repository it is in is not known"
+        if len(rooted) > 1:
+            return None, (f"both {' and '.join(rooted)} count it as code and neither claims it, "
+                          "so which repository it is in is not known")
+        return (rooted[0], "") if rooted else (None, "")
 
-    def exists(path: str, repo: str | None) -> tuple[bool | None, str]:
+    def exists(path: str, repo: str | None, ambiguous: str = "") -> tuple[bool | None, str]:
         """Whether `path` is a tracked file: only code files are listed, and only where the tree was read."""
         if not isinstance(files, Mapping):
             return None, "this architecture collection lists no tracked files"
+        if ambiguous:
+            return None, ambiguous
         if repo is None:
             # Under a model's code roots it is a non-code path; elsewhere it may be a repository's without one.
             if unmodelled and not any(path.split("/", 1)[0] in roots[r] for r in names):
@@ -245,10 +266,16 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
         read = repos.get(repo) or {}
         return False, f"no such file at {read.get('ref')} ({str(read.get('commit'))[:12]})"
 
-    def claimed(path: str, target: str, kind: str) -> dict[str, Any]:
-        repo = repo_of(path)
-        present, why = exists(path, repo)
+    def unknown(cid: str, touched: list[str]) -> str:
+        return (f"`{cid}` is in no model read, and the plan touches {', '.join(touched)}, which "
+                f"{'has' if len(touched) == 1 else 'have'} no model at the ref read")
+
+    def claimed(path: str, target: str, kind: str, declared: Collection[str], touched: list[str]) -> dict[str, Any]:
+        repo, ambiguous = repo_of(path)
+        present, why = exists(path, repo, ambiguous)
         found = rules.owner(claims[repo], path) if repo else None
+        if target not in by_id and target not in declared and touched:
+            present, why = None, unknown(target, touched)
         if present is False:
             held = False
         elif found and found != target:
@@ -262,15 +289,14 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
         return {"kind": kind, "path": path, "component": target, "held": held, "why": why,
                 "repo": repo or (by_id.get(target) or {}).get("repo")}
 
-    def dropped(a: str, b: str) -> dict[str, Any]:
+    def dropped(a: str, b: str, touched: list[str]) -> dict[str, Any]:
         repo = (by_id.get(a) or by_id.get(b) or {}).get("repo")
         if edges is None:
             return {"kind": "drops", "from": a, "to": b, "imports": None, "held": None, "repo": repo,
                     "why": "this architecture collection lists no import edges"}
-        if unmodelled and not all(x in by_id for x in (a, b)):
-            unknown = next(x for x in (a, b) if x not in by_id)
+        if touched and not all(x in by_id for x in (a, b)):
             return {"kind": "drops", "from": a, "to": b, "imports": None, "held": None, "repo": repo,
-                    "why": f"`{unknown}` is in no model read: {missing}"}
+                    "why": unknown(next(x for x in (a, b) if x not in by_id), touched)}
         n = edges.get((a, b), 0)
         why = f"no import from `{a}` into `{b}`" if not n else f"{n} import{'s' if n != 1 else ''} from `{a}` into `{b}` remain{'s' if n == 1 else ''}"
         return {"kind": "drops", "from": a, "to": b, "imports": n, "held": not n, "why": why, "repo": repo}
@@ -281,9 +307,10 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
             plan = ticket.get("plan")
             if plan is None:
                 continue
-            # A component of a repository with no model is unknown, never absent: its ids are judged
-            # only when every repository read has a model.
-            if not unmodelled:
+            # A component of a repository with no model is unknown, never absent: an id no model
+            # read has is invalid unless the plan touches such a repository (og-dev-hub#9).
+            touched = _touched(plan, ticket["key"], without_model, repo_of)
+            if not touched:
                 plan = check_components(plan, set(by_id), layered)
             closed = ticket.get("state") == "CLOSED"
             checks: list[dict[str, Any]] = []
@@ -298,12 +325,20 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
                 ]
                 if closed:
                     checks = (
-                        [claimed(p, a["component"], "adds") for a in plan["adds"] for p in a["paths"]]
-                        + [claimed(p, m["to"], "moves") for m in plan["moves"] for p in m["paths"]]
-                        + [dropped(d["from"], d["to"]) for d in plan["drops"]]
+                        [claimed(p, a["component"], "adds", declared, touched) for a in plan["adds"] for p in a["paths"]]
+                        + [claimed(p, m["to"], "moves", declared, touched) for m in plan["moves"] for p in m["paths"]]
+                        + [dropped(d["from"], d["to"], touched) for d in plan["drops"]]
                     )
             found.append({
                 "ticket": ticket["key"], "epic": epic["key"], "title": ticket.get("title"), "url": ticket.get("url"),
                 "state": "closed" if closed else "open", "plan": plan, "components": involved, "checks": checks,
             })
     return sorted(found, key=lambda p: (p["epic"], p["ticket"]))
+
+
+def _touched(plan: Mapping[str, Any], ticket: str, without_model: Collection[str], repo_of: Any) -> list[str]:
+    """The repositories without a model a plan touches: its ticket's own, and any a path in `adds` or `moves` is in."""
+    found = {str(ticket).split("#")[0]}
+    if "invalid" not in plan:
+        found |= {repo_of(p)[0] for item in [*plan.get("adds", []), *plan.get("moves", [])] for p in item.get("paths") or []}
+    return sorted(r for r in found if r in without_model)
