@@ -46,7 +46,7 @@
   function drawing(d) {
     var frame = el("div", { class: "drawing" });
     frame.innerHTML = d.svg; // Graphviz's SVG, drawn at build time from the public view
-    return D.panel(d.title, d.caption, frame);
+    return D.panel(d.title, d.caption, D.zoomable(frame));
   }
 
   function containers(data) {

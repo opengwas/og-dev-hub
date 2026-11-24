@@ -357,6 +357,19 @@ def stores_view(doc: Document) -> dict[str, Any]:
     out["inventory"] = [
         inventory_row(r, paths.github_url(paths.REGISTRY, commit, f"stores/{r['store_id']}/") if commit else None) for r in rows
     ]
+    return out
+
+
+def benchmarking_view(doc: Document) -> dict[str, Any]:
+    """`data/benchmarking.json`: yardstick's results (the tab's label is Benchmarking; the name stays yardstick).
+
+    The trends come first, then each Store's latest run."""
+    out = {k: doc.get(k) for k in architecture_public.ENVELOPE}
+    out["error"] = text(out["error"])
+    if not doc.get("available"):
+        return out
+    rows = [r for r in doc.get("inventory") or [] if isinstance(r, Mapping)]
     labels = {r["store_id"]: text(r.get("label")) for r in rows}
-    out["yardstick"] = yardstick_view(doc.get("yardstick") or {}, labels, [r["store_id"] for r in rows])
+    view = yardstick_view(doc.get("yardstick") or {}, labels, [r["store_id"] for r in rows])
+    out["yardstick"] = {k: view[k] for k in sorted(view, key=lambda k: k != "trends") if k in view}
     return out
