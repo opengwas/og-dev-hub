@@ -31,7 +31,7 @@ output would make parallel pull requests conflict.
 | `/data/opengwasdb/work/site/<checkout>/_stage-registry` | opengwasdb-stores' `stores/`, `docs/`, `CONTEXT.md`, `pixi.lock` and `ogstores.yaml` at its clone's `main`, extracted with `git archive`: what the collectors and the mirror read. |
 | `/data/opengwasdb/work/site/<checkout>/_site-workers-*` | Each render worker's copy of the mirror, and what it rendered, while a render runs. Removed when the render ends, whether it succeeded or not. |
 | `/data/opengwasdb/work/site/<checkout>/_preview` | The synced copy `site-preview` serves; Quarto renders inside it. |
-| `/data/opengwasdb/work/site/opengwasdb.git` | The bare clone the engine's docs are staged from (`$OPENGWASDB_SITE_ENGINE_CLONE` overrides it). |
+| `/data/opengwasdb/work/site/opengwasdb.git` | The bare clone the engine's docs are staged from and its architecture is read from, fetched at every render and by `--refresh`, and otherwise read as it is (`$OPENGWASDB_SITE_ENGINE_CLONE` overrides it). |
 | `/data/opengwasdb/work/site/opengwasdb-stores.git` | The bare clone the registry is read from, fetched at every render and by `--refresh`, and otherwise read as it is (`$OPENGWASDB_SITE_REGISTRY_CLONE` overrides it). |
 | `/data/opengwasdb/work/site/<name>.git` | The bare clone of every other repository `system.yaml` lists (og-dev-hub#9), read the same way; a planned one (`visibility: null`) has none. |
 

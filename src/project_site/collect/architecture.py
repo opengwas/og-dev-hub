@@ -35,7 +35,6 @@ from project_site.collect import architecture_adrs, architecture_graph, architec
 from project_site.collect.common import CollectError
 
 MODEL_PATH = "docs/architecture/components.yaml"
-DEFAULT_REF = "main"
 
 
 def collect(

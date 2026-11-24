@@ -2,7 +2,7 @@
 
     check      [--repo NAME] [--registry P] [--data DIR] [--system FILE] [--refresh]
     conflicts  (--branch B [--repo NAME] | --files PATH... --repo NAME [--ticket repo#n])
-               [--local GIT_DIR...] [--data DIR] [--refresh] [--days N]
+               [--local GIT_DIR...] [--registry P] [--system FILE] [--data DIR] [--refresh] [--days N]
 
 `NAME` is a repository `system.yaml` lists.
 

@@ -46,11 +46,12 @@ test = { cmd = "bash tests/run_all_tests.sh" }
 # epic records, the architecture and the work) and write one JSON file each.
 # It reads the catalog read-only, writes nothing under the artifact root, and
 # needs `gh`; a source it cannot read is written as `available: false` and
-# printed as UNAVAILABLE, with exit status 0 unless `--strict`. It reads
-# opengwasdb-stores from the site's bare clone under the work root, or the
-# checkout `--registry PATH` names.
+# printed as UNAVAILABLE, with exit status 0 unless `--strict`. It reads every
+# repository system.yaml lists from the site's bare clones under the work root,
+# fetched once first with `--refresh`, and opengwasdb-stores from the checkout
+# `--registry PATH` names instead.
 #
-#   pixi run site-data [--data-dir PATH] [--catalog-root PATH] [--registry PATH] [--strict]
+#   pixi run site-data [--data-dir PATH] [--catalog-root PATH] [--registry PATH] [--refresh] [--strict]
 site-data = { cmd = "python3 -m project_site.collect" }
 
 # The architecture map's command line (#419): `check` and `conflicts`.
