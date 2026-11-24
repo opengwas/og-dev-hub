@@ -699,8 +699,10 @@ page shows the reason. The board collector does not know the components, so the
 `work` collector judges their ids once it knows them, against the union of the
 components of every repository with a model (og-dev-hub#9). An id in none of them
 makes the plan invalid, unless the plan **touches a repository without a model**:
-the ticket's own repository, or the repository a path in `adds` or `moves` is in,
-read without a model or planned. Then the id is **unknown**: the checks that name it
+the ticket's own repository, the repository a path in `adds` or `moves` is in,
+or, for such a path that no model's claims or code roots cover, every listed
+repository without a model, since any of them could hold it ("without a model"
+is read without one, or planned). `repo_of` sees every listed repository for this. Then the id is **unknown**: the checks that name it
 are `held: null`, and `why` names that repository.
 
 **Judging a plan.** The `work` collector lists every ticket that has a plan, of

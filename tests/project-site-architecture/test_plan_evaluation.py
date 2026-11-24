@@ -203,6 +203,15 @@ class PlanIdTests(unittest.TestCase):
         self.assertEqual([(c["held"], c["why"]) for c in entry["checks"]], [(None, why), (None, why)])
 
 
+    def test_an_unknown_id_is_unknown_when_a_path_no_model_covers_may_be_a_repository_without_one(self) -> None:
+        # The spec review's probe: the ticket's own repository has a model, but the path is in no model's code.
+        entry = only(fx.compute(planned_in("opengwasdb#350", plan(moves=[{"paths": ["opengwaspy/a.py"], "to": "ghost"}])),
+                                architecture=WITH_UNMODELLED))
+        self.assertNotIn("invalid", entry["plan"])
+        self.assertEqual((entry["checks"][0]["held"], entry["checks"][0]["why"]), (
+            None, "`ghost` is in no model read, and the plan touches opengwaspy, which has no model at the ref read"))
+
+
 class RepositoryOfAPathTests(unittest.TestCase):
     """Which repository a planned path is in: whose claims cover it, never the first in `system.yaml`'s order."""
 

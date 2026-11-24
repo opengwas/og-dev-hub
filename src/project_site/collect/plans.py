@@ -208,8 +208,9 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
 
     A component id is judged against every component of the repositories with a
     model. One in none of them makes the plan invalid, unless the plan touches a
-    repository without a model (the ticket's own, or the one a path in `adds` or
-    `moves` is in): then its items naming that id are unknown, naming it.
+    repository without a model (the ticket's own, the one a path in `adds` or
+    `moves` is in, or, for a path no model covers, any listed one without a
+    model): then its items naming that id are unknown, naming it.
     """
     from project_site.collect import architecture_model as rules
 
@@ -234,18 +235,25 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
     edges = None if not isinstance(edge_list, list) else {
         (e["from"], e["to"]): e["imports"] for e in edge_list if isinstance(e, Mapping)}
 
-    def repo_of(path: str) -> tuple[str | None, str]:
-        """`(repository, "")` a path is in, or `(None, why)` when two repositories could hold it."""
+    def repo_of(path: str) -> tuple[str | None, str, list[str]]:
+        """`(repository, "", [])` a path is in, seen against every listed repository.
+
+        `(None, why, [])` when two repositories could hold it; `(None, "", candidates)`
+        when no model's claims or code roots cover it, and `candidates` are the listed
+        repositories without a model, any of which could.
+        """
         owned = [r for r in names if rules.owner(claims[r], path)]
         if len(owned) == 1:
-            return owned[0], ""
+            return owned[0], "", []
         rooted = [r for r in names if rules.is_code(path, roots[r])]
         if len(owned) > 1:
-            return None, f"both {' and '.join(owned)} claim it, so which repository it is in is not known"
+            return None, f"both {' and '.join(owned)} claim it, so which repository it is in is not known", []
         if len(rooted) > 1:
             return None, (f"both {' and '.join(rooted)} count it as code and neither claims it, "
-                          "so which repository it is in is not known")
-        return (rooted[0], "") if rooted else (None, "")
+                          "so which repository it is in is not known"), []
+        if rooted:
+            return rooted[0], "", []
+        return None, "", sorted(without_model)
 
     def exists(path: str, repo: str | None, ambiguous: str = "") -> tuple[bool | None, str]:
         """Whether `path` is a tracked file: only code files are listed, and only where the tree was read."""
@@ -271,7 +279,7 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
                 f"{'has' if len(touched) == 1 else 'have'} no model at the ref read")
 
     def claimed(path: str, target: str, kind: str, declared: Collection[str], touched: list[str]) -> dict[str, Any]:
-        repo, ambiguous = repo_of(path)
+        repo, ambiguous, _ = repo_of(path)
         present, why = exists(path, repo, ambiguous)
         found = rules.owner(claims[repo], path) if repo else None
         if target not in by_id and target not in declared and touched:
@@ -337,8 +345,12 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
 
 
 def _touched(plan: Mapping[str, Any], ticket: str, without_model: Collection[str], repo_of: Any) -> list[str]:
-    """The repositories without a model a plan touches: its ticket's own, and any a path in `adds` or `moves` is in."""
+    """The repositories without a model a plan touches: its ticket's own, any a path in `adds` or `moves` is in,
+    and, for a path no model's claims or code roots cover, every listed repository without a model."""
     found = {str(ticket).split("#")[0]}
     if "invalid" not in plan:
-        found |= {repo_of(p)[0] for item in [*plan.get("adds", []), *plan.get("moves", [])] for p in item.get("paths") or []}
+        for item in [*plan.get("adds", []), *plan.get("moves", [])]:
+            for path in item.get("paths") or []:
+                repo, _, candidates = repo_of(path)
+                found |= {repo, *candidates}
     return sorted(r for r in found if r in without_model)
