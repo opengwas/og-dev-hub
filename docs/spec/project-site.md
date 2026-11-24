@@ -225,10 +225,10 @@ does not list, only as a count in `private` (`epics`, `active_epics`,
 `tickets`, `milestones`) and an epic's `private_children`: no title, number,
 link or Next text, and no blocked-by edge to it. No page is generated for such
 an epic. The Epics index, the Overview and an epic's page each say how many
-they leave out ("2 epics in private repositories are not shown."). A public item's
-own text that names a private repository's issue (`ogld#88`, `opengwas/ogld#88`)
-shows "a private issue" in its place: the board's titles, Next lines and
-purposes, the Work map's owner and plan titles, and ADR titles.
+they leave out ("2 epics in private repositories are not shown."). A public
+epic's own title, Next line and purpose, and a public ticket's title, are drawn
+as written, even where they name a private repository's issue.
+
 ### Citations
 
 One extractor and one resolver serve the tickets (Work) and the ADRs
@@ -452,25 +452,34 @@ recorded on it as `cites: [{repo, number}]`, and the pages show it as a link to
 that ADR (plain text when that ADR was not collected, or is a private
 repository's).
 
-**Visibility** (og-dev-hub#9). A `private` repository is collected, and drawn on
-the public site as its container only: no component names, paths, files, stages,
-gaps, ADR titles, commits, branches or work items, in the pages or in the
-component panel's embedded JSON, and no epic, ticket or milestone of the board
-(see *Private repositories on the board*, under Board). One function makes the public view of the
-collected files (`project_site.architecture_public.public_view`), and every page
-and the panel render from it alone: `pages.generate` applies it to everything it
-loads, and each architecture page applies it again. It is an **allow-list**: it
-never starts from a collected document, but builds `architecture.json`,
-`work.json` and `board.json` from the fields a page or the panel draws, named in
-that module, so a field a collector adds reaches no page until it is named there.
+**Visibility** (og-dev-hub#9). What "private" covers is **what the site
+collects from a private repository**, or from one `system.yaml` does not list:
+its files, paths, components, stages, gaps, commits, branches and work items,
+its ADRs (titles and bodies), its board items (epics, tickets and milestones:
+their titles, numbers, links, Next lines and purposes) and their pages. All of
+that is **hidden**: such a repository is drawn on the public site as its
+container only, in the pages and in the component panel's embedded JSON. Text
+**authored in a public repository or on a public item** is **passed through as
+written**, even where it mentions a private repository or one of its issue
+numbers: the hub's own docs, a public epic's title, body, Next line and purpose,
+public records and public ADRs. That text is already published on GitHub by its
+own repository; the site never rewrites it.
+
+One function makes the public view of the collected files
+(`project_site.architecture_public.public_view`), and every page and the panel
+render from it alone: `pages.generate` applies it to everything it loads, and
+each architecture page applies it again. It is an **allow-list**: it never
+starts from a collected document, but builds `architecture.json`, `work.json`
+and `board.json` from the fields a page or the panel draws, named in that
+module, so a field a collector adds reaches no page until it is named there.
 `records.json`, committed in a public repository, passes through less any
 private repository's epic, which gets no page. Which repositories are private is
 `system.yaml`'s `visibility`: through the `architecture.json` the same run
 collected, else `work.json`'s record of it, else the file in this checkout; a
 repository the board names that `system.yaml` does not list is treated as
 private, because a fallback must be safe. Its container comes from
-`system.yaml`'s `containers`, which is public. A reason a collector writes in
-text names a repository, never a private repository's commit.
+`system.yaml`'s `containers`, which is public. A gap or reason the collectors
+write names a repository, never a private repository's commit, component or path.
 
 **The component panel** (#435). On Pipeline, Structure and health and the Work
 map, a component's box in the engine and registry diagrams (a Graphviz `URL`),

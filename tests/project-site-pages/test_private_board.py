@@ -24,21 +24,20 @@ from test_project_site_pages import child, envelope, epic, milestone
 
 from project_site import pages
 
-PRIVATE_REFERENCES = ("ogld#", "ogdb-api#", "ogdb-dashboard#", "ogld-api#")
+# The private items themselves. A public item's own text may name a private issue, and is drawn as written.
+PRIVATE_REFERENCES = ("ogdb-api#150", "ogdb-api#160", "ogld#19", "ogld-api#1", "ogdb-dashboard#5")
 SECRETS = ("SECRET", "github.com/opengwas/ogld", "github.com/opengwas/ogdb-api", "github.com/opengwas/ogdb-dashboard")
 
 
 def board() -> dict:
-    # A public epic's own text may name a private issue: the number is not shown, the rest of the text is.
     public = epic("opengwasdb#58", "Hybrid layout", status="Active",
-                  next_line="Land the reader; waiting ogdb-api#192 and opengwas/ogld#88, then opengwasdb#57", children=[
+                  next_line="Land the reader; waiting ogdb-api#192 and opengwas/ogld#88", children=[
         child("opengwasdb#57", "A public ticket", blocked_by=[{"key": "ogdb-api#160", "state": "OPEN"}]),
         child("ogld#19", "SECRET ticket in ogld", blocked_by=[{"key": "opengwasdb#57", "state": "OPEN"}]),
     ])
     private = epic("ogdb-api#150", "SECRET epic of the Data API", status="Active", next_line="SECRET next step",
                    children=[child("ogdb-api#160", "SECRET ops-up.sh reports")])
     unlisted = epic("ogld-api#1", "SECRET epic of an unlisted repository", status="Todo")
-    public["purpose"] = "The other side of opengwas/ogdb-dashboard#26, and of ogld-api#3."
     return envelope("board", project="opengwas/1", epics=[public, private, unlisted],
                     milestones=[milestone("opengwasdb#300", "Public milestone", 1, 2),
                                 milestone("ogdb-dashboard#5", "SECRET milestone", 0, 3)],
@@ -89,8 +88,8 @@ class PrivateBoardTests(unittest.TestCase):
     def test_the_public_epic_is_drawn_whole(self) -> None:
         page = self.generate()["epics/opengwasdb-58.qmd"]
         self.assertIn("A public ticket", page)
-        self.assertIn("Land the reader; waiting a private issue and a private issue, then opengwasdb#57", page)
-        self.assertIn("The other side of a private issue, and of a private issue.", page)
+        # Text authored on a public item passes through as written, private issue numbers and all (og-dev-hub#9).
+        self.assertIn("Land the reader; waiting ogdb-api#192 and opengwas/ogld#88", page)
 
 
 if __name__ == "__main__":

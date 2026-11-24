@@ -18,7 +18,7 @@ epic opengwas/og-dev-hub#2. OpenGWASDB becomes the data layer of OpenGWAS:
    move from the Sustainable Use License to GPL-3.0-only, with the CLA. This is
    the owner's commit.
 2. **ogld merges into opengwasdb:** opengwas/opengwasdb#453. It moves ogld
-   `main`, which already holds the Pan-UKB import's code. That import keeps
+   `main`, which already holds #88's code. ogld#88's Pan-UKB import keeps
    running from its own worktree and environment.
    - The code moves under `opengwasdb/ld/`, with its history kept.
    - `ogld.identity` gives way to `opengwasdb.variants`.
@@ -27,9 +27,8 @@ epic opengwas/og-dev-hub#2. OpenGWASDB becomes the data layer of OpenGWAS:
      already built still validates.
 3. **The LD builds and the LD Store Registry move to opengwasdb-stores:**
    opengwas/opengwasdb-stores#496.
-4. **ogld is archived** (an issue in ogld, which is private, so it is not named
-   here). Its open issues transfer once no orchestrate run names them, so this
-   one waits for the Pan-UKB import's run to finish.
+4. **ogld is archived:** opengwas/ogld#101. Its open issues transfer once no
+   orchestrate run names them, so this one waits for ogld#88's run to finish.
    The abandoned draft PRs #55 and #61 are closed first. Archiving is the
    owner's setting.
 5. **ogquery:** opengwas/opengwasdb#450 reads both kinds of Store, and
