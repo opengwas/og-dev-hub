@@ -290,6 +290,30 @@ class BranchOwnerTests(unittest.TestCase):
         self.assertEqual((result["branches"]["list"][0]["owner"], result["branches"]["list"][0]["item"]),
                          ("og-dev-hub#6", "og-dev-hub#7"))
 
+    def test_without_an_epic_holding_its_ticket_a_lane_is_the_repositorys_whose_files_it_touches(self) -> None:
+        # Never system.yaml's order: og-dev-hub, listed first here, has an epic #58 on the board, and does not get it.
+        import work_fixtures as fx
+
+        arch = {**ARCHITECTURE, "repos": {"og-dev-hub": fx.repo("og-dev-hub", model=False), **ARCHITECTURE["repos"]}}
+        result = compute(
+            board(epic("og-dev-hub#58", "Active", [ticket("og-dev-hub#1")])),
+            branch_set(branch("orch/58-deepen-modules", ["opengwasdb/store/s.py"], epic="opengwasdb#58"),
+                       branch("orch/58/59", ["opengwasdb/query/q.py"], epic="opengwasdb#58", ticket="opengwasdb#59")),
+            architecture=arch,
+        )
+        owners = {b["name"]: (b["owner"], b["item"]) for b in result["branches"]["list"]}
+        self.assertEqual(owners, {"orch/58-deepen-modules": ("opengwasdb#58", "branch:opengwasdb:orch/58-deepen-modules"),
+                                  "orch/58/59": ("opengwasdb#58", "opengwasdb#59")})
+        self.assertEqual(next(o for o in result["owners"] if o["key"] == "opengwasdb#58")["status"], "Off board")
+
+    def test_a_lane_that_touches_no_file_has_an_unknown_owner_and_is_named_as_such(self) -> None:
+        result = compute(board(epic("opengwasdb#58", "Active", [ticket("opengwasdb#1")])),
+                         branch_set(branch("orch/58-empty", [], epic="opengwasdb#58")))
+        listed = result["branches"]["list"][0]
+        self.assertEqual((listed["owner"], listed["item"]), ("branch:opengwasdb:orch/58-empty", "branch:opengwasdb:orch/58-empty"))
+        self.assertEqual(listed["owner_unknown"], "it changes no file, so which repository's epic #58 it is is not known")
+        self.assertNotIn("opengwasdb#58", [o["key"] for o in result["owners"]])
+
     def test_a_branch_naming_only_a_ticket_belongs_to_that_tickets_epic(self) -> None:
         result = compute(
             board(epic("opengwasdb#10", "Active", [ticket("opengwasdb#11")])),

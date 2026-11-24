@@ -45,7 +45,7 @@ SUMMARY_KEYS = ("edges", "upward_edges", "upward_imports", "registry_to_engine_e
 OWNER_KEYS = ("key", "kind", "title", "url", "status", "workstream")
 SIGNAL_KEYS = ("component", "owner", "item", "via", "state", "path")
 SOURCE_KEYS = ("repo", "days", "error")
-BRANCH_KEYS = ("name", "repo", "ahead", "committed", "item", "owner")
+BRANCH_KEYS = ("name", "repo", "ahead", "committed", "item", "owner", "owner_unknown")
 CHECK_KEYS = ("kind", "path", "component", "held", "why", "repo", "from", "to", "imports")
 PLAN_KEYS = ("ticket", "epic", "title", "url", "state")
 # board.json

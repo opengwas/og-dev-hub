@@ -518,8 +518,11 @@ optional `-slug` after the ticket; `orch/<epic>-...`), else its ticket's epic
 in each repository whose files it changes, so a lane's numbers are those of the
 listed repository whose epic `#<epic>` holds the ticket `#<ticket>` on the board
 (og-dev-hub#9: opengwasdb-stores' `orch/6/7-stores` is og-dev-hub#6's, for
-og-dev-hub#7); an epic's own branch takes the first listed repository whose
-`#<epic>` is an epic on the board, its own first.
+og-dev-hub#7). Otherwise, and for an epic's own branch, they are the repository's
+whose files the branch changes, which is its own; never another repository found
+by `system.yaml`'s order. A branch that changes no file has no such repository:
+its owner is unknown, it is its own owner (`kind: branch`, status `Owner unknown`),
+and `branches.list[].owner_unknown` says why.
 
 **Branches.** A branch counts when it is ahead of `main` and its newest commit
 is within `days` (21) days. Its files are `git diff --name-only -z main...<branch>`.
@@ -598,7 +601,7 @@ The other repositories' meets are still measured.
 | `waits` | every open blocking edge among the live epics' tickets: `{item, on}` |
 | `tickets` | every open ticket of a live epic, to its owner (what `conflicts --ticket` reads) |
 | `branches.sources` | per repository read: `repo`, `git_dir`, `main`, `days`, `fetch` (`null`, or `{ok, error}`), `error` (`null`, or why its branches could not be read), `local`, `count`, `skipped` (each branch left out: `name`, `reason`) |
-| `branches.list` | `repo`, `name`, `ahead`, `committed`, `files`, `epic`, `ticket` (from the name), `local`, and the resolved `owner`, `item`, `components` |
+| `branches.list` | `repo`, `name`, `ahead`, `committed`, `files`, `epic`, `ticket` (from the name), `local`, and the resolved `owner`, `item`, `components`, `owner_unknown` (`null`, or why the owner could not be told) |
 | `summary` | `owners`, `meets`, `coordinated`, `uncoordinated`, `unlinkable` (these three add up to `meets`), `branches`, `unresolved`, `not_found` (the lengths of those lists) |
 
 The page's tiles are `summary`; every other figure on it is a count of these rows.

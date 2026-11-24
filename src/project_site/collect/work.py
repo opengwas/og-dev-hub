@@ -156,11 +156,11 @@ def compute(
                 chosen[key] = (found["repo"], b)
     listed: list[dict[str, Any]] = []
     for repo, b in chosen.values():
-        owner, item, state = _branch_owner(b, repo, list(repos), epics, every_epic, ticket_epic, ticket_state, owners)
+        owner, item, state, unknown = _branch_owner(b, repo, list(repos), epics, every_epic, ticket_epic, ticket_state, owners)
         cids = sorted({cid for f in b["files"] if (cid := model_rules.owner(claims.get(repo) or [], f))})
         for cid in cids:
             signal(cid, owner, item, "branch", state, [f"{repo}:{b['name']}"])
-        listed.append({**b, "owner": owner, "item": item, "components": cids})
+        listed.append({**b, "owner": owner, "item": item, "components": cids, "owner_unknown": unknown})
 
     rows = [
         {"component": cid, "owner": owner, "item": item, "via": via, "state": state, "path": path, "what": sorted(what)}
@@ -299,43 +299,51 @@ def _modules(cited: str, root: str) -> list[str]:
 def _branch_owner(
     b: Mapping[str, Any], repo: str, names: Sequence[str], epics: Mapping[str, Any], every_epic: Mapping[str, Any],
     ticket_epic: Mapping[str, str], ticket_state: Mapping[str, str], owners: dict[str, dict[str, Any]],
-) -> tuple[str, str, str]:
-    """`(owner, item, state)` of a branch, adding an owner that is not a live epic of the board.
+) -> tuple[str, str, str, str | None]:
+    """`(owner, item, state, why the owner is unknown)` of a branch, adding an owner that is not a live epic of the board.
 
     An epic's lanes live in each repository whose files it changes, so the
     numbers a lane's name gives (`orch/<epic>/<ticket>`) may be another listed
     repository's. They are that repository's whose epic `#<epic>` holds the
-    ticket `#<ticket>` on the board; else, for an epic's own branch, the first
-    whose `#<epic>` is an epic on the board, the branch's own repository first.
+    ticket `#<ticket>` on the board. Else they are the repository's whose files
+    the branch changes, which is the branch's own, never another found by
+    `system.yaml`'s order; a branch that changes no file has no such repository,
+    so its owner is unknown, and it is its own owner, saying so.
     """
     epic, ticket = b.get("epic"), b.get("ticket")
+    unknown = None
     if epic:
         number = epic.split("#")[1]
-        order = [repo, *[name for name in names if name != repo]]
         owned = None
         if ticket:
             child = ticket.split("#")[1]
+            order = [repo, *[name for name in names if name != repo]]
             owned = next((name for name in order if ticket_epic.get(f"{name}#{child}") == f"{name}#{number}"), None)
             if owned:
                 ticket = f"{owned}#{child}"
-        epic = f"{owned}#{number}" if owned else next(
-            (k for k in (f"{name}#{number}" for name in order) if k in every_epic), epic)
+        if owned:
+            epic = f"{owned}#{number}"
+        elif not b.get("files"):
+            unknown = f"it changes no file, so which repository's epic #{number} it is is not known"
+            epic = ticket = None
+        else:
+            epic = f"{repo}#{number}"
     if not epic and ticket:
         epic = ticket_epic.get(ticket)
     owner = epic or ticket
     item = ticket or f"branch:{repo}:{b['name']}"
     if owner is None:
         owner = f"branch:{repo}:{b['name']}"
-        owners[owner] = {"key": owner, "kind": "branch", "title": b["name"], "url": None, "status": "Unlinked branch",
-                         "workstream": None}
-        return owner, item, "building"
+        owners[owner] = {"key": owner, "kind": "branch", "title": b["name"], "url": None,
+                         "status": "Owner unknown" if unknown else "Unlinked branch", "workstream": None}
+        return owner, item, "building", unknown
     if owner not in owners:
         known = every_epic.get(owner)
         status = known.get("status") or "Closed" if known else "Off board"
         owners[owner] = {"key": owner, "kind": "epic" if known else "issue", "title": _title(known) if known else owner,
                          "url": (known or {}).get("url"), "status": status, "workstream": (known or {}).get("workstream")}
     stale = (owner in every_epic and owner not in epics) or ticket_state.get(ticket or "") == "CLOSED"
-    return owner, item, "stale" if stale else "building"
+    return owner, item, "stale" if stale else "building", unknown
 
 
 # ---------------------------------------------------------------------------

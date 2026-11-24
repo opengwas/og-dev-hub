@@ -392,7 +392,8 @@ def _branches(data: Document, owners: Mapping[str, Any], names: Mapping[str, str
         lines.append(
             f"| {pages._code(b['name'])} | {pages.escape(str(b['repo']))} | {pages._figure(b.get('ahead'))} | "
             f"{pages._cell(b.get('committed'))} | {pages._figure(len(b.get('files') or []))} | {pages.escape(str(b.get('item')))} | "
-            f"{pages.escape(str(b.get('owner')))} | {', '.join(panel.link(names.get(c, c), c) for c in b.get('components') or [])} |"
+            f"{'unknown' if b.get('owner_unknown') else pages.escape(str(b.get('owner')))} | "
+            f"{', '.join(panel.link(names.get(c, c), c) for c in b.get('components') or [])} |"
         )
     return lines + [""]
 
