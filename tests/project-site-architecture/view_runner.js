@@ -52,7 +52,7 @@ global.fetch = async (url) => {
   return { ok: fs.existsSync(file), status: 404, json: async () => JSON.parse(fs.readFileSync(file, "utf8")) };
 };
 
-const views = ["architecture", "decisions", "context"];
+const views = ["architecture", "decisions", "context", "stores"];
 for (const view of views) {
   byId[`pane-${view}`] = new Element("section");
   byId[`${view}-content`] = new Element("div");

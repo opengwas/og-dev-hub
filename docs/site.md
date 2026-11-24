@@ -21,7 +21,7 @@ no `/data`, no private repository and no board. It is published at
 | Architecture | Every repository `system.yaml` lists and the commit read; the containers; each repository's components by layer or by container (Graphviz, drawn at build time); the stages; every component with its size, claims and the ADRs placed on it; the gaps in the claims; the imports against the layering; and the imports across repositories, with the `opengwasdb-stores` to `opengwasdb` seam and its baseline | `data/architecture.json` |
 | Decisions | Every public repository's ADRs in one table: number, title, status, repository, the components each governs, and the ADRs it cites in another repository, each linking to GitHub; filtered by repository | `data/decisions.json` |
 | Context | The hub's `CONTEXT.md`, rendered at build time, and a link to each public repository's own `CONTEXT.md` at the commit read (or why there is none) | `data/context.json` |
-| Stores | Coming in og-dev-hub#16 | |
+| Stores | Every Release Bundle in the registry as one inventory row (layout, completion, coverage, Release Status, storage, variants, top hits, HM3, Rho, clumped, Analyses, median sample size, ancestry), each field a value or a gap that names what fills it; and yardstick's latest run per Store, a trend per measure across engine versions, and the runs taken under load or in the Veeam window marked | `data/stores.json` |
 
 It shows no planned state (the project board's) and no running state (the
 operations dashboard's).
@@ -68,6 +68,14 @@ The Pages source is still the `gh-pages` branch. In order:
 - a planned one (`visibility: null`) is drawn as planned;
 - the board is not read.
 
+It also runs the Stores collector, over the registry clone's `stores/` and
+`docs/_yardstick/` at `main` (extracted by `git archive` into the work root; public git too),
+and `site.build` turns it into `data/stores.json` (`project_site.stores_view`). The registry
+at `main` is behind what the view can draw: the Validation Records that lack
+opengwasdb-stores#502's fields, and the yardstick results of the old workload, render as gaps and
+as the measures those runs hold. Neither is a failure. The charts are inline SVG drawn
+at build time (`stores_view.trend`); there is no charting library.
+
 The site's work root is `$DEV_HUB_SITE_ROOT`, else `.work/site` in the
 checkout, the same on every machine; it only ever holds public repositories.
 (`pixi run architecture` and `site-data` keep their own: `$OPENGWASDB_SITE_ROOT`,
@@ -93,14 +101,16 @@ _site/
   js/architecture.js  one script per view, each reading its own data file
   js/decisions.js
   js/context.js
+  js/stores.js
   data/architecture.json
   data/decisions.json
   data/context.json
+  data/stores.json
 ```
 
 `index.html`, `style.css` and `js/` are copied from `src/project_site/static/`.
 There is no framework, no bundler and no CDN, and every path is relative, so the
-page works from any sub-path. Each diagram is DOT text from
+page works from any sub-path. The Stores charts are SVG from `project_site.stores_view`, held in `data/stores.json`. Each diagram is DOT text from
 `project_site.diagrams`, drawn to SVG by Graphviz's `dot` at build time
 (`diagrams.render_svg`) and held in `data/architecture.json`. A component's box in
 a diagram links to its row in the Components table (`#component-<id>`).

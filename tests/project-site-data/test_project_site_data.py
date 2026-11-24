@@ -314,6 +314,20 @@ class TestBoardPagination(unittest.TestCase):
             board.parse(raw)
 
 
+# These suites never check manifest figures (`test_stores_view` does, with the real call), and the real one
+# imports the engine (1.6 s), so `bundle.manifest_summary` is stubbed.
+MANIFEST = {"n_built": 1, "n_excluded": 0, "median_sample_size": None, "n_with_sample_size": 0,
+            "n_unparseable_sample_size": 0, "ancestry": {}}
+
+
+def stub_manifest(case: unittest.TestCase) -> None:
+    from ogstores import bundle as release_bundle
+
+    patcher = mock.patch.object(release_bundle, "manifest_summary", return_value=MANIFEST)
+    patcher.start()
+    case.addCleanup(patcher.stop)
+
+
 def write_store_bundle(registry: Path, store_id: str, release: dict, build: dict, validation: dict | None) -> None:
     root = registry / store_id
     root.mkdir(parents=True)
@@ -326,6 +340,7 @@ def write_store_bundle(registry: Path, store_id: str, release: dict, build: dict
 
 class TestStoresCollector(unittest.TestCase):
     def setUp(self) -> None:
+        stub_manifest(self)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.registry = Path(tmp.name) / "stores"
@@ -394,6 +409,7 @@ class TestStoresCollector(unittest.TestCase):
 
 class TestSiteData(unittest.TestCase):
     def setUp(self) -> None:
+        stub_manifest(self)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.tmp = Path(tmp.name)
@@ -449,7 +465,7 @@ class TestSiteData(unittest.TestCase):
         self.assertEqual(lines[0], "UNAVAILABLE board: CollectError: gh api graphql exited 4: could not resolve host")
         self.assertEqual(lines[1], "stores: 0 stores")
 
-    def test_the_sites_collection_is_the_architecture_alone_and_needs_no_gh(self) -> None:
+    def test_the_sites_collection_is_the_architecture_and_the_stores_and_needs_no_gh(self) -> None:
         def gh(args: list[str], stdin: str | None = None) -> str:
             raise AssertionError("the site's collection called gh")
 
@@ -457,9 +473,9 @@ class TestSiteData(unittest.TestCase):
         results = site_data.run(
             self.data, gh=gh, out=lines.append, public_only=True, system_file=self.system,
             repositories=staging.Repositories(checkouts={"opengwasdb-stores": self.checkout}, git_dirs={"opengwasdb": self.engine}))
-        self.assertEqual([r["source"] for r in results], ["architecture"])
+        self.assertEqual([r["source"] for r in results], ["architecture", "stores"])
         self.assertTrue(results[0]["available"], results[0]["error"])
-        self.assertEqual(sorted(p.name for p in self.data.iterdir()), ["architecture.json"])
+        self.assertEqual(sorted(p.name for p in self.data.iterdir()), ["architecture.json", "stores.json"])
 
     def test_without_network_or_a_clone_the_registrys_sources_are_unavailable_and_the_rest_are_written(self) -> None:
         # og-dev-hub#7: the registry is read from the site's clone; with no clone and no

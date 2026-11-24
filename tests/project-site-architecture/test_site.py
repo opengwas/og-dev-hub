@@ -112,20 +112,21 @@ class PageTests(BuiltSite):
     """Seam 1: `build` writes the page, a script per view and `data/*.json`, all by relative paths."""
 
     def test_the_page_its_stylesheet_and_a_script_per_view_are_written(self) -> None:
-        for name in ("index.html", "style.css", "js/app.js", "js/architecture.js", "js/decisions.js", "js/context.js"):
+        for name in ("index.html", "style.css", "js/app.js", "js/architecture.js", "js/decisions.js", "js/context.js", "js/stores.js"):
             with self.subTest(name=name):
                 self.assertTrue((self.out / name).is_file())
         self.assertEqual(sorted(p.name for p in (self.out / "data").iterdir()),
-                         ["architecture.json", "context.json", "decisions.json"])
+                         ["architecture.json", "context.json", "decisions.json", "stores.json"])
 
-    def test_the_page_has_a_tab_per_view_and_the_stores_tab_says_it_is_coming(self) -> None:
+    def test_the_page_has_a_tab_per_view_and_each_view_has_its_own_content_section(self) -> None:
         page = (self.out / "index.html").read_text(encoding="utf-8")
         for view in ("architecture", "decisions", "context", "stores"):
             with self.subTest(view=view):
                 self.assertIn(f'href="#{view}"', page)
                 self.assertIn(f'id="pane-{view}"', page)
-        stores = page[page.index('id="pane-stores"'):]
-        self.assertIn("coming", stores[:stores.index("</section>")])
+        for view in ("architecture", "decisions", "context", "stores"):
+            self.assertIn(f'id="{view}-content"', page)
+        self.assertNotIn("coming", page[page.index('id="pane-stores"'):])
 
     def test_every_script_stylesheet_and_data_path_is_relative(self) -> None:
         page = (self.out / "index.html").read_text(encoding="utf-8")
@@ -462,6 +463,12 @@ class PublicGitOnlyTests(unittest.TestCase):
     """Seam 5: the site's collection reads no private repository and never the board."""
 
     def test_the_site_collects_without_cloning_a_private_repository_or_calling_the_board(self) -> None:
+        from ogstores import bundle as release_bundle
+
+        # No manifest figure is checked here, and the real call imports the engine.
+        patcher = mock.patch.object(release_bundle, "manifest_summary", side_effect=AssertionError("not read here"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
         world = World(self)
         work_root = world.root / "work"
         data = world.root / "collected"
@@ -477,11 +484,11 @@ class PublicGitOnlyTests(unittest.TestCase):
                 git_dirs={k: v for k, v in world.repositories.git_dirs.items() if k != "ogld"})
             results = command.run(data, repositories=repositories, system_file=world.system, out=lambda line: None,
                                   public_only=True)
-        self.assertEqual([r["source"] for r in results], ["architecture"])
+        self.assertEqual([r["source"] for r in results], ["architecture", "stores"])
         self.assertNotIn("ogld", repositories.handles)
         self.assertFalse((work_root / "ogld.git").exists())
         refuse.assert_not_called()
-        self.assertEqual(sorted(p.name for p in data.iterdir()), ["architecture.json"])
+        self.assertEqual(sorted(p.name for p in data.iterdir()), ["architecture.json", "stores.json"])
         collected_doc = json.loads((data / "architecture.json").read_text(encoding="utf-8"))
         self.assertTrue(collected_doc["available"], collected_doc["error"])
         self.assertEqual(collected_doc["repos"]["ogld"]["note"], "private: drawn as its container only, never read")

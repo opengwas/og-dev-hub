@@ -4,8 +4,8 @@
     pixi run site-preview [--out DIR] [--port N]
 
 `pixi run site` collects what the page draws from public git alone, then builds
-`_site/`: `index.html` with a tab per view (Architecture, Decisions, Context, and
-Stores, which og-dev-hub#16 fills), `style.css`, one plain-JS file per view under
+`_site/`: `index.html` with a tab per view (Architecture, Decisions, Context and
+Stores), `style.css`, one plain-JS file per view under
 `js/`, and the JSON each view renders from under `data/`. No framework, no
 bundler, no CDN, and every path relative, so the page works from any sub-path
 (`/og-dev-hub/`).
@@ -38,12 +38,12 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Mapping
 
-from project_site import architecture_public, diagrams, markdown, paths, staging
+from project_site import architecture_public, diagrams, markdown, paths, staging, stores_view
 from project_site.collect import __main__ as command
 from project_site.collect import architecture_model, common
 
 STATIC = Path(__file__).with_name("static")
-SOURCES = ("architecture",)
+SOURCES = ("architecture", "stores")
 # The sub-path the site is published at, which the preview serves it under too.
 PREFIX = "og-dev-hub"
 
@@ -76,7 +76,8 @@ def build(data_dir: Path, out: Path, *, context: Path | None = None) -> None:
         if any(out.iterdir()) and not (out / "index.html").exists():
             raise SystemExit(f"{out} holds files and no index.html: it is not a site build, so it is left alone")
         shutil.rmtree(out)
-    view = architecture_public.public_view(load(data_dir))
+    documents = load(data_dir)
+    view = architecture_public.public_view(documents)
     architecture = view["architecture"] or _unavailable("architecture", "architecture.json was not collected")
     shutil.copytree(STATIC, out)
     glossary = Path(context) if context is not None else paths.repo_root() / "CONTEXT.md"
@@ -84,6 +85,7 @@ def build(data_dir: Path, out: Path, *, context: Path | None = None) -> None:
         ("architecture", architecture_view(architecture)),
         ("decisions", decisions_view(architecture)),
         ("context", context_view(glossary.read_text(encoding="utf-8"), architecture)),
+        ("stores", stores_view.stores_view(documents["stores"])),
     ):
         target = out / "data" / f"{name}.json"
         target.parent.mkdir(parents=True, exist_ok=True)
