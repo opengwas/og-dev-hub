@@ -28,7 +28,7 @@ from __future__ import annotations
 import subprocess
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Collection, Mapping
 
 from project_site import paths, staging
 from project_site.collect import architecture_adrs, architecture_graph, architecture_model as model_rules
@@ -154,7 +154,8 @@ def collect(
         else:
             models[name] = model
 
-    components, refused = _components(models)
+    private = {str(e["name"]) for e in system.get("repos") or [] if e.get("visibility") == "private"}
+    components, refused = _components(models, private)
     for name, why in refused.items():
         # A component id another model already has: this repository's components are unknown, the rest stand.
         del models[name]
@@ -255,12 +256,16 @@ def _system_gaps(
     }
 
 
-def _components(models: Mapping[str, Mapping[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+def _components(
+    models: Mapping[str, Mapping[str, Any]], private: Collection[str] = (),
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """Each modelled repository's components, in `system.yaml`'s order, each tagged with its repository.
 
     A component id is one panel's address, so it is unique across the models. A
     repository whose model repeats an id an earlier repository's has is refused
     whole, `{repository: why}`, and never stops the others (og-dev-hub ADR 0001).
+    The reason is public, so it never names a `private` repository: that one is
+    "another repository".
     """
     components: list[dict[str, Any]] = []
     seen: dict[str, str] = {}
@@ -269,7 +274,8 @@ def _components(models: Mapping[str, Mapping[str, Any]]) -> tuple[list[dict[str,
         raws = source.get("components") or []
         clash = next((raw["id"] for raw in raws if raw["id"] in seen), None)
         if clash is not None:
-            refused[repo] = (f"component id {clash!r} of {repo}'s model is also {seen[clash]}'s, "
+            first = "another repository" if seen[clash] in private else seen[clash]
+            refused[repo] = (f"component id {clash!r} of {repo}'s model is also {first}'s, "
                              f"so {repo}'s components are unknown")
             continue
         for raw in raws:

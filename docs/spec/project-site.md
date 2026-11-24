@@ -353,7 +353,7 @@ current work, so it does not.
 - `visibility: null` is **planned**: listed, drawn as a planned container, never cloned;
 - a clone or fetch that fails is **that repository's gap**, with git's message (`gaps.<repo>.unreadable`), and the rest is collected;
 - a repository without `docs/architecture/components.yaml`, or with one that cannot be used, is a gap too (`gaps.<repo>.no_model`): its components, code and gaps are **unknown**, never zero. `load_model` checks everything the collector reads: each component is a mapping with an `id` and a `name` of text, ids unique, `paths` and `stages` lists of text, `layer` a whole number, and the model's `layers` and `stages` lists of mappings;
-- a component id is one panel's address, so it is unique across the models: a model that repeats an id an earlier repository's model (in `system.yaml`'s order) has is that later repository's gap, naming the id and the first repository, and its components are unknown. No repository's model ever makes the source unavailable for the others (og-dev-hub ADR 0001);
+- a component id is one panel's address, so it is unique across the models: a model that repeats an id an earlier repository's model (in `system.yaml`'s order) has is that later repository's gap, naming the id and the first repository ("another repository" when that one is private), and its components are unknown. No repository's model ever makes the source unavailable for the others (og-dev-hub ADR 0001);
 - og-dev-hub itself is one of them, read through its clone like any other (its `system.yaml` is read from the working tree);
 - a `private` repository is collected whole (orchestration needs its branches), and the pages draw it as its container only (see *Visibility* below).
 

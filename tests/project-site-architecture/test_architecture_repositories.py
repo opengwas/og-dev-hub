@@ -94,13 +94,15 @@ class World:
         a variant builds one repository, not five.
         """
         where = Path(tempfile.mkdtemp(prefix="variant-", dir=self.root))
-        dirs = {"registry": self.root / "registry", "engine": self.root / "engine", "ogquery": self.root / "ogquery"}
+        dirs = {"registry": self.root / "registry", "engine": self.root / "engine", "ogquery": self.root / "ogquery",
+                "opengwaspy": self.root / "opengwaspy"}
         for name, content in files.items():
             dirs[name] = where / name
             fx.make_repo(dirs[name], content, branch="trunk" if name == "registry" else "main")
         repositories = staging.Repositories(
             checkouts={fx.REGISTRY: dirs["registry"]},
-            git_dirs={**self.repositories.git_dirs, fx.ENGINE: dirs["engine"], "ogquery": dirs["ogquery"]},
+            git_dirs={**self.repositories.git_dirs, fx.ENGINE: dirs["engine"], "ogquery": dirs["ogquery"],
+                      "opengwaspy": dirs["opengwaspy"]},
         )
         return architecture.collect(repositories, system_file=self.system)
 
@@ -241,6 +243,16 @@ class MissingModelTests(SharedWorld):
         self.assertIsNone(result["files"]["ogquery"])
         self.assertEqual(next(c for c in result["components"] if c["id"] == "store")["repo"], fx.ENGINE)
         self.assertNotIn("ogquery", {c["repo"] for c in result["components"]})
+
+
+    def test_a_gap_never_names_the_private_repository_whose_id_it_repeats(self) -> None:
+        # opengwaspy (public) comes after ogld (private) in system.yaml, and reuses ogld's component id.
+        model = "components:\n  - {id: ld_panels, name: Client panels, container: engine, paths: [src/opengwaspy/]}\n"
+        result = self.world.variant(opengwaspy={"docs/architecture/components.yaml": model, "src/opengwaspy/a.py": ""})
+        self.assertEqual(result["gaps"]["opengwaspy"]["no_model"],
+                         "component id 'ld_panels' of opengwaspy's model is also another repository's, "
+                         "so opengwaspy's components are unknown")
+        self.assertEqual(next(c for c in result["components"] if c["id"] == "ld_panels")["repo"], "ogld")
 
 
 class AdrCitationTests(SharedWorld):
