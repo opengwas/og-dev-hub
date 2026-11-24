@@ -52,11 +52,8 @@
 
   function storePanel(s) {
     var title = [s.store_id, " ", s.label || ""];
-    var newer = s.not_in_latest ? D.alert("", el("p", {}, el("strong", {}, s.not_in_latest),
-      s.state === "measured" ? ": this is the latest run that measured it." : ".")) : null;
-    if (s.state !== "measured") {
-      return D.panel(title, null, newer, D.alert("", el("p", {}, el("strong", {}, "Pending in its latest run"), ": " + (s.reason || "no reason recorded") + ".")));
-    }
+    var newer = s.notice ? D.alert("", el("p", {}, s.notice)) : null;
+    if (s.pending) return D.panel(title, null, newer, D.alert("", el("p", {}, s.pending)));
     return D.panel(title, null, newer,
       el("div", { class: "tag-row" }, D.tag(s.layout), D.tag(s.coverage),
         s.flags.map(function (f) { return D.tag([f, "caution"]); })),

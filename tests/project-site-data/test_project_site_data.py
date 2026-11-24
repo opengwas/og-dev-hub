@@ -314,6 +314,20 @@ class TestBoardPagination(unittest.TestCase):
             board.parse(raw)
 
 
+# These suites never check manifest figures (`test_stores_view` does, with the real call), and the real one
+# imports the engine (1.6 s), so `bundle.manifest_summary` is stubbed.
+MANIFEST = {"n_built": 1, "n_excluded": 0, "median_sample_size": None, "n_with_sample_size": 0,
+            "n_unparseable_sample_size": 0, "ancestry": {}}
+
+
+def stub_manifest(case: unittest.TestCase) -> None:
+    from ogstores import bundle as release_bundle
+
+    patcher = mock.patch.object(release_bundle, "manifest_summary", return_value=MANIFEST)
+    patcher.start()
+    case.addCleanup(patcher.stop)
+
+
 def write_store_bundle(registry: Path, store_id: str, release: dict, build: dict, validation: dict | None) -> None:
     root = registry / store_id
     root.mkdir(parents=True)
@@ -326,6 +340,7 @@ def write_store_bundle(registry: Path, store_id: str, release: dict, build: dict
 
 class TestStoresCollector(unittest.TestCase):
     def setUp(self) -> None:
+        stub_manifest(self)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.registry = Path(tmp.name) / "stores"
@@ -394,6 +409,7 @@ class TestStoresCollector(unittest.TestCase):
 
 class TestSiteData(unittest.TestCase):
     def setUp(self) -> None:
+        stub_manifest(self)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.tmp = Path(tmp.name)

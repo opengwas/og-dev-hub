@@ -45,8 +45,12 @@ def _from_bundle(label: str, read) -> dict[str, Any]:
 
 def _not_built(bundle: release_bundle.Bundle) -> str | None:
     """Why a Store has no observed facts to show yet, or `None` when it is built and has a Validation Record."""
-    if bundle.status in ("candidate", "accepted") or not isinstance(bundle.validation, dict):
+    if bundle.status in ("candidate", "accepted"):
         return f"not built yet (Release Status {bundle.status})"
+    if not isinstance(bundle.validation, dict):
+        # Withdrawn or superseded before any build record: it never will be built.
+        return (f"no Validation Record (Release Status {bundle.status})" if bundle.status in ("withdrawn", "superseded")
+                else f"not built yet (Release Status {bundle.status})")
     return None
 
 
@@ -103,7 +107,7 @@ def _manifest(bundle: release_bundle.Bundle) -> dict[str, dict[str, Any]]:
     else:
         have, built, bad = summary["n_with_sample_size"], summary["n_built"], summary["n_unparseable_sample_size"]
         no_median = "the Release Manifest records no sample size for any built row" + (
-            f" ({bad} values are not numbers)" if bad else "")
+            f" ({bad} value is not a number)" if bad == 1 else f" ({bad} values are not numbers)" if bad else "")
         return {
             "n_analyses": cell(built) | {"excluded": summary["n_excluded"]},
             "median_sample_size": (
@@ -111,8 +115,9 @@ def _manifest(bundle: release_bundle.Bundle) -> dict[str, dict[str, Any]]:
                 if summary["median_sample_size"] is not None
                 else cell(gap=no_median) | {"with_sample_size": 0, "of": built, "unparseable": bad}
             ),
-            "ancestry": (cell(summary["ancestry"]) if summary["ancestry"] is not None
-                         else cell(gap="analyses.tsv has no assigned_ancestry column")),
+            "ancestry": (cell(gap="the manifest has no Assigned Ancestry column") if summary["ancestry"] is None
+                         else cell(summary["ancestry"]) if summary["ancestry"]
+                         else cell(gap="no built row, so there is no ancestry to count")),
         }
     return {name: cell(gap=why) for name in ("n_analyses", "median_sample_size", "ancestry")}
 
@@ -132,7 +137,7 @@ def row(bundle: release_bundle.Bundle) -> dict[str, Any]:
             "n_variants": _observed_count(observed, "n_variants", null_gap=COUNTS),
             "top_hits": _top_hits(build, observed),
             "has_hm3": _flag(observed, "has_hm3", null_gap=HM3_UNRECORDED),
-            "has_rho": _flag(observed, "has_rho", null_gap="not recorded: a Rho Matrix built outside the recipe is not"),
+            "has_rho": _flag(observed, "has_rho", null_gap="the recipe builds no Rho Matrix, so whether the Store holds one is unknown until opengwasdb#488"),
             "n_clumped": (cell(gap=CLUMPED) if observed.get("n_clumped") is None
                           else _observed_count(observed, "n_clumped", null_gap=CLUMPED)),
         }

@@ -42,7 +42,7 @@ class InventoryTests(Fixture):
     """Seam 1: each inventory field, from a Store of each layout, checked against literals."""
 
     def test_every_store_has_a_row_and_nothing_else_does(self) -> None:
-        self.assertEqual(list(self.rows), [f"OGS-0000{n}" for n in range(1, 7)])
+        self.assertEqual(list(self.rows), [f"OGS-0000{n}" for n in range(1, 9)])
         self.assertEqual([r["store_id"] for r in self.view["inventory"]], list(self.rows))
 
     def test_the_dense_store_with_every_field(self) -> None:
@@ -113,7 +113,7 @@ class GapTests(Fixture):
                     self.assertIsNone(cell["value"], (row["store_id"], key))
 
     def test_a_manifest_without_an_ancestry_column_is_a_gap(self) -> None:
-        self.assertEqual(self.shown["OGS-00003"]["ancestry"]["gap"], "analyses.tsv has no assigned_ancestry column")
+        self.assertEqual(self.shown["OGS-00003"]["ancestry"]["gap"], "the manifest has no Assigned Ancestry column")
 
     def test_a_missing_manifest_is_a_gap_for_what_it_holds_and_stops_nothing(self) -> None:
         (self.registry / "OGS-00003" / "analyses.tsv").rename(self.registry / "OGS-00003" / "gone.tsv")
@@ -176,7 +176,7 @@ class CauseTests(Fixture):
 
     def test_a_median_gap_names_its_cause(self) -> None:
         self.assertEqual(self.shown["OGS-00004"]["median_sample_size"]["gap"],
-                         "the Release Manifest records no sample size for any built row (1 values are not numbers)")
+                         "the Release Manifest records no sample size for any built row (1 value is not a number)")
 
     def test_a_median_over_values_some_of_which_are_not_numbers_says_so(self) -> None:
         doc = json.loads(json.dumps(self.doc))
@@ -185,6 +185,23 @@ class CauseTests(Fixture):
         shown = stores_view.stores_view(doc)["inventory"][0]
         self.assertEqual(shown["median_sample_size"]["detail"],
                          "over the 3 of 4 built rows that have one; 2 values are not numbers")
+
+    def test_a_withdrawn_store_with_no_record_will_never_be_built(self) -> None:
+        self.assertEqual(self.shown["OGS-00007"]["store_bytes"]["gap"], "no Validation Record (Release Status withdrawn)")
+
+    def test_an_empty_ancestry_is_a_gap_with_its_reason_never_a_blank_cell(self) -> None:
+        self.assertEqual(self.shown["OGS-00008"]["ancestry"], {"text": None, "detail": None,
+                         "gap": "no built row, so there is no ancestry to count"})
+        self.assertEqual(self.shown["OGS-00003"]["ancestry"]["gap"], "the manifest has no Assigned Ancestry column")
+        self.assertEqual(self.shown["OGS-00008"]["n_analyses"]["text"], "0")
+
+    def test_has_rho_null_is_said_in_plain_words(self) -> None:
+        self.assertEqual(self.shown["OGS-00008"]["has_rho"]["gap"],
+                         "the recipe builds no Rho Matrix, so whether the Store holds one is unknown until opengwasdb#488")
+
+    def test_the_plural_follows_the_count(self) -> None:
+        self.assertEqual(stores_view.plural(1, "value is", "values are"), "1 value is")
+        self.assertEqual(stores_view.plural(2, "value is", "values are"), "2 values are")
 
     def test_a_withdrawn_store_shows_its_status(self) -> None:
         self.assertEqual(self.shown["OGS-00004"]["status"]["text"], "withdrawn")
@@ -242,7 +259,7 @@ class YardstickTests(Fixture):
             self.assertIsNone(state["median"])
 
     def test_a_store_yardstick_does_not_measure_says_so(self) -> None:
-        self.assertEqual([u["store_id"] for u in self.y["unmeasured"]], ["OGS-00003", "OGS-00004", "OGS-00005", "OGS-00006"])
+        self.assertEqual([u["store_id"] for u in self.y["unmeasured"]], ["OGS-00003", "OGS-00004", "OGS-00005", "OGS-00006", "OGS-00007", "OGS-00008"])
 
     def test_raw_runs_are_not_listed(self) -> None:
         self.assertNotIn("runs_list", self.y)
@@ -269,6 +286,32 @@ class LatestRunTests(Fixture):
         by_store = {s["store_id"]: s for s in stores_view.yardstick_view(doc, {}, [])["stores"]}
         self.assertEqual(by_store["OGS-00002"]["not_in_latest"], "not in the latest run (2026-11-17)")
         self.assertEqual(by_store["OGS-00002"]["state"], "measured")
+
+    def test_the_panel_wording_is_written_by_the_build(self) -> None:
+        doc = json.loads(json.dumps(self.doc["yardstick"]))
+        doc["runs"][-1]["stores"]["OGS-00002"] |= {"status": "pending", "reason": "rebuilding", "measures": {}}
+        del doc["runs"][-1]["stores"]["OGS-00001"]
+        by_store = {s["store_id"]: s for s in stores_view.yardstick_view(doc, {}, [])["stores"]}
+        self.assertEqual(by_store["OGS-00002"]["notice"],
+                         "not in the latest run (2026-11-17): this is the latest run that measured it.")
+        self.assertIsNone(by_store["OGS-00002"]["pending"])
+        pending = json.loads(json.dumps(doc))
+        for run in pending["runs"]:
+            run["stores"]["OGS-00002"] |= {"status": "pending", "reason": "rebuilding", "measures": {}}
+        got = next(s for s in stores_view.yardstick_view(pending, {}, [])["stores"] if s["store_id"] == "OGS-00002")
+        self.assertEqual(got["pending"], "Pending in its latest run: rebuilding.")
+
+    def test_the_one_measure_table_says_which_are_facts(self) -> None:
+        self.assertEqual([n for n, m in stores_view.MEASURE.items() if m.fact], ["peak_rss", "bytes_on_disk"])
+        self.assertFalse(hasattr(stores_view, "UNTIMED"))
+
+    def test_a_status_the_build_cannot_draw_is_a_raise_not_an_assert(self) -> None:
+        import subprocess, sys
+        code = ("import yardstick.result as r; r.STATUSES = r.STATUSES + ('paused',); "
+                "import project_site.stores_view")
+        done = subprocess.run([sys.executable, "-O", "-c", code], capture_output=True, text=True)
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("say how each status is drawn", done.stderr)
 
     def test_the_states_the_build_draws_are_exactly_the_schemas(self) -> None:
         from yardstick import result

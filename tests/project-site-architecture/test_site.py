@@ -463,6 +463,12 @@ class PublicGitOnlyTests(unittest.TestCase):
     """Seam 5: the site's collection reads no private repository and never the board."""
 
     def test_the_site_collects_without_cloning_a_private_repository_or_calling_the_board(self) -> None:
+        from ogstores import bundle as release_bundle
+
+        # No manifest figure is checked here, and the real call imports the engine.
+        patcher = mock.patch.object(release_bundle, "manifest_summary", side_effect=AssertionError("not read here"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
         world = World(self)
         work_root = world.root / "work"
         data = world.root / "collected"

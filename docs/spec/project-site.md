@@ -246,14 +246,15 @@ A sample size the quantity rule refuses is counted as unparseable, never dropped
 or that has no Validation Record, shows "not built yet (Release Status …)" in every observed cell
 (`store_bytes`, `n_variants`, `top_hits`, `has_hm3`, `has_rho`, `n_clumped`); it never names the backfill or
 the engine, which have nothing to fill. Its manifest cells still read. Any other status (`built`, `validated`,
-`superseded`, `withdrawn`) with a record reads the rules below, and its status is shown as written.
+`superseded`, `withdrawn`) with a record reads the rules below, and its status is shown as written. A `withdrawn` or
+`superseded` Store with no record reads "no Validation Record (Release Status …)": it will never be built.
 
 | Cell | Value | Gap, with what fills it |
 |---|---|---|
 | `store_bytes` | `observed.store_bytes` | absent or `null`: "recorded from opengwasdb-stores#502's backfill" |
 | `n_variants` | `observed.n_variants` | absent: the backfill; `null`: "counts come with opengwasdb#488" |
 | `top_hits` | the count at each threshold | the recipe's `post.top_hits` is false: "not computed"; `n_top_hits` absent: the backfill; `null`: "counts come with opengwasdb#488"; a count that is `null` or not a non-negative integer: "observed.n_top_hits[<threshold>] <value> is not a count" |
-| `has_hm3`, `has_rho` | `true` or `false` | absent: the backfill; `has_hm3` `null`: "no record says how the HM3 step ended"; `has_rho` `null`: "not recorded: a Rho Matrix built outside the recipe is not" |
+| `has_hm3`, `has_rho` | `true` or `false` | absent: the backfill; `has_hm3` `null`: "no record says how the HM3 step ended"; `has_rho` `null`: "the recipe builds no Rho Matrix, so whether the Store holds one is unknown until opengwasdb#488" |
 | `n_clumped` | `observed.n_clumped` | absent or `null`: "pending opengwasdb-stores#507" |
 | `n_analyses` | the built rows (and how many `excluded` rows were left out) | `analyses.tsv` missing or unreadable, naming which |
 | `median_sample_size` | the median of `sample_size` over the built rows that have a number, with `with_sample_size` of `of` and `unparseable` | "the Release Manifest records no sample size for any built row" (and how many values are not numbers) |
@@ -290,7 +291,7 @@ error.
     measure the run does not hold is absent, not zero, and appears once a run carries it.
     `state` is `measured`, `not_applicable` (drawn "not applicable" with its `reason`) or
     `unavailable` (drawn "unavailable" with its `error`); the two are never drawn alike. The build writes each
-    state's `label` and `tone` (`stores_view.STATE`, which asserts it covers exactly `yardstick.result.STATUSES`,
+    state's `label` and `tone`, and a panel's `notice` and `pending` wording (`stores_view.STATE`, which asserts it covers exactly `yardstick.result.STATUSES`,
     plus `absent`, a run that does not hold the measure); the script renders them. A `top_hits` row carries `path`, `index`
     or `scan`, said beside it, because the two differ in kind.
   - *A flagged run* is marked. A run is flagged when `veeam_window` is true, or when any load

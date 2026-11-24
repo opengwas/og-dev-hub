@@ -35,23 +35,24 @@ VEEAM_RULE = "the run overlapped the nightly Veeam backup window that throttled 
 class Measure:
     """How one measure is read and drawn: the record key it is trended on, its unit, and how a figure is written."""
 
-    def __init__(self, unit: str, key: str, show) -> None:
-        self.unit, self.key, self.show = unit, key, show
+    def __init__(self, unit: str, key: str, show, *, fact: bool = False) -> None:
+        # `fact`: drawn as a fact of the Store, and as a trend, not as a row of the table.
+        self.unit, self.key, self.show, self.fact = unit, key, show, fact
 
 
 # Every measure the schema knows, in the order the page draws them. The one table every reader of a measure uses.
 MEASURE: dict[str, Measure] = {
     **{name: Measure("ms", "median_ms", lambda v: duration(v)) for name in yardstick_result.TIMED},
-    "peak_rss": Measure("MB", "peak_mb", lambda v: megabytes(v)),
-    "bytes_on_disk": Measure("bytes", "bytes", lambda v: size(v)),
+    "peak_rss": Measure("MB", "peak_mb", lambda v: megabytes(v), fact=True),
+    "bytes_on_disk": Measure("bytes", "bytes", lambda v: size(v), fact=True),
 }
 MEASURES = tuple(MEASURE)
-UNTIMED = ("peak_rss", "bytes_on_disk")  # drawn as facts of the Store, and as trends, not as rows of the table
 
 # How each status the schema knows is drawn: (label, tone). The build decides this; the script only renders it.
 # `absent` is the one state this view adds: a run that does not hold the measure.
 _STATE = {"measured": ("measured", None), "unavailable": ("unavailable", "fault"), "not_applicable": ("not applicable", None)}
-assert set(_STATE) == set(yardstick_result.STATUSES), "yardstick.result.STATUSES changed: say how the new status is drawn"
+if set(_STATE) != set(yardstick_result.STATUSES):  # a raise, not an assert: it must hold under `python -O`
+    raise RuntimeError(f"yardstick.result.STATUSES is {yardstick_result.STATUSES}: say how each status is drawn")
 STATE = {**_STATE, "absent": ("not in this run", None)}
 
 CHART_COLUMNS = 6  # series classes `series-0` to `series-5`
@@ -69,6 +70,10 @@ def text(value: Any) -> Any:
 # ---------------------------------------------------------------------------
 # Figures
 # ---------------------------------------------------------------------------
+
+
+def plural(n: int, one: str, many: str) -> str:
+    return f"{count(n)} {one if n == 1 else many}"
 
 
 def count(n: int | float) -> str:
@@ -141,7 +146,8 @@ def inventory_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
         "median_sample_size": _cell(
             median, count,
             detail=f"over the {count(median.get('with_sample_size', 0))} of {count(median.get('of', 0))} built rows that have one"
-                   + (f"; {count(median['unparseable'])} values are not numbers" if median.get("unparseable") else "")),
+                   + (f"; {plural(median['unparseable'], 'value is', 'values are')} not {'a number' if median['unparseable'] == 1 else 'numbers'}"
+                      if median.get("unparseable") else "")),
         "ancestry": _cell(row.get("ancestry"), _ancestry),
     }
 
@@ -208,11 +214,16 @@ def latest_run(store_id: str, labels: Mapping[str, Any], runs: list[Mapping[str,
         "state": store["status"], "reason": text(store.get("reason")),
         # The newest run left this Store out, or listed it pending: say so above the older run shown.
         "not_in_latest": None if run is newest else f"not in the latest run ({newest['started_utc'][:10]})",
+        # The wording the panel shows, written here: the script does not choose it.
+        "notice": None if run is newest else (
+            f"not in the latest run ({newest['started_utc'][:10]}): this is the latest run that measured it."
+            if store["status"] == "measured" else f"not in the latest run ({newest['started_utc'][:10]})."),
+        "pending": f"Pending in its latest run: {text(store.get('reason')) or 'no reason recorded'}." if store["status"] != "measured" else None,
         "engine_version": run["engine_version"], "date": run["started_utc"][:10], "workload_id": run["workload_id"],
         "flags": run_flags(run),
         "peak_memory": _fact("peak_rss", measures.get("peak_rss")),
         "size_on_disk": _fact("bytes_on_disk", measures.get("bytes_on_disk")),
-        "measures": [_measure(name, measures[name]) for name in MEASURES if name in measures and name not in UNTIMED],
+        "measures": [_measure(name, measures[name]) for name in MEASURES if name in measures and not MEASURE[name].fact],
     }
 
 

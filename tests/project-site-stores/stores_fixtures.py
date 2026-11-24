@@ -91,6 +91,20 @@ def make_registry(root: Path) -> Path:
             "n_variants": None, "store_bytes": None, "has_hm3": None, "has_rho": None, "n_top_hits": None}},
         analyses="analysis_id\tassigned_ancestry\nF1\tEUR\n",
     )
+    # Withdrawn before any build record: it will never be built. And a built Store whose every row is excluded.
+    write_bundle(
+        stores, "OGS-00007",
+        release={"label": "withdrawn-bare", "status": "withdrawn", "association_coverage": "gwas"},
+        build={"layout": "dense", "completion_state": "observed_only"}, validation=None,
+        analyses="analysis_id\tassigned_ancestry\nG1\tEUR\n",
+    )
+    write_bundle(
+        stores, "OGS-00008",
+        release={"label": "all-excluded", "status": "built", "association_coverage": "gwas"},
+        build={"layout": "dense", "completion_state": "observed_only"},
+        validation={"status": "passed", "observed": {"has_rho": None}},
+        analyses="analysis_id\tassigned_ancestry\tsample_size\texclude_from_build\nH1\tEUR\t5\ttrue\n",
+    )
     (stores / "by-label").mkdir()
     (stores / "README.md").write_text("x")
     results = root / "docs" / "_yardstick"

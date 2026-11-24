@@ -50,7 +50,7 @@ class BuiltStoresView(unittest.TestCase):
     def test_the_site_holds_data_stores_json(self) -> None:
         data = json.loads((self.out / "data" / "stores.json").read_text(encoding="utf-8"))
         self.assertTrue(data["available"])
-        self.assertEqual([r["store_id"] for r in data["inventory"]], [f"OGS-0000{n}" for n in range(1, 7)])
+        self.assertEqual([r["store_id"] for r in data["inventory"]], [f"OGS-0000{n}" for n in range(1, 9)])
         self.assertEqual(data["registry"]["stores_url"],
                          "https://github.com/opengwas/opengwasdb-stores/tree/" + "c" * 40 + "/stores/")
         self.assertEqual(data["inventory"][0]["url"],
