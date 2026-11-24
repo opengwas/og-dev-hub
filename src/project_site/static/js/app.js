@@ -97,6 +97,46 @@
   function unavailable(data, what) {
     return alert("severe", el("p", {}, el("strong", {}, what + " could not be collected"), ": " + (data.error || "no reason was recorded") + "."));
   }
+  /* A drawing that can be enlarged: the SVG fills the width; "Enlarge" opens it over the page, where it can
+   * be zoomed (buttons) and scrolled. Escape or "Close" returns. Plain JS; the SVG itself is the build's. */
+  function naturalWidth(frame) {
+    var svg = frame.querySelector && frame.querySelector("svg");
+    var m = svg && /^([\d.]+)(pt|px)?$/.exec(svg.getAttribute("width") || "");
+    return m ? Math.round(parseFloat(m[1]) * (m[2] === "pt" ? 4 / 3 : 1)) : 0;
+  }
+  function zoomable(frame) {
+    var level = 1, open = false;
+    var bar = el("div", { class: "drawing-bar" });
+    var wrap = el("div", { class: "drawing-wrap" }, bar, frame);
+    var natural = naturalWidth(frame);
+    function apply() {
+      var svg = frame.querySelector("svg");
+      if (!svg) return;
+      svg.style.width = open ? Math.round(level * 100) + "%" : "";
+      svg.style.maxWidth = open || !natural ? "none" : natural + "px"; // a small diagram is never stretched past its own size
+      if (!open && !natural) svg.style.maxWidth = "";
+    }
+    function mode(on) {
+      open = on; level = 1;
+      wrap.classList.toggle("drawing-full", on);
+      toggle.textContent = on ? "Close" : "Enlarge";
+      zoomControls.hidden = !on;
+      apply();
+    }
+    function button(label, title, click) {
+      var b = el("button", { type: "button", class: "button button-plain", title: title, "aria-label": title }, label);
+      b.addEventListener("click", click);
+      return b;
+    }
+    var toggle = button("Enlarge", "Open this diagram over the page", function () { mode(!open); });
+    var zoomControls = el("span", { class: "zoom-controls", hidden: true },
+      button("−", "Zoom out", function () { level = Math.max(0.5, level - 0.25); apply(); }),
+      button("+", "Zoom in", function () { level = Math.min(6, level + 0.25); apply(); }),
+      button("Fit", "Fit to width", function () { level = 1; apply(); }));
+    add(bar, [toggle, zoomControls]);
+    document.addEventListener("keydown", function (e) { if (open && e.key === "Escape") mode(false); });
+    return wrap;
+  }
   function json(name) {
     return fetch("data/" + name + ".json", { cache: "no-cache" }).then(function (response) {
       if (!response.ok) throw new Error("data/" + name + ".json: HTTP " + response.status);
@@ -109,7 +149,7 @@
   function current() {
     var hash = window.location.hash.replace(/^#/, "");
     if (hash.indexOf("component-") === 0) return "architecture";
-    return document.getElementById("pane-" + hash) ? hash : "architecture";
+    return document.getElementById("pane-" + hash) ? hash : "stores";
   }
 
   function show() {
@@ -154,7 +194,7 @@
 
   window.DevHub = {
     el: el, add: add, link: link, tag: tag, count: count, short: short, panel: panel, alert: alert, stat: stat,
-    table: table, repoFilter: repoFilter, collected: collected, unavailable: unavailable, json: json, register: register
+    table: table, zoomable: zoomable, repoFilter: repoFilter, collected: collected, unavailable: unavailable, json: json, register: register
   };
 
   document.addEventListener("DOMContentLoaded", function () {

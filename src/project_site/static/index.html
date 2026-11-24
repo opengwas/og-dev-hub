@@ -4,24 +4,28 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpenGWAS Dev Hub</title>
-  <meta name="description" content="What OpenGWAS has built: its architecture, its decisions and its terms.">
+  <meta name="description" content="OpenGWAS build status: its Stores, their Benchmarking, its architecture, its decisions and its terms.">
+  <link rel="icon" href="img/favicon.ico">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <link rel="preload" href="fonts/atkinson-hyperlegible-next-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="style.css">
   <script src="js/app.js"></script>
 </head>
 <body>
   <header class="masthead">
-    <a class="home-link" href="#architecture">
-      <span class="monogram" aria-hidden="true">DH</span>
+    <a class="home-link" href="#stores">
+      <img class="logo" src="img/logo.svg" alt="OpenGWAS" width="968" height="192">
       <span class="home-words">
-        <span class="home-name">OpenGWAS Dev Hub</span>
-        <span class="home-tagline">What is built</span>
+        <span class="home-name">Dev Hub</span>
+        <span class="home-tagline">Build status</span>
       </span>
     </a>
     <nav class="views-nav" aria-label="Views">
+      <a class="views-link" href="#stores" data-view="stores">Stores</a>
+      <a class="views-link" href="#benchmarking" data-view="benchmarking">Benchmarking</a>
       <a class="views-link" href="#architecture" data-view="architecture">Architecture</a>
       <a class="views-link" href="#decisions" data-view="decisions">Decisions</a>
       <a class="views-link" href="#context" data-view="context">Context</a>
-      <a class="views-link" href="#stores" data-view="stores">Stores</a>
     </nav>
     <button class="button button-plain" id="theme-switch" type="button">Dark mode</button>
   </header>
@@ -47,8 +51,14 @@
 
     <section class="pane" id="pane-stores" hidden aria-labelledby="h-stores">
       <h1 class="pane-heading" id="h-stores">Stores</h1>
-      <p class="pane-lede">Every GWAS Store in the registry, what its Release Bundle holds and what it does not yet, and yardstick's results: the latest run per Store and each measure's trend across engine versions.</p>
+      <p class="pane-lede">Every GWAS Store in the registry, what its Release Bundle holds and what it does not yet.</p>
       <div class="pane-content" id="stores-content"><p class="waiting">Loading…</p></div>
+    </section>
+
+    <section class="pane" id="pane-benchmarking" hidden aria-labelledby="h-benchmarking">
+      <h1 class="pane-heading" id="h-benchmarking">Benchmarking</h1>
+      <p class="pane-lede">One fixed query workload (the yardstick), run at the finish of every epic that changes the engine.</p>
+      <div class="pane-content" id="benchmarking-content"><p class="waiting">Loading…</p></div>
     </section>
   </main>
 
@@ -62,5 +72,6 @@
   <script defer src="js/decisions.js"></script>
   <script defer src="js/context.js"></script>
   <script defer src="js/stores.js"></script>
+  <script defer src="js/benchmarking.js"></script>
 </body>
 </html>

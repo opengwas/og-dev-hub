@@ -64,12 +64,99 @@ class InventoryTests(Fixture):
 
     def test_n_clumped_is_pending_until_opengwasdb_stores_507(self) -> None:
         for store_id in ("OGS-00001", "OGS-00002", "OGS-00003", "OGS-00004"):
-            self.assertEqual(self.shown[store_id]["n_clumped"], {"text": None, "gap": "pending opengwasdb-stores#507", "detail": None})
+            self.assertEqual(self.shown[store_id]["n_clumped"], {"text": None, "gap": "pending opengwasdb-stores#507", "display": "n/a", "detail": None})
 
     def test_the_row_holds_the_ticket_fields_and_no_others(self) -> None:
         self.assertEqual(sorted(self.shown["OGS-00001"]), sorted([
-            "store_id", "url", "label", "description", "layout", "completion_state", "coverage", "status", "store_bytes",
+            "store_id", "url", "label", "description", "summary", "facts", "why_na", "layout", "completion_state", "coverage", "status", "store_bytes",
             "n_variants", "top_hits", "has_hm3", "has_rho", "n_clumped", "n_analyses", "median_sample_size", "ancestry"]))
+
+
+class TileTests(Fixture):
+    """The tile's data: the short description, and `n/a` for each gap with its reason kept (og-dev-hub#21)."""
+
+    LONG = ("The UK Biobank GWAS of blood biochemistry markers run through the pan-ancestry pipeline with a very long "
+            "first sentence that keeps going past the cut so that it has to be shortened on a word boundary. A second sentence.")
+
+    def test_a_description_longer_than_the_cut_ends_in_an_ellipsis_on_a_word_boundary(self) -> None:
+        short = stores_view.summary(self.LONG)
+        self.assertEqual(short, "The UK Biobank GWAS of blood biochemistry markers run through the pan-ancestry pipeline with a very long "
+                                "first sentence that keeps going past the cut so that it…")
+        self.assertLessEqual(len(short), 161)
+        self.assertNotIn("A second sentence", short)
+
+    def test_a_host_path_ends_the_summary_before_it_and_never_leaves_two_ellipses(self) -> None:
+        real = ("Full dense Store Release of all 2,514 UK Biobank (ukb-b) GWAS-VCF Analyses declared in the OpenGWAS IGD "
+                "collection and verified present in /data/opengwasdb/raw/gwas-vcf/ukb-b, reference-completed under its own id "
+                "against the UKB EUR LD panel (ADR 0037).")
+        short = stores_view.summary(real)
+        self.assertEqual(short, "Full dense Store Release of all 2,514 UK Biobank (ukb-b) GWAS-VCF Analyses declared in the "
+                                "OpenGWAS IGD collection and verified present in…")
+        self.assertNotIn("…/", short)
+        self.assertEqual(stores_view.summary("Read at /data/opengwasdb/raw/x by the builder."), "Read at…")
+
+    def test_et_al_and_other_abbreviations_do_not_end_the_sentence(self) -> None:
+        chen = ("Full European-ancestry slice of the Chen et al. 2023 plasma metabolome atlas (PMID 36635386): every candidate "
+                "analysis for this ancestry, no cap, as a single-ancestry no-cis ragged GWAS-SSF release.\n")
+        self.assertEqual(stores_view.summary(chen), "Full European-ancestry slice of the Chen et al. 2023 plasma metabolome atlas "
+                         "(PMID 36635386): every candidate analysis for this ancestry, no cap, as a…")
+        sun = ("First 10 Sun et al. INTERVAL SomaScan plasma-proteome pQTL analyses (PMID 29875488) -- a deterministic prefix of "
+               "the 100-analysis 2018-sun-pilot-100 selection, built end-to-end through OpenGWASDB's real ragged builder as a small, "
+               "current, grounded proof that this Store Family's pipeline (Trait Ontology Mapping, CURIE-normalised trait_ontology_id, "
+               "analysis_label) actually produces a working store.\n")
+        self.assertEqual(stores_view.summary(sun), "First 10 Sun et al. INTERVAL SomaScan plasma-proteome pQTL analyses (PMID 29875488) "
+                         "-- a deterministic prefix of the 100-analysis 2018-sun-pilot-100 selection…")
+        self.assertEqual(stores_view.summary("Use a tool, e.g. a script. Then stop."), "Use a tool, e.g. a script.")
+        self.assertEqual(stores_view.summary("Run by J. Smith in 2026. Then stop."), "Run by J. Smith in 2026.")
+        self.assertEqual(stores_view.summary("That is, i.e. this one. Next."), "That is, i.e. this one.")
+
+    def test_each_status_tag_has_its_tone_written_by_the_build(self) -> None:
+        tone = {s: r["status"]["tone"] for s, r in ((r["status"]["text"], r) for r in self.shown.values())}
+        self.assertEqual(tone, {"validated": "ok", "built": "ok", "candidate": None, "accepted": None, "withdrawn": "muted"})
+        self.assertEqual(stores_view.STATUS_TONE["superseded"], "muted")
+
+    def test_a_shorter_description_is_its_first_sentence_alone(self) -> None:
+        self.assertEqual(stores_view.summary("Dense build of UKB. Second sentence."), "Dense build of UKB.")
+        self.assertEqual(stores_view.summary("No full stop here"), "No full stop here")
+        self.assertIsNone(stores_view.summary("  "))
+
+    def test_the_full_description_is_still_written(self) -> None:
+        row = self.shown["OGS-00001"]
+        self.assertEqual(row["description"], "Read at …/ukb-b by the builder.")
+        self.assertTrue(row["summary"] and row["description"].startswith(row["summary"].rstrip("…")))
+
+    def test_a_gap_displays_n_a_and_keeps_its_reason(self) -> None:
+        row = self.shown["OGS-00003"]
+        fact = {f["label"]: f for f in row["facts"]}
+        self.assertEqual((fact["Size on disk"]["display"], fact["Size on disk"]["na"]), ("n/a", True))
+        self.assertEqual(row["store_bytes"]["gap"], "recorded from opengwasdb-stores#502's backfill")
+        self.assertIn({"label": "Size on disk", "reason": "recorded from opengwasdb-stores#502's backfill"}, row["why_na"])
+        self.assertEqual(fact["Layout"]["display"], "ragged")
+
+    def test_completion_reads_as_a_phrase_and_a_missing_state_is_n_a(self) -> None:
+        def fact(row: dict) -> dict:
+            shown = stores_view.inventory_row({"store_id": "X", **row}, None)
+            return {"fact": next(f for f in shown["facts"] if f["label"] == "Completion"), "why": shown["why_na"]}
+
+        done = fact({"store_id": "OGS-00009", "completion_state": {"value": "reference_completed"}})
+        self.assertEqual(done["fact"], {"label": "Completion", "display": "reference completed", "detail": None, "na": False})
+        observed = fact({"store_id": "OGS-00027", "completion_state": {"value": "observed_only"}})
+        self.assertEqual(observed["fact"]["display"], "observed only")
+        self.assertEqual(fact({"completion_state": {"value": "in_progress"}})["fact"]["display"], "in_progress")
+        gap = fact({"completion_state": {"gap": "no build.yaml"}})
+        self.assertEqual((gap["fact"]["display"], gap["fact"]["na"]), ("n/a", True))
+        self.assertIn({"label": "Completion", "reason": "no build.yaml"}, gap["why"])
+        labels = [f["label"] for f in self.shown["OGS-00001"]["facts"]]
+        self.assertEqual(labels[:3], ["Layout", "Coverage", "Completion"])
+
+    def test_a_store_with_no_gap_has_no_reasons(self) -> None:
+        self.assertEqual([w["label"] for w in self.shown["OGS-00001"]["why_na"]], [])
+
+    def test_every_tile_fact_is_n_a_or_a_figure_never_blank(self) -> None:
+        for row in self.shown.values():
+            for f in row["facts"]:
+                self.assertTrue(f["display"], (row["store_id"], f["label"]))
+                self.assertEqual(f["display"] == "n/a", f["na"])
 
 
 class GapTests(Fixture):
@@ -190,7 +277,7 @@ class CauseTests(Fixture):
         self.assertEqual(self.shown["OGS-00007"]["store_bytes"]["gap"], "no Validation Record (Release Status withdrawn)")
 
     def test_an_empty_ancestry_is_a_gap_with_its_reason_never_a_blank_cell(self) -> None:
-        self.assertEqual(self.shown["OGS-00008"]["ancestry"], {"text": None, "detail": None,
+        self.assertEqual(self.shown["OGS-00008"]["ancestry"], {"text": None, "detail": None, "display": "n/a",
                          "gap": "no built row, so there is no ancestry to count"})
         self.assertEqual(self.shown["OGS-00003"]["ancestry"]["gap"], "the manifest has no Assigned Ancestry column")
         self.assertEqual(self.shown["OGS-00008"]["n_analyses"]["text"], "0")
@@ -265,7 +352,7 @@ class YardstickTests(Fixture):
     @classmethod
     def setUpClass(cls) -> None:
         super().setUpClass()
-        cls.y = cls.view["yardstick"]
+        cls.y = stores_view.benchmarking_view(cls.doc)["yardstick"]
         cls.latest = {s["store_id"]: s for s in cls.y["stores"]}
 
     def test_every_valid_run_shows_and_the_invalid_one_is_a_gap_naming_its_file(self) -> None:
@@ -371,11 +458,26 @@ class LatestRunTests(Fixture):
         self.assertEqual(stores_view.state("absent")["label"], "not in this run")
 
 
+class SplitTests(Fixture):
+    """Seam 2: the Stores data carries no yardstick panel; the Benchmarking data does."""
+
+    def test_stores_data_has_no_yardstick_and_benchmarking_carries_it(self) -> None:
+        self.assertNotIn("yardstick", self.view)
+        bench = stores_view.benchmarking_view(self.doc)["yardstick"]
+        self.assertIn("trends", bench)
+        self.assertIn("stores", bench)
+
+    def test_an_uncollected_source_is_an_envelope_with_its_reason(self) -> None:
+        bench = stores_view.benchmarking_view({"source": "stores", "available": False, "error": "gone"})
+        self.assertEqual((bench["available"], bench["error"]), (False, "gone"))
+        self.assertNotIn("yardstick", bench)
+
+
 class TopHitsPathTests(Fixture):
     @classmethod
     def setUpClass(cls) -> None:
         super().setUpClass()
-        cls.y = cls.view["yardstick"]
+        cls.y = stores_view.benchmarking_view(cls.doc)["yardstick"]
 
     def test_the_latest_top_hits_row_says_how_it_was_answered(self) -> None:
         dense = next(s for s in self.y["stores"] if s["store_id"] == "OGS-00001")
@@ -415,7 +517,7 @@ class TrendTests(Fixture):
     @classmethod
     def setUpClass(cls) -> None:
         super().setUpClass()
-        cls.trends = {t["measure"]: t for t in cls.view["yardstick"]["trends"]}
+        cls.trends = {t["measure"]: t for t in stores_view.benchmarking_view(cls.doc)["yardstick"]["trends"]}
 
     @staticmethod
     def points(svg: str) -> list[str]:
@@ -464,7 +566,7 @@ class HostPathTests(Fixture):
         self.assertIn("…/ukb-b", self.shown["OGS-00001"]["description"])
 
     def test_no_host_path_is_in_an_error(self) -> None:
-        by_name = {m["name"]: m for m in next(s for s in self.view["yardstick"]["stores"] if s["store_id"] == "OGS-00001")["measures"]}
+        by_name = {m["name"]: m for m in next(s for s in stores_view.benchmarking_view(self.doc)["yardstick"]["stores"] if s["store_id"] == "OGS-00001")["measures"]}
         self.assertNotRegex(by_name["region_100kb"]["note"], HOST_PATH)
 
     def test_the_collected_registry_path_is_not_published(self) -> None:

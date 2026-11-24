@@ -56,7 +56,7 @@ no other source.
 ## The site
 
 The site (og-dev-hub#15, `docs/site.md`) is one static page of built state, with
-four views: Architecture, Decisions, Context and Stores.
+five views, in this order: Stores, Benchmarking, Architecture, Decisions and Context (og-dev-hub#19). The masthead's subtitle is "Build status". "Benchmarking" is the visible label of the yardstick view only: code, JSON keys and specs keep the name yardstick, because "benchmark" also names the per-Store release benchmark.
 `pixi run site` collects from **public git only**, through
 `collect.__main__.run(public_only=True)`: the architecture collector with
 `read_private=False`, so a `private` repository is listed (its `note` says
@@ -75,7 +75,8 @@ from those alone:
 |---|---|
 | `data/architecture.json` | the envelope; `repos` (a list, in `system.yaml`'s order: `name`, `label`, `url`, `state`, `visibility`, `status`, `ref`, `commit`, `committed`, `why` (the error of an `unreadable` one, the note of a `no_model` one, else `null`) and `refresh_error` (`null` unless the refresh failed)); `containers` (with `state`: `public`, `private`, `planned` or `data`); `diagrams` (`id`, `title`, `caption`, `svg`); `stages` (with the `components` serving each); `components` (with `anchor`, `container_name`, `size`, `paths` as `{path, url}` on GitHub at the commit read, and `adrs` placed on it with `via`); `component_repos` (the repositories with a component, for the view's filter); `counts` (`components`, `repos_with_model`); `gaps` (each public repository not planned: `state`, which follows the repository's: `unreadable` or `no_model` (with its `why` as `unreadable` or `no_model`), else `gaps` (an unclaimed file, a stale claim or a system gap), `complete`, or `unknown` when its claims were not measured (no gap record, or `unclaimed` or `stale` unknown), never `complete`; `unclaimed` and `stale` are lists only for `gaps` and `complete`, else `null`; `system`); `layering` (`null` when no model declares layers, else each layered repository's `edges`, `imports` against the layering and its `upward` imports); `seam` (`imports`, `pairs`, `baseline`); `across` (imports per pair of repositories); `summary` |
 | `data/decisions.json` | the envelope; `repos` (those with an ADR, in order); `adrs` in `system.yaml`'s order then by number: `repo`, `number`, `title`, `status`, `url`, `components` (`{id, name, via}`) and `cites` (`{repo, number, text, url}`, `url` `null` when the cited ADR was not collected or is a private repository's) |
-| `data/stores.json` | the Stores view (see [The Stores view](#the-stores-view)): the envelope; `registry` (`name`, `url`, `commit`, `stores_url`); `inventory`; `yardstick` |
+| `data/stores.json` | the Stores view (see [The Stores view](#the-stores-view)): the envelope; `registry` (`name`, `url`, `commit`, `stores_url`); `inventory` |
+| `data/benchmarking.json` | the Benchmarking view (`stores_view.benchmarking_view`): the envelope and `yardstick` (see [The Stores view](#the-stores-view)) |
 | `data/context.json` | `html` (the hub's `CONTEXT.md`, rendered by `project_site.markdown`: headings, paragraphs, lists, bold, italics, code spans and links, every character escaped first, a relative link resolved against og-dev-hub's `main` on GitHub, and a link to any other scheme than `http(s)` dropped); `source`; `glossaries`: each public listed repository but og-dev-hub, not planned, with `url` (its `CONTEXT.md` at the commit read) or `null` and a `note` (`no CONTEXT.md at the commit read`, `could not be read`) |
 
 A repository's `state` is decided once, by `site.repo_state`: `planned`,
@@ -276,11 +277,21 @@ named in `stores_view`, and every text a collector wrote has its host paths cut 
 name (`architecture_public.reason`), so no `/data/...` path reaches the file, including in an
 error.
 
-- **`inventory[]`**: the row above, each cell `{text, gap, detail}`: `text` the figure as
-  drawn (`62.1 GB`, `11,191,070`, `AFR 1 · EUR 2 · unassigned 1`, top hits
-  `p < 5e-08: 10`), or `gap` the cause. `url` links the Store's bundle on GitHub at the
-  commit read.
-- **`yardstick`**: `stores` (the latest run per Store), `trends`, `unmeasured`, `invalid`,
+- **`inventory[]`** (og-dev-hub#21): one row per Store, drawn as a tile (`static/js/stores.js`, a `<details>`: the header, short description and facts are its `<summary>`, so a click anywhere on them opens it; the body holds the registry link, the full description and "Why n/a"; Escape closes every open tile). Each cell is `{text, gap, display, detail}`:
+  - `text`: the figure as drawn (`62.1 GB`, `11,191,070`, `AFR 1 · EUR 2 · unassigned 1`, top hits `p < 5e-08: 10`), or `null` for a gap;
+  - `gap`: the cause, or `null`. It stays in `stores.json` and is shown only in the open tile;
+  - `display`: what the tile draws, written by the build: `text`, or `n/a` for every gap (pending, not built, unknown or not computed);
+  - `detail`: a note beside the figure (excluded rows, how many have a sample size), or `null`.
+  - the `status` cell also has `tone`, the Release Status tag's tone written by the build: `validated` and `built` `ok`, `candidate` and `accepted` `null` (neutral), `withdrawn` and `superseded` `muted`.
+
+  A row also holds:
+  - `url`: the Store's bundle on GitHub at the commit read;
+  - `description`: the full text, host paths cut to the last name;
+  - `summary`: the short description, the first sentence of the description as written, cut to about 160 characters on a word boundary and ending in `…` when cut. The cut is made before host paths are scrubbed; a full stop after "et al.", "e.g.", "i.e." or a single initial does not end the sentence; a cut text that holds a host path ends before it, so a summary never shows a scrubbed `…/path` beside the cut's `…`. `null` for no description;
+  - `facts`: the tile's list, in order (Layout, Coverage, Completion, Size on disk, Variants, Analyses, Median sample size, Ancestry, Top hits, HM3, Rho), each `{label, display, detail, na}` with `na` true when `display` is `n/a`;
+  - the Completion fact is the `completion_state` cell from `build.yaml`; its `display` is written by the build (its `text` stays the recorded state): `reference_completed` shows "reference completed", `observed_only` "observed only", any other value as written, a gap `n/a`;
+  - `why_na`: `{label, reason}` for each gap among those facts and Release Status, the reasons the open tile lists under "Why n/a".
+- **`yardstick`** (in `data/benchmarking.json`, not `stores.json`; `static/js/benchmarking.js` draws it, trends first, under the line "One fixed query workload (the yardstick), run at the finish of every epic that changes the engine.", which is the tab's lede and shows even with no results; the script draws the trends first): `stores` (the latest run per Store), `trends`, `unmeasured`, `invalid`,
   `runs`, `workloads`, `load_rule`, `veeam_rule`. Raw runs are not listed.
   - *The latest run per Store* is the latest run that measured it (a Store `pending` in every run
     says so, with its `reason`). When the newest run leaves the Store out or lists it pending, the

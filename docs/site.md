@@ -1,7 +1,7 @@
 # The site
 
 How the Dev Hub's site is built, previewed and extended (og-dev-hub#15). It is one
-static page of OpenGWAS's **built state**, with a tab per view, rendered in the
+static page of OpenGWAS's **built state**, with a tab per view (Stores, Benchmarking, Architecture, Decisions, Context), rendered in the
 browser from JSON the build writes. It is built from public git alone: no token,
 no `/data`, no private repository and no board. It is published at
 <https://blog.opengwas.io/og-dev-hub/>.
@@ -21,7 +21,8 @@ no `/data`, no private repository and no board. It is published at
 | Architecture | Every repository `system.yaml` lists and the commit read; the containers; each repository's components by layer or by container (Graphviz, drawn at build time); the stages; every component with its size, claims and the ADRs placed on it; the gaps in the claims; the imports against the layering; and the imports across repositories, with the `opengwasdb-stores` to `opengwasdb` seam and its baseline | `data/architecture.json` |
 | Decisions | Every public repository's ADRs in one table: number, title, status, repository, the components each governs, and the ADRs it cites in another repository, each linking to GitHub; filtered by repository | `data/decisions.json` |
 | Context | The hub's `CONTEXT.md`, rendered at build time, and a link to each public repository's own `CONTEXT.md` at the commit read (or why there is none) | `data/context.json` |
-| Stores | Every Release Bundle in the registry as one inventory row (layout, completion, coverage, Release Status, storage, variants, top hits, HM3, Rho, clumped, Analyses, median sample size, ancestry), each field a value or a gap that names what fills it; and yardstick's latest run per Store, a trend per measure across engine versions, and the runs taken under load or in the Veeam window marked | `data/stores.json` |
+| Stores | One tile per Release Bundle in a responsive grid: id, label and Release Status, the build's short description, and layout, coverage, size on disk, variants, Analyses, median sample size, ancestry, top hits, HM3 and Rho; a gap reads `n/a`. A tile is a `<details>`: opened, it shows the full description and "Why n/a" with each reason (Escape closes it) | `data/stores.json` |
+| Benchmarking | yardstick's results: a trend per measure across engine versions first, then the latest run per Store, the runs taken under load or in the Veeam window marked. The label is Benchmarking; the thing, its code and its JSON keep the name yardstick | `data/benchmarking.json` |
 
 It shows no planned state (the project board's) and no running state (the
 operations dashboard's).
@@ -70,7 +71,7 @@ The Pages source is still the `gh-pages` branch. In order:
 
 It also runs the Stores collector, over the registry clone's `stores/` and
 `docs/_yardstick/` at `main` (extracted by `git archive` into the work root; public git too),
-and `site.build` turns it into `data/stores.json` (`project_site.stores_view`). The registry
+and `site.build` turns it into `data/stores.json` and `data/benchmarking.json` (`project_site.stores_view`). The registry
 at `main` is behind what the view can draw: the Validation Records that lack
 opengwasdb-stores#502's fields, and the yardstick results of the old workload, render as gaps and
 as the measures those runs hold. Neither is a failure. The charts are inline SVG drawn
@@ -130,3 +131,13 @@ a diagram links to its row in the Components table (`#component-<id>`).
    nothing of the private fixture repository reaches any file of `_site/`, and
    that its script draws in `node` over a built site (`view_runner.js`, with the
    few DOM calls the scripts make; `nodejs` is in the environment for this alone).
+
+## The look
+
+The page follows the OpenGWAS website (`opengwas/opengwasdb-website`): `style.css` carries its colour
+tokens under the same names (`--teal`, `--ink`, `--wash`, `--rule`, `--wide`, `--gutter`), `fonts/` its
+Atkinson Hyperlegible Next and Mono (SIL OFL, licence files beside them) and `img/` its logo and favicons;
+a comment at the top of `style.css` says where each came from. Dark tokens are the hub's own (the website
+has none): the same hues, lifted. A faint 24 px grid marks it as a developer environment; it is on the page
+only, and every panel, table and the masthead sits on solid paper. Architecture diagrams fill the width, and
+"Enlarge" opens one over the page with zoom buttons (plain JS, `DevHub.zoomable`).

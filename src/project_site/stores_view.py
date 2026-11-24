@@ -1,11 +1,12 @@
-"""`data/stores.json`: the Stores view, decided at build time from the collected `stores.json` (og-dev-hub#16).
+"""`data/stores.json` and `data/benchmarking.json`: the Stores and Benchmarking views, decided at build time
+from the collected `stores.json` (og-dev-hub#16, #19).
 
 The collector (`collect.stores`) read the registry; this turns what it read into
-what the page draws, so `static/js/stores.js` only renders:
+what the page draws, so `static/js/stores.js` and `static/js/benchmarking.js` only render:
 
 - **the inventory**: one row per Release Bundle, each field a `{text, gap}` cell.
   A gap names what fills it and is never drawn as zero;
-- **yardstick**: for each Store it measures, its latest run's median and p95 per
+- **yardstick** (`benchmarking_view`, the Benchmarking tab's file): for each Store it measures, its latest run's median and p95 per
   measure, peak memory, size on disk, engine version and date; one trend per
   measure across engine versions, as small inline SVG drawn here; and each run
   taken under load or in the Veeam window marked. Raw runs are not listed.
@@ -17,6 +18,7 @@ wrote has its host paths cut to the last name (`architecture_public.reason`).
 from __future__ import annotations
 
 import html
+import re
 from typing import Any, Mapping
 
 from yardstick import result as yardstick_result
@@ -112,8 +114,57 @@ def _cell(field: Mapping[str, Any] | None, show, *, detail: str | None = None) -
     """`{text, gap, detail}`: the text of a value, or the gap that names what fills it; exactly one of the two."""
     field = mapping(field)
     if field.get("gap") or field.get("value") is None:
-        return {"text": None, "gap": text(field.get("gap") or "not collected"), "detail": None}
-    return {"text": show(field["value"]), "gap": None, "detail": detail}
+        # `display` is what a tile draws: `n/a`. The reason stays in `gap`, for the expanded tile and for the file.
+        return {"text": None, "gap": text(field.get("gap") or "not collected"), "display": NA, "detail": None}
+    shown = show(field["value"])
+    return {"text": shown, "gap": None, "display": shown, "detail": detail}
+
+
+NA = "n/a"
+SUMMARY_CUT = 160  # the short description is cut to about this many characters
+# The facts a tile lists, in order: (cell, label).
+TILE_FACTS = (("layout", "Layout"), ("coverage", "Coverage"), ("completion_state", "Completion"), ("store_bytes", "Size on disk"), ("n_variants", "Variants"),
+              ("n_analyses", "Analyses"), ("median_sample_size", "Median sample size"), ("ancestry", "Ancestry"),
+              ("top_hits", "Top hits"), ("has_hm3", "HM3"), ("has_rho", "Rho"))
+_SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+# A full stop after one of these does not end a sentence: "et al.", "e.g.", "i.e." or a single initial ("J. Smith").
+_ABBREVIATION = re.compile(r"(?:^|[\s(])(?:et al|e\.g|i\.e|[A-Za-z])\.$", re.IGNORECASE)
+# The tone of a Release Status tag, written by the build: built and validated are ok, a Store not built yet is neutral, a
+# Store that is gone is muted.
+STATUS_TONE = {"validated": "ok", "built": "ok", "candidate": None, "accepted": None, "withdrawn": "muted", "superseded": "muted"}
+
+
+def summary(description: Any, limit: int = SUMMARY_CUT) -> str | None:
+    """The first sentence of a description as written, cut to about `limit` characters on a word boundary, ending in `…` when cut.
+
+    The cut is made before host paths are scrubbed; a cut text that holds a host path ends before it.
+    """
+    flat = " ".join(str(description or "").split())
+    if not flat:
+        return None
+    first = flat
+    for end in _SENTENCE_END.finditer(flat):
+        if not _ABBREVIATION.search(flat[:end.end()]):
+            first = flat[:end.end()]
+            break
+    cut = first
+    if len(first) > limit:
+        cut = first[:limit + 1]
+        cut = cut[:cut.rfind(" ")] if " " in cut else first[:limit]
+    path = architecture_public.HOST_PATH.search(cut)
+    if path:  # end before a host path: the build never shows one, and a scrubbed `…/x` would sit beside the cut's `…`
+        cut = cut[:path.start()]
+    elif len(first) <= limit:
+        return first
+    return cut.rstrip(" ,;:.-") + "…"
+
+
+COMPLETION = {"reference_completed": "reference completed", "observed_only": "observed only"}
+
+
+def _completion(value: Any) -> str:
+    """A `completion_state` as a person reads it; a value not listed shows as written."""
+    return COMPLETION.get(value, str(value))
 
 
 def _yes_no(value: Any) -> str:
@@ -131,11 +182,12 @@ def _ancestry(value: Mapping[str, int]) -> str:
 def inventory_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
     median = row.get("median_sample_size") or {}
     n_analyses = row.get("n_analyses") or {}
-    return {
+    out = {
         "store_id": row.get("store_id"),
         "url": url,
         "label": text(row.get("label")),
         "description": text((row.get("description") or "").strip() or None),
+        "summary": text(summary(row.get("description"))),
         "layout": _cell(row.get("layout"), str),
         "completion_state": _cell(row.get("completion_state"), str),
         "coverage": _cell(row.get("coverage"), str),
@@ -155,6 +207,14 @@ def inventory_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
                       if median.get("unparseable") else "")),
         "ancestry": _cell(row.get("ancestry"), _ancestry),
     }
+    # What the tile draws: each fact's display (a gap is `n/a`), and the reason behind each `n/a` for the expanded tile.
+    out["status"]["tone"] = None if out["status"]["gap"] else STATUS_TONE.get(out["status"]["text"])
+    if not out["completion_state"]["gap"]:  # `text` stays the state as recorded; the tile draws it as a phrase
+        out["completion_state"]["display"] = _completion(out["completion_state"]["text"])
+    cells = [(label, out[key]) for key, label in TILE_FACTS]
+    out["facts"] = [{"label": label, "display": cell["display"], "detail": cell["detail"], "na": bool(cell["gap"])} for label, cell in cells]
+    out["why_na"] = [{"label": label, "reason": cell["gap"]} for label, cell in cells + [("Release Status", out["status"])] if cell["gap"]]
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -341,10 +401,16 @@ def yardstick_view(doc: Mapping[str, Any], labels: Mapping[str, Any], registry_i
 # ---------------------------------------------------------------------------
 
 
-def stores_view(doc: Document) -> dict[str, Any]:
-    """`data/stores.json` from the collected `stores.json`; a source that is not available says why."""
+def _envelope(doc: Document) -> dict[str, Any]:
+    """The envelope both files start with: what was collected, when, and (if it was not) why."""
     out = {k: doc.get(k) for k in architecture_public.ENVELOPE}
     out["error"] = text(out["error"])
+    return out
+
+
+def stores_view(doc: Document) -> dict[str, Any]:
+    """`data/stores.json` from the collected `stores.json`; a source that is not available says why."""
+    out = _envelope(doc)
     if not doc.get("available"):
         return out
     commit = doc.get("commit")
@@ -357,6 +423,16 @@ def stores_view(doc: Document) -> dict[str, Any]:
     out["inventory"] = [
         inventory_row(r, paths.github_url(paths.REGISTRY, commit, f"stores/{r['store_id']}/") if commit else None) for r in rows
     ]
+    return out
+
+
+def benchmarking_view(doc: Document) -> dict[str, Any]:
+    """`data/benchmarking.json`: yardstick's results (the tab's label is Benchmarking; the name stays yardstick)."""
+    out = _envelope(doc)
+    if not doc.get("available"):
+        return out
+    rows = [r for r in doc.get("inventory") or [] if isinstance(r, Mapping)]
     labels = {r["store_id"]: text(r.get("label")) for r in rows}
-    out["yardstick"] = yardstick_view(doc.get("yardstick") or {}, labels, [r["store_id"] for r in rows])
+    view = yardstick_view(doc.get("yardstick") or {}, labels, [r["store_id"] for r in rows])
+    out["yardstick"] = view
     return out
