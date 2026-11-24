@@ -11,6 +11,10 @@ as `refs/heads/*` after a fetch of `+refs/heads/*:refs/heads/*`; this
 repository's checkout holds them as `refs/remotes/origin/*` after
 `git fetch origin`; a developer's clone also has local ones in `refs/heads/*`.
 A fetch that fails is recorded, never raised, and the refs already there are read.
+
+A branch with no merge base with `main` (an orphan, such as the CLA check's
+`cla-signatures`) is no work against `main`: it has nothing to diff from. It is
+skipped and named in `skipped` with the reason, never fatal (og-dev-hub#7).
 """
 
 from __future__ import annotations
@@ -82,7 +86,7 @@ def collect(
     remote: str = "origin",
     local: bool = False,
 ) -> dict[str, Any]:
-    """`{"repo", "git_dir", "main", "days", "fetch", "branches"}` for one repository.
+    """`{"repo", "git_dir", "main", "days", "fetch", "branches", "skipped"}` for one repository.
 
     `fetch` is a refspec to fetch from `remote` first (`None` reads what is there);
     `local` marks the branches as read from a developer's own clone rather than
@@ -105,6 +109,7 @@ def collect(
         if name not in SKIPPED:
             candidates[name].append((ref, date))
     found = []
+    skipped = []
     for name, refs in candidates.items():
         best = None
         for ref, date in refs:
@@ -116,9 +121,22 @@ def collect(
         if best is None:
             continue
         ref, ahead, date = best
+        if not _has_merge_base(git_dir, main_commit, ref):
+            skipped.append({"name": name, "reason": f"no merge base with {main_ref}"})
+            continue
         files = split_nul(_git(git_dir, "diff", "--name-only", "-z", f"{main_commit}...{ref}"))
         epic, ticket = named_for(name, repo)
         found.append({"repo": repo, "name": name, "ahead": ahead, "committed": date, "files": files,
                       "epic": epic, "ticket": ticket, "local": local})
     found.sort(key=lambda b: b["name"])
-    return {"repo": repo, "git_dir": str(git_dir), "main": main_ref, "days": days, "fetch": fetched, "branches": found}
+    skipped.sort(key=lambda s: s["name"])
+    return {"repo": repo, "git_dir": str(git_dir), "main": main_ref, "days": days, "fetch": fetched, "branches": found,
+            "skipped": skipped}
+
+
+def _has_merge_base(git_dir: Path, main_commit: str, ref: str) -> bool:
+    """Whether `ref` shares history with `main`; `git merge-base` exits 1 when it does not."""
+    done = subprocess.run(["git", "-C", str(git_dir), "merge-base", main_commit, ref], capture_output=True, check=False)
+    if done.returncode not in (0, 1):
+        raise CollectError(f"git merge-base exited {done.returncode}: {done.stderr.decode(errors='replace').strip()}")
+    return done.returncode == 0

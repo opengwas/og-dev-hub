@@ -425,7 +425,10 @@ The published page reads **pushed** branches only: the engine's bare clone after
 read. The `conflicts` command can add the local branches of other git
 directories (`--local`), which the page never shows. A branch read from two clones
 counts once, as the copy further ahead (a tie keeps the pushed one), and
-`branches.sources[].count` is what each read found.
+`branches.sources[].count` is what each read found. A branch with no merge base
+with `main`, such as the orphan `cla-signatures` the CLA check keeps, is no work
+against `main`: it is left out, named in `branches.sources[].skipped` with the
+reason, and never makes the source unavailable (og-dev-hub#7).
 
 **Signals.** One row per (component, owner, item, via, state), with `what`, the
 branches (`repo:name`) or cited strings behind it. `via` is `branch`, `cited`
@@ -486,7 +489,7 @@ engine files or an engine branch exits 2. Registry-side meets are still measured
 | `plans` | the tickets' planned changes and, for a closed ticket, what was checked, as above (#422) |
 | `waits` | every open blocking edge among the live epics' tickets: `{item, on}` |
 | `tickets` | every open ticket of a live epic, to its owner (what `conflicts --ticket` reads) |
-| `branches.sources` | per repository read: `repo`, `git_dir`, `main`, `days`, `fetch` (`null`, or `{ok, error}`), `local`, `count` |
+| `branches.sources` | per repository read: `repo`, `git_dir`, `main`, `days`, `fetch` (`null`, or `{ok, error}`), `local`, `count`, `skipped` (each branch left out: `name`, `reason`) |
 | `branches.list` | `repo`, `name`, `ahead`, `committed`, `files`, `epic`, `ticket` (from the name), `local`, and the resolved `owner`, `item`, `components` |
 | `summary` | `owners`, `meets`, `coordinated`, `uncoordinated`, `unlinkable` (these three add up to `meets`), `branches`, `unresolved`, `not_found` (the lengths of those lists) |
 

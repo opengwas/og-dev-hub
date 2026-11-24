@@ -284,7 +284,9 @@ class GitFailureTests(unittest.TestCase):
         self.assertIn(str(root), text)
         self.assertIn("OPENGWASDB_SITE_ROOT", text)
 
-    def test_a_local_branch_whose_diff_fails_exits_2(self) -> None:
+    def test_a_local_orphan_branch_is_no_work_and_leaves_the_answer_decided(self) -> None:
+        # An orphan branch (the CLA check's `cla-signatures`) has no merge base with
+        # main, so it is no work against it: skipped, never "cannot decide" (og-dev-hub#7).
         clone = self.root / "clone"
         afx.make_repo(clone, {"a.txt": "x\n"})
         afx.git(clone, "checkout", "-q", "--orphan", "unrelated")
@@ -292,8 +294,7 @@ class GitFailureTests(unittest.TestCase):
         afx.git(clone, "add", "b.txt")
         afx.git(clone, "-c", "user.name=t", "-c", "user.email=t@e.org", "commit", "-q", "-m", "unrelated")
         code, text = run("conflicts", *self.args, "--local", str(clone))
-        self.assertEqual(code, 2)
-        self.assertIn("diff", text)
+        self.assertEqual((code, text), (0, "1 files on 1 components\nmeets no other work\n"))
 
     def test_check_with_an_unreadable_engine_exits_2_naming_it(self) -> None:
         code, text = run("check", "--data", str(self.data), "--engine-git", str(self.root / "no-such-engine.git"))

@@ -145,7 +145,9 @@ def compute(
     sources = []
     for found in branch_sets:
         sources.append({k: found.get(k) for k in ("repo", "git_dir", "main", "days", "fetch")}
-                       | {"local": any(b.get("local") for b in found["branches"]), "count": len(found["branches"])})
+                       | {"local": any(b.get("local") for b in found["branches"]), "count": len(found["branches"]),
+                          # What the reader left out, by name and reason: an orphan branch is no work against main.
+                          "skipped": list(found.get("skipped") or [])})
         for b in found["branches"]:
             key = (found["repo"], b["name"])
             if key not in chosen or b["ahead"] > chosen[key][1]["ahead"]:

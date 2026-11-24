@@ -184,8 +184,9 @@ class OrphanBranchTests(unittest.TestCase):
             data, registry_root=fixture.repo, engine_git=fixture.repo, now=NOW))
 
         self.assertTrue(result["available"], result["error"])
-        registry = next(s for s in result["branches"]["sources"] if s["repo"] == "opengwasdb-stores")
-        self.assertEqual(registry["skipped"], [{"name": "cla-signatures", "reason": "no merge base with main"}])
+        # The fixture stands in for the engine's clone, whose branches are read as `refs/heads/*`.
+        engine = next(s for s in result["branches"]["sources"] if s["repo"] == "opengwasdb")
+        self.assertEqual(engine["skipped"], [{"name": "cla-signatures", "reason": "no merge base with main"}])
         self.assertNotIn("cla-signatures", [b["name"] for b in result["branches"]["list"]])
 
 
