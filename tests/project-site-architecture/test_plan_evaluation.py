@@ -32,7 +32,7 @@ ARCH = {
 }
 # Without its model a repository's code is not known, so neither are its files (og-dev-hub#9).
 NO_MODEL = {**fx.NO_ENGINE_MODEL, "edges": [], "files": {**ARCH["files"], fx.ENGINE: None}}
-MISSING = "opengwasdb has no model at main (eeeeeeeeeeee)"
+MISSING = "opengwasdb has no model at the ref read"
 
 
 def planned(plan: dict, *, state: str = "CLOSED", key: str = "opengwasdb#350") -> dict:
@@ -111,6 +111,20 @@ class ClosedTicketTests(unittest.TestCase):
         entry = only(fx.compute(planned(plan(adds=[{"paths": ["opengwasdb/encoding/association.py"], "component": "enc"}])),
                                 architecture=arch))
         self.assertEqual(entry["checks"][0]["held"], None)
+
+    def test_a_repository_without_a_model_is_named_and_never_with_its_commit(self) -> None:
+        # og-dev-hub#9: the reason is shown on the public site, and a private repository's commit is not.
+        arch = {**NO_MODEL, "repos": {**NO_MODEL["repos"], "ogld": fx.repo("ogld", commit="9" * 40, model=False)}}
+        entry = only(fx.compute(planned(plan(adds=[{"paths": ["opengwasdb/encoding/new.py"], "component": "enc"}])),
+                                architecture=arch))
+        self.assertEqual(entry["checks"][0]["why"],
+                         "no model read covers it, so whether it exists is not known: opengwasdb, ogld have no model at the ref read")
+        self.assertNotIn("999999", str(entry))
+
+    def test_a_directory_under_a_models_code_is_not_code_and_says_so(self) -> None:
+        entry = only(fx.compute(planned(plan(adds=[{"paths": ["src/other/new/"], "component": "pages"}])), architecture=NO_MODEL))
+        self.assertEqual((entry["checks"][0]["held"], entry["checks"][0]["why"]),
+                         (None, "only code files are listed, so a non-code path's existence is not known"))
 
     def test_a_path_that_is_not_code_has_no_recorded_existence(self) -> None:
         entry = only(fx.compute(planned(plan(adds=[{"paths": ["docs/new.md"], "component": "pages"}])), architecture=ARCH))

@@ -216,9 +216,9 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
     layered = {repo: roots[repo] for repo in (layers if isinstance(layers, Mapping) else {}) if repo in roots}
     # A repository read with no model: nothing in it can be judged, so what is unplaced may be its.
     unmodelled = [name for name, r in repos.items() if not r.get("planned") and not r.get("model")]
-    missing = "; ".join(
-        f"{name} has no model at {r.get('ref')} ({str(r.get('commit'))[:12]})" if r.get("commit") else f"{name} could not be read"
-        for name, r in repos.items() if name in unmodelled)
+    # Named, never with a commit: a private repository's commit is not the public site's (og-dev-hub#9).
+    missing = (f"{', '.join(unmodelled)} {'has' if len(unmodelled) == 1 else 'have'} no model at the ref read"
+               if unmodelled else "")
     files = architecture.get("files")
     edge_list = architecture.get("edges")
     edges = None if not isinstance(edge_list, list) else {
@@ -233,7 +233,8 @@ def listed(board: Mapping[str, Any], architecture: Mapping[str, Any]) -> list[di
         if not isinstance(files, Mapping):
             return None, "this architecture collection lists no tracked files"
         if repo is None:
-            if unmodelled:
+            # Under a model's code roots it is a non-code path; elsewhere it may be a repository's without one.
+            if unmodelled and not any(path.split("/", 1)[0] in roots[r] for r in names):
                 return None, f"no model read covers it, so whether it exists is not known: {missing}"
             return None, "only code files are listed, so a non-code path's existence is not known"
         listing = files.get(repo)
