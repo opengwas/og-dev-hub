@@ -69,8 +69,19 @@ def _texts(values: Any) -> list[str]:
     return [str(v) for v in values] if isinstance(values, list) else []
 
 
-def visibility(documents: Mapping[str, Document | None]) -> dict[str, Any]:
-    """Each repository `system.yaml` lists, to its `visibility`."""
+def visibility(listed: Mapping[str, Any]) -> Callable[[Any], bool]:
+    """The one visibility predicate: whether a repository is private, given `listed` (each name `system.yaml` lists, to its `visibility`).
+
+    A repository `system.yaml` marks private is private, and so is one it does
+    not list, because a fallback must be safe.
+    """
+    def private(repo: Any) -> bool:
+        return str(repo) not in listed or listed[str(repo)] == "private"
+    return private
+
+
+def listed_visibility(documents: Mapping[str, Document | None]) -> dict[str, Any]:
+    """Each repository `system.yaml` lists, to its `visibility`, as the collected files recorded it."""
     architecture = documents.get("architecture")
     if isinstance(architecture, Mapping) and isinstance(architecture.get("repos"), Mapping) and architecture["repos"]:
         return {str(n): r.get("visibility") for n, r in architecture["repos"].items() if isinstance(r, Mapping)}
@@ -92,10 +103,7 @@ def public_view(documents: Mapping[str, Document | None]) -> dict[str, Document 
 
     The other sources are passed through as they are. The view is idempotent.
     """
-    listed = visibility(documents)
-
-    def private(repo: Any) -> bool:
-        return str(repo) not in listed or listed[str(repo)] == "private"
+    private = visibility(listed_visibility(documents))
 
     view: dict[str, Document | None] = dict(documents)
     architecture = documents.get("architecture")

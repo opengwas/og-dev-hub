@@ -92,5 +92,13 @@ class PrivateBoardTests(unittest.TestCase):
         self.assertIn("Land the reader; waiting ogdb-api#192 and opengwas/ogld#88", page)
 
 
+class VisibilityTests(unittest.TestCase):
+    def test_one_predicate_calls_a_private_or_unlisted_repository_private(self) -> None:
+        from project_site import architecture_public
+
+        private = architecture_public.visibility({"opengwasdb": "public", "ogld": "private", "ogquery": None})
+        self.assertEqual([r for r in ("opengwasdb", "ogld", "ogquery", "ogld-api") if private(r)], ["ogld", "ogld-api"])
+
+
 if __name__ == "__main__":
     unittest.main()

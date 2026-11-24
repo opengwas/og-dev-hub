@@ -27,9 +27,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Collection, Mapping
+from typing import Any, Callable, Mapping
 
-from project_site import paths, staging
+from project_site import architecture_public, paths, staging
 from project_site.staging import Tree
 from project_site.collect import architecture_adrs, architecture_graph, architecture_model as model_rules
 from project_site.collect.common import CollectError
@@ -104,7 +104,7 @@ def collect(
         else:
             models[name] = model
 
-    private = {str(e["name"]) for e in system.get("repos") or [] if e.get("visibility") == "private"}
+    private = architecture_public.visibility({str(e["name"]): e.get("visibility") for e in system.get("repos") or []})
     components, refused = _components(models, private)
     for name, why in refused.items():
         # A component id another model already has: this repository's components are unknown, the rest stand.
@@ -207,7 +207,7 @@ def _system_gaps(
 
 
 def _components(
-    models: Mapping[str, Mapping[str, Any]], private: Collection[str] = (),
+    models: Mapping[str, Mapping[str, Any]], private: Callable[[Any], bool] = lambda repo: False,
 ) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """Each modelled repository's components, in `system.yaml`'s order, each tagged with its repository.
 
@@ -224,7 +224,7 @@ def _components(
         raws = source.get("components") or []
         clash = next((raw["id"] for raw in raws if raw["id"] in seen), None)
         if clash is not None:
-            first = "another repository" if seen[clash] in private else seen[clash]
+            first = "another repository" if private(seen[clash]) else seen[clash]
             refused[repo] = (f"component id {clash!r} of {repo}'s model is also {first}'s, "
                              f"so {repo}'s components are unknown")
             continue
