@@ -133,6 +133,38 @@ class BranchTests(unittest.TestCase):
         self.assertEqual([b["name"] for b in result["branches"]], ["fix/issue-345", "orch/302-integration", "orch/416/419"])
 
 
+class RegistryCloneTests(unittest.TestCase):
+    """The registry's clone is fetched once per refresh, and its branches are read at the `main` it read (og-dev-hub#7)."""
+
+    def test_a_refresh_fetches_the_registrys_clone_once_and_work_reads_the_same_main(self) -> None:
+        fixture = Fixture(self)
+        github = fixture.root / "github"
+        github.mkdir()
+        fx.git(fixture.root, "clone", "-q", "--bare", str(fixture.repo), str(github / "opengwasdb-stores"))
+        engine = fixture.root / "engine.git"
+        fx.git(fixture.root, "clone", "-q", "--bare", str(fixture.repo), str(engine))
+        with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": str(fixture.root / "work")}), \
+                mock.patch.object(staging.paths, "GITHUB", str(github)):
+            staging.registry_root(files=False)  # the first read clones it
+            clone = staging.paths.clone_dir("opengwasdb-stores")
+            calls = []
+            real = staging.ensure_clone
+
+            def counted(git_dir, **kwargs):
+                calls.append(Path(git_dir))
+                return real(git_dir, **kwargs)
+
+            with mock.patch.object(staging, "ensure_clone", counted):
+                registry = staging.registry_root(files=False, refresh=True)
+                sets = work.read_branches(registry=registry, engine_git=engine, refresh=True, now=NOW)
+
+        self.assertEqual(calls.count(clone), 1, calls)
+        found = next(s for s in sets if s["repo"] == "opengwasdb-stores")
+        self.assertEqual(found["fetch"], {"ok": True, "error": None})
+        self.assertEqual(found["main"], registry.ref)
+        self.assertEqual([b["name"] for b in found["branches"]], ["fix/issue-345", "orch/302-integration", "orch/416/419"])
+
+
 class GitFailureTests(unittest.TestCase):
     """A git failure is the collector's error, so the CLI exits 2 and a collector run marks `work` unavailable."""
 

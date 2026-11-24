@@ -39,7 +39,7 @@ LIVE_STATES = ("building", "active")
 STATUS_STATE = {"Active": "active", "Todo": "planned", "Paused": "paused"}
 REPO_KIND = {"opengwasdb": "engine", "opengwasdb-stores": "registry"}
 KIND_REPO = {kind: repo for repo, kind in REPO_KIND.items()}
-ENGINE_FETCH = "+refs/heads/*:refs/heads/*"
+# A checkout's pushed branches; a bare clone's are `staging.BRANCHES`.
 REGISTRY_FETCH = "+refs/heads/*:refs/remotes/origin/*"
 
 
@@ -354,21 +354,26 @@ def read_branches(
 
     The engine's clone holds them as `refs/heads/*`, and so does the registry's
     bare clone; a registry checkout (`--registry`) holds them as
-    `refs/remotes/origin/*`. `refresh` fetches each first, recording a failure.
+    `refs/remotes/origin/*`. `refresh` fetches each first, recording a failure,
+    except the registry's clone: `registry_root` fetched it already, once, and
+    its result and the `main` it read are reused, so work and architecture read
+    the same `main`.
     """
     registry_root = registry.git_dir
-    if registry.clone:
-        registry_main, registry_prefix, registry_fetch = "main", "refs/heads/", ENGINE_FETCH
-    else:
-        registry_main = next((r for r in ("origin/main", "main") if _has_ref(registry_root, r)), "HEAD")
-        registry_prefix, registry_fetch = "refs/remotes/origin/", REGISTRY_FETCH
     sets = [
         # Ahead of the engine's `main`, whatever ref the architecture was read at.
         branch_reader.collect(engine_git, "opengwasdb", main_ref="main", prefixes=("refs/heads/",), days=days, now=now,
-                              fetch=ENGINE_FETCH if refresh else None),
-        branch_reader.collect(registry_root, "opengwasdb-stores", main_ref=registry_main, prefixes=(registry_prefix,),
-                              days=days, now=now, fetch=registry_fetch if refresh else None),
+                              fetch=staging.BRANCHES if refresh else None),
     ]
+    if registry.clone:
+        found = branch_reader.collect(registry_root, "opengwasdb-stores", main_ref=registry.ref,
+                                      prefixes=("refs/heads/",), days=days, now=now)
+        sets.append(found | {"fetch": registry.fetch if refresh else None})
+    else:
+        registry_main = next((r for r in ("origin/main", "main") if _has_ref(registry_root, r)), "HEAD")
+        sets.append(branch_reader.collect(registry_root, "opengwasdb-stores", main_ref=registry_main,
+                                          prefixes=("refs/remotes/origin/",), days=days, now=now,
+                                          fetch=REGISTRY_FETCH if refresh else None))
     for git_dir in local:
         main = next((r for r in ("origin/main", "main") if _has_ref(git_dir, r)), "HEAD")
         sets.append(branch_reader.collect(git_dir, repo_of(git_dir), main_ref=main,
