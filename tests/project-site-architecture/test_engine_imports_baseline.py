@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""This repository's imports of engine modules, held to a committed baseline (#421).
+"""The measurement of a registry's imports of engine modules, held to a committed baseline (#421).
 
-The engine's `CLAUDE.md` says this repository depends on the engine's command
-line and its manifest columns. In fact many files here import engine modules
+The engine's `CLAUDE.md` says opengwasdb-stores depends on the engine's command
+line and its manifest columns. In fact many of its files import engine modules
 directly, and each import is a coupling nobody decided on: an engine refactor
 can break it. Epic #416, decision 14, is to measure those imports and ratchet
 them, the way the engine ratchets its own upward imports

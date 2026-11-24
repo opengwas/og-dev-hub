@@ -17,17 +17,28 @@ reads, because an installed package knows no checkout. It reads
 
 **Where the registry is read from.** `main` of the site's bare clone,
 `/data/opengwasdb/work/site/opengwasdb-stores.git`, cloned the first time it is
-needed and fetched only by a render (`pixi run site`, `site-publish`) and by
-`--refresh` (`--refresh-engine` for `site-data`), with the files the collectors
-read (`stores/`, `docs/`, `CONTEXT.md`, `pixi.lock`, `ogstores.yaml`) extracted
-at that commit by `git archive`, and git read at the same commit.
+needed and fetched only by a render (`pixi run site`, `site-preview`,
+`site-publish`) and by `--refresh` (`--refresh-engine` for `site-data`), once
+per run, with the files the collectors read (`stores/`, `docs/`, `CONTEXT.md`,
+`pixi.lock`, `ogstores.yaml`) extracted at that commit by `git archive`, and git
+read at the same commit: the architecture and the work read the same `main`.
 `--registry PATH` reads that checkout instead, at its `HEAD`
-(`project_site.staging.registry_root`, the one owner of this choice). Every
-clone and fetch the site makes goes through one owner,
+(`project_site.staging.registry_root`, the one owner of this choice).
+
+Every clone and fetch of the site's clones under the work root, and of the git
+directories the collectors read, goes through one owner,
 `project_site.staging.ensure_clone`: a fetch prunes, and one that fails is
-recorded and never raised, so what the clone already holds is read. A registry
-that cannot be read at all (no clone, and no network to make one) makes each
-source that reads it unavailable, naming why, and no other source.
+recorded and never raised, so what the clone already holds is read. A failed
+refresh of the registry's clone is shown on the architecture pages as the
+engine's is, and leaves `architecture check` and `conflicts` undecided (exit
+2) unless they find a problem anyway. A registry that cannot be read at all (no
+clone, and no network to make one) makes each source that reads it
+unavailable, naming why, and no other source. The engine's clone is fetched
+only when it lacks the revision the registry's `pixi.lock` pins; if it still
+lacks it, there is no older engine to stage instead, so the render stops with
+git's message and exits 2. A publish's own `git fetch` of og-dev-hub's
+`origin`, which decides the commit it publishes, is not one of these: it must
+succeed, or the publish is refused.
 
 ## The served-path baseline
 
