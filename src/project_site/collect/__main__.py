@@ -59,9 +59,17 @@ def _describe_architecture(result: dict[str, Any]) -> str:
     def gap(found: dict[str, Any] | None) -> str:
         return "unknown" if found is None else f"{len(found['unclaimed'])}/{len(found['stale'])}"
 
+    system = [
+        f"{repo} {', '.join(found['system_sections'])} ignored (system sections belong in og-dev-hub's system.yaml)"
+        for repo, found in gaps.items() if found and found.get("system_sections")
+    ] + [
+        f"{repo} {g['component']} names container {g['container']}, not in system.yaml"
+        for repo, found in gaps.items() if found for g in found.get("containers") or []
+    ]
+    note = f", SYSTEM GAPS: {'; '.join(system)}" if system else ""
     return (
         f"architecture: {counts['registry']} registry + {counts['engine']} engine components ({model}), "
-        f"gaps registry {gap(gaps['registry'])} engine {gap(gaps['engine'])} (unclaimed/stale), "
+        f"gaps registry {gap(gaps['registry'])} engine {gap(gaps['engine'])} (unclaimed/stale){note}, "
         f"{upward}, "
         f"{summary['registry_to_engine_imports']} registry->engine imports, "
         f"{summary['adrs_placed']} of {summary['adrs_total']} ADRs placed"

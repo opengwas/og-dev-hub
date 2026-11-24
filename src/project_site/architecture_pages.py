@@ -110,6 +110,8 @@ def render_structure(documents: Mapping[str, Document | None]) -> str:
         "intended layering, a decision rather than a measurement) and the code each component claims",
         measured="the imports between components (counts, read from the code of both repositories), "
         "which of them go against the layering, the seam between the repositories, and the gaps in the claims",
+        where="The system context and containers are og-dev-hub's `system.yaml`; the layers and claims "
+        "are in each repository's `docs/architecture/components.yaml`.",
     )
     lines += _engine_notice(data)
     model = data.get("model") or {}
@@ -578,6 +580,23 @@ def _baseline(baseline: Any) -> list[str]:
     ]
 
 
+def _system_gaps(repo: str, found: Mapping[str, Any]) -> list[str]:
+    """What a model file says about the system that `system.yaml` does not back (#8)."""
+    sections, containers = found.get("system_sections") or [], found.get("containers") or []
+    lines = []
+    if sections:
+        lines.append(
+            f"- System sections ignored: {', '.join(pages._code(k) for k in sections)} "
+            "(system sections belong in og-dev-hub's `system.yaml`)"
+        )
+    lines += [
+        f"- Unknown container: {pages._code(g['component'])} names {pages._code(g['container'])}, "
+        "which `system.yaml` does not have"
+        for g in containers
+    ]
+    return lines + [""] if lines else []
+
+
 def _health(
     data: Document, components: list, edges: list, summary: Mapping[str, Any], panel: architecture_panel.Panel
 ) -> list[str]:
@@ -598,6 +617,7 @@ def _health(
         lines += [f"- Stale: {pages._code(c['path'])} (claimed by {pages._code(c['component'])})" for c in stale]
         if unclaimed or stale:
             lines.append("")
+        lines += _system_gaps(repo, found)
     by_id = {c["id"]: c for c in components}
     upward = [e for e in edges if e.get("upward")]
     lines += ["### The engine's layering", ""]

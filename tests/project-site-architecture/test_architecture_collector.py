@@ -28,11 +28,14 @@ class Fixture:
         test.addCleanup(__import__("shutil").rmtree, root, True)
         self.registry = root / "registry"
         self.engine = root / "engine"
+        self.system = root / "system.yaml"
+        self.system.write_text(fx.SYSTEM_YAML, encoding="utf-8")
         self.registry_commit = fx.make_repo(self.registry, registry_files or fx.REGISTRY_FILES, branch="trunk")
         self.engine_commit = fx.make_repo(self.engine, engine_files or fx.ENGINE_FILES)
 
     def collect(self) -> dict:
-        return architecture.collect(staging.registry_root(self.registry), engine_git=self.engine, engine_ref="main")
+        return architecture.collect(staging.registry_root(self.registry), engine_git=self.engine, engine_ref="main",
+                                  system_file=self.system)
 
 
 class CombinedModelTests(unittest.TestCase):
@@ -64,7 +67,8 @@ class CombinedModelTests(unittest.TestCase):
         self.assertEqual(result["gaps"]["engine"]["unclaimed"], ["opengwasdb/orphan.py"])
         self.assertEqual(result["gaps"]["engine"]["stale"],
                          [{"path": "opengwasdb/gone/", "component": "model"}])
-        self.assertEqual(result["gaps"]["registry"], {"unclaimed": [], "stale": []})
+        self.assertEqual(result["gaps"]["registry"],
+                         {"unclaimed": [], "stale": [], "containers": [], "system_sections": []})
 
     def test_the_description_says_unknown_for_engine_gaps_without_a_model(self) -> None:
         from project_site.collect import __main__ as command
@@ -83,7 +87,8 @@ class CombinedModelTests(unittest.TestCase):
         self.assertEqual([c["id"] for c in result["components"]], ["gen", "ogs", "tools"])
         # Unknown, not "no gaps": nothing was judged against missing claims.
         self.assertIsNone(result["gaps"]["engine"])
-        self.assertEqual(result["gaps"]["registry"], {"unclaimed": [], "stale": []})
+        self.assertEqual(result["gaps"]["registry"],
+                         {"unclaimed": [], "stale": [], "containers": [], "system_sections": []})
         self.assertEqual(result["model"]["layers"], [])
         # Unknown, not empty: the layering cannot be measured without the model.
         self.assertIsNone(result["upward_imports"])
@@ -134,6 +139,50 @@ class CombinedModelTests(unittest.TestCase):
         fixture = Fixture(self)
         committed = fx.git(fixture.engine, "show", "-s", "--format=%cI", "HEAD")
         self.assertEqual(fixture.collect()["engine"]["committed"], committed)
+
+
+class SystemModelTests(unittest.TestCase):
+    """og-dev-hub's system.yaml is the only system model (#8)."""
+
+    def test_the_models_system_keys_are_systems_yamls_and_the_stages_are_the_registrys(self) -> None:
+        result = Fixture(self).collect()
+        model = result["model"]
+        self.assertEqual(model["system"], {"name": "OpenGWAS", "summary": "The system."})
+        self.assertEqual([c["id"] for c in model["containers"]], ["engine", "generation", "ld_registry"])
+        self.assertEqual([p["id"] for p in model["people"]], ["curator"])
+        self.assertEqual([x["id"] for x in model["external"]], ["sources"])
+        self.assertEqual(model["container_relations"][2], ["ld_registry", "sources", "reads"])
+        self.assertEqual([s["id"] for s in model["stages"]], ["build", "query"])
+
+    def test_a_broken_system_yaml_makes_the_source_unavailable_naming_the_problem(self) -> None:
+        fixture = Fixture(self)
+        fixture.system.write_text(fx.SYSTEM_YAML.replace('[ld_registry, sources, "reads"]',
+                                                         '[ld_registry, nowhere, "reads"]'), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "system.yaml.*'nowhere'"):
+            fixture.collect()
+
+    def test_system_sections_left_in_a_components_file_are_ignored_and_reported(self) -> None:
+        old = fx.REGISTRY_MODEL.replace("stages:", fx.SYSTEM_SECTIONS.replace("OpenGWAS", "OldName").replace(
+            "ld_registry", "old_only") + "stages:", 1)
+        files = {**fx.REGISTRY_FILES, "docs/architecture/components.yaml": old}
+        result = Fixture(self, registry_files=files).collect()
+        self.assertEqual(result["gaps"]["registry"]["system_sections"],
+                         ["system", "people", "external", "containers", "container_relations"])
+        self.assertEqual(result["model"]["system"]["name"], "OpenGWAS")
+        self.assertNotIn("old_only", [c["id"] for c in result["model"]["containers"]])
+        self.assertEqual(len(result["components"]), 8)  # the rest is collected
+        from project_site.collect import __main__ as command
+        self.assertIn("SYSTEM GAPS: registry system, people, external, containers, container_relations ignored",
+                      command._describe_architecture(result))
+        self.assertEqual(result["gaps"]["engine"]["system_sections"], [])
+
+    def test_a_component_naming_a_container_system_yaml_lacks_is_a_gap_naming_both(self) -> None:
+        old = fx.REGISTRY_MODEL.replace("name: Scripts\n    container: generation",
+                                        "name: Scripts\n    container: site")
+        files = {**fx.REGISTRY_FILES, "docs/architecture/components.yaml": old}
+        result = Fixture(self, registry_files=files).collect()
+        self.assertEqual(result["gaps"]["registry"]["containers"], [{"component": "tools", "container": "site"}])
+        self.assertEqual(result["gaps"]["engine"]["containers"], [])
 
 
 class UpwardImportTests(unittest.TestCase):

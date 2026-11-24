@@ -37,6 +37,9 @@ ENGINE_REPO = "opengwas/opengwasdb"
 REGISTRY_REPO = "opengwas/opengwasdb-stores"
 MODEL_PATH = "docs/architecture/components.yaml"
 DEFAULT_ENGINE_REF = "main"
+# The hub's own system model (#8): read from its working tree, which is the published state
+# because publishing renders a clean checkout of the hub.
+SYSTEM_FILE = "system.yaml"
 
 
 class Tree:
@@ -95,12 +98,19 @@ def collect(
     engine_git: Path | None = None,
     engine_ref: str = DEFAULT_ENGINE_REF,
     refresh_engine: bool = False,
+    system_file: Path | None = None,
 ) -> dict[str, Any]:
     """Both repositories' components, gaps, import graph and ADRs, as the site's `architecture` source.
 
     `source` is the registry (`staging.registry_root`'s, by default its clone's
-    `main`); `engine_git` the engine's git directory (by default the site's clone).
+    `main`); `engine_git` the engine's git directory (by default the site's clone);
+    `system_file` the hub's `system.yaml` (by default the one in this checkout).
     """
+    system_file = system_file or paths.repo_root() / SYSTEM_FILE
+    try:
+        system = model_rules.load_system(system_file.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise CollectError(f"{SYSTEM_FILE} cannot be read: {error}") from error
     source = source or staging.registry_root(files=False)
     engine_git = engine_git or paths.clone_dir(paths.ENGINE)
     registry = Tree(source.git_dir, source.ref)
@@ -122,12 +132,15 @@ def collect(
 
     trees = {"registry": registry, "engine": engine}
     components = _components(registry_model, engine_model)
+    container_ids = {str(c["id"]) for c in system["containers"]}
+    models = {"registry": registry_model, "engine": engine_model}
     claims = {repo: model_rules.claims_of(c for c in components if c["repo"] == repo) for repo in trees}
     is_code = {"registry": model_rules.is_registry_code, "engine": model_rules.is_engine_code}
     # Without a model there are no claims to judge the engine's files against: its gaps
     # are unknown (`null`), never `0` unclaimed and `0` stale.
     gaps = {
         repo: model_rules.check_claims(claims[repo], trees[repo].files, is_code[repo])
+        | _system_gaps(repo, models[repo], components, container_ids)
         if repo == "registry" or engine_model is not None
         else None
         for repo in trees
@@ -168,9 +181,10 @@ def collect(
             ),
         },
         "model": {
-            key: registry_model.get(key) or [] for key in ("people", "external", "containers", "container_relations", "stages")
+            key: system[key] for key in ("people", "external", "containers", "container_relations")
         } | {
-            "system": registry_model.get("system") or {},
+            "stages": registry_model.get("stages") or [],
+            "system": system["system"],
             "layers": (engine_model or {}).get("layers") or [],
         },
         "components": components,
@@ -183,6 +197,24 @@ def collect(
         "adrs": adrs,
         "summary": summary
         | {"adrs_total": len(adrs), "adrs_placed": sum(1 for a in adrs if a["components"])},
+    }
+
+
+def _system_gaps(
+    repo: str, model: Mapping[str, Any] | None, components: list[dict[str, Any]], container_ids: set[str]
+) -> dict[str, Any]:
+    """What a components file says about the system that `system.yaml` does not back (#8).
+
+    `system_sections`: system keys it still holds, ignored (they belong to og-dev-hub's
+    `system.yaml`). `containers`: components naming a container `system.yaml` lacks.
+    """
+    return {
+        "containers": [
+            {"component": c["id"], "container": c["container"]}
+            for c in components
+            if c["repo"] == repo and c["container"] not in container_ids
+        ],
+        "system_sections": model_rules.system_sections_in(model or {}),
     }
 
 

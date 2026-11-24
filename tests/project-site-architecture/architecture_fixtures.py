@@ -29,9 +29,8 @@ def make_repo(root: Path, files: dict[str, str], *, branch: str = "main") -> str
     return git(root, "rev-parse", "HEAD")
 
 
-REGISTRY_MODEL = """\
-repo: opengwas/opengwasdb-stores
-system: {name: OpenGWASDB, summary: The system.}
+SYSTEM_SECTIONS = """\
+system: {name: OpenGWAS, summary: The system.}
 people:
   - {id: curator, name: Curator, summary: Runs builds.}
 external:
@@ -39,9 +38,18 @@ external:
 containers:
   - {id: engine, name: Engine, repo: opengwasdb, tech: Python, summary: Builds stores.}
   - {id: generation, name: Generation, repo: opengwasdb-stores, tech: Python, summary: Makes manifests.}
+  - {id: ld_registry, name: LD Store Registry, repo: opengwasdb-stores, tech: in git, summary: Records LD Stores.}
 container_relations:
   - [curator, generation, "runs"]
   - [generation, engine, "builds with"]
+  - [ld_registry, sources, "reads"]
+"""
+
+# og-dev-hub's system.yaml, as the collector reads it: the five keys and `repos`.
+SYSTEM_YAML = SYSTEM_SECTIONS + "repos:\n  - {name: opengwasdb-stores, visibility: public}\n"
+
+REGISTRY_MODEL = """\
+repo: opengwas/opengwasdb-stores
 stages:
   - {id: build, name: Build, summary: Build a store}
   - {id: query, name: Query, summary: Look values up}
