@@ -295,7 +295,7 @@ def _engine_clone(revision: str, repositories: staging.Repositories) -> Path:
     `CollectError`, which `main` and `publish.main` turn into exit status 2.
     """
     handle = repositories.get(paths.ENGINE, revision=revision)
-    if not staging.has_revision(handle.git_dir, revision):
+    if staging.resolve_ref(handle.git_dir, revision)[0] is None:
         fetched = handle.fetch
         why = f": {fetched['error']}" if fetched and not fetched["ok"] else f": {handle.error}" if handle.error else ""
         raise collect_common.CollectError(

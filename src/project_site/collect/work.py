@@ -374,6 +374,11 @@ def repo_of(git_dir: Path, names: Sequence[str]) -> str:
         f"{git_dir} is not a clone of a repository system.yaml lists: its origin is {url or 'not set'}")
 
 
+def _main_of(git_dir: Path) -> str:
+    """The `main` a checkout or a developer's clone measures its branches against: `origin/main`, else `main`, else `HEAD`."""
+    return next((ref for ref in ("origin/main", "main") if staging.resolve_ref(git_dir, ref)[0]), "HEAD")
+
+
 def read_branches(
     repositories: staging.Repositories, names: Sequence[str], *, local: Sequence[Path] = (),
     listed: Sequence[str] | None = None, days: int = branch_reader.WINDOW_DAYS, now: dt.datetime | None = None,
@@ -393,7 +398,7 @@ def read_branches(
         if handle.clone:
             main, prefixes = "main", ("refs/heads/",)
         else:
-            main = next((r for r in ("origin/main", "main") if handle.resolve(r)), "HEAD")
+            main = _main_of(handle.git_dir)
             prefixes = ("refs/remotes/origin/",)
         try:
             handle.require()
@@ -403,7 +408,7 @@ def read_branches(
                      "skipped": [], "error": str(error)}
         sets.append(found | {"fetch": handle.fetch})
     for git_dir in local:
-        main = next((r for r in ("origin/main", "main") if staging.resolve_ref(git_dir, r)[0]), "HEAD")
+        main = _main_of(git_dir)
         sets.append(branch_reader.collect(git_dir, repo_of(git_dir, listed if listed is not None else names), main_ref=main,
                                           prefixes=("refs/heads/", "refs/remotes/origin/"), days=days, now=now, local=True))
     return sets

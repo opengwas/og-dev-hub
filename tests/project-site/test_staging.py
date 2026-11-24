@@ -574,7 +574,7 @@ class EngineRevisionTest(unittest.TestCase):
 
         self.assertEqual(build._engine_clone(newer, staging.Repositories()), self.clone)
 
-        self.assertTrue(staging.has_revision(self.clone, newer))
+        self.assertEqual(staging.resolve_ref(self.clone, newer)[0], newer)
 
     def test_the_engine_handle_a_refresh_fetched_is_not_fetched_again_for_the_pin(self) -> None:
         # og-dev-hub#9: the build's refresh, the pinned revision and the collectors share one handle.

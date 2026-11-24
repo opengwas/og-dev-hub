@@ -214,10 +214,6 @@ class Repository:
     def readable(self) -> bool:
         return self.commit is not None
 
-    def resolve(self, ref: str) -> str | None:
-        """The commit `ref` names in this repository's git, or `None` (`resolve_ref`)."""
-        return resolve_ref(self.git_dir, ref)[0]
-
     def tree(self, at: str | None = None) -> Tree:
         """Every file of this repository at `at` (by default the commit read): the one way its files are read."""
         return Tree(self.git_dir, at or str(self.require().commit))
@@ -277,7 +273,8 @@ class Repositories:
         handle = self.handles.get(name)
         if handle is None:
             handle = self.handles[name] = self._read(name, revision)
-        elif revision is not None and handle.clone and name not in self.fetched and not has_revision(handle.git_dir, revision):
+        elif (revision is not None and handle.clone and name not in self.fetched
+              and resolve_ref(handle.git_dir, revision)[0] is None):
             handle = self.handles[name] = replace(handle, fetch=self._fetch(name, handle.git_dir, url=None, fetch=True))
         if files and handle.root is None and handle.readable:
             root = Path(self.tree) if self.tree is not None else paths.registry_tree_dir(paths.staging_dir(paths.repo_root()))
@@ -302,7 +299,7 @@ class Repositories:
         git_dir = self.git_dirs.get(name) or paths.clone_dir(name)
         ref = self.refs.get(name, "main")
         url = None if named else paths.clone_url(name)
-        wanted = revision is not None and (git_dir / "HEAD").exists() and not has_revision(git_dir, revision)
+        wanted = revision is not None and (git_dir / "HEAD").exists() and resolve_ref(git_dir, revision)[0] is None
         fetched = self._fetch(name, git_dir, url=url, fetch=self.refresh or wanted)
         commit, why = resolve_ref(git_dir, ref)
         if commit is None and fetched and not fetched["ok"]:
@@ -392,10 +389,6 @@ class Tree:
             found[path] = out[newline + 1 : newline + 1 + size].decode("utf-8", "replace")
             position = newline + 1 + size + 1
         return found
-
-
-def has_revision(clone: Path, revision: str) -> bool:
-    return resolve_ref(clone, revision)[0] is not None
 
 
 def stage_glossary(context: Path, dest: Path) -> Path:

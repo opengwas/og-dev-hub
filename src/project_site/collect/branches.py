@@ -82,7 +82,9 @@ def collect(
     git_dir = Path(git_dir)
     now = now or dt.datetime.now(dt.timezone.utc)
     cutoff = now - dt.timedelta(days=days)
-    main_commit = _git(git_dir, "rev-parse", "--verify", f"{main_ref}^{{commit}}").strip()
+    main_commit, why = staging.resolve_ref(git_dir, main_ref)
+    if main_commit is None:
+        raise CollectError(f"{git_dir} has no {main_ref}: {why}")
     listing = _git(
         git_dir, "for-each-ref", "--format=%(refname)%09%(committerdate:iso-strict)%00", *prefixes
     )

@@ -32,7 +32,9 @@ named). Only opengwasdb-stores also has its files extracted (`stores/`, `docs/`,
 because only its readers need files on disk: the Stores, Records and Catalog
 collectors are given paths under the run's own extraction
 (`staging.registry_files(repositories)`), never one of their own. `--registry
-PATH` reads that checkout instead, at its `HEAD`.
+PATH` reads that checkout instead, at its `HEAD`. Whether a ref resolves, and to
+which commit, is asked of one owner, `staging.resolve_ref`: by the handle, the
+branch reader, the work's choice of `main` and the publish.
 
 Every clone and fetch of the site's clones under the work root, and of the git
 directories the collectors read, goes through one owner,
