@@ -272,6 +272,24 @@ class BranchOwnerTests(unittest.TestCase):
         )
         self.assertEqual(states(result, "pages"), {("opengwasdb-stores#416", "opengwasdb-stores#419"): "building"})
 
+    def test_a_lane_belongs_to_the_repository_whose_epic_holds_its_ticket(self) -> None:
+        # og-dev-hub#9: `orch/6/7-stores` in opengwasdb-stores is og-dev-hub#6's lane for og-dev-hub#7,
+        # though ogdb-dashboard, listed earlier, also has an epic #6 on the board.
+        import work_fixtures as fx
+
+        arch = {**ARCHITECTURE, "repos": {**ARCHITECTURE["repos"], "ogdb-dashboard": fx.repo("ogdb-dashboard", model=False),
+                                          "og-dev-hub": fx.repo("og-dev-hub", model=False)}}
+        result = compute(
+            board(epic("ogdb-dashboard#6", "Active", [ticket("ogdb-dashboard#2")]),
+                  epic("og-dev-hub#6", "Active", [ticket("og-dev-hub#7"), ticket("og-dev-hub#9")])),
+            branch_set(branch("orch/6/7-stores", ["src/project_site/pages.py"], repo=STORES, epic="opengwasdb-stores#6",
+                              ticket="opengwasdb-stores#7"), repo=STORES),
+            architecture=arch,
+        )
+        self.assertEqual(states(result, "pages"), {("og-dev-hub#6", "og-dev-hub#7"): "building"})
+        self.assertEqual((result["branches"]["list"][0]["owner"], result["branches"]["list"][0]["item"]),
+                         ("og-dev-hub#6", "og-dev-hub#7"))
+
     def test_a_branch_naming_only_a_ticket_belongs_to_that_tickets_epic(self) -> None:
         result = compute(
             board(epic("opengwasdb#10", "Active", [ticket("opengwasdb#11")])),

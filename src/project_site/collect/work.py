@@ -302,15 +302,24 @@ def _branch_owner(
 ) -> tuple[str, str, str]:
     """`(owner, item, state)` of a branch, adding an owner that is not a live epic of the board.
 
-    The epic a lane's name gives (`orch/<epic>/...`) is looked up in the branch's
-    own repository first, then in every other listed repository, in `system.yaml`'s
-    order: an epic's lanes live in each repository whose files it changes.
+    An epic's lanes live in each repository whose files it changes, so the
+    numbers a lane's name gives (`orch/<epic>/<ticket>`) may be another listed
+    repository's. They are that repository's whose epic `#<epic>` holds the
+    ticket `#<ticket>` on the board; else, for an epic's own branch, the first
+    whose `#<epic>` is an epic on the board, the branch's own repository first.
     """
     epic, ticket = b.get("epic"), b.get("ticket")
     if epic:
         number = epic.split("#")[1]
-        candidates = [epic, *[f"{name}#{number}" for name in names if name != repo]]
-        epic = next((k for k in candidates if k in every_epic), epic)
+        order = [repo, *[name for name in names if name != repo]]
+        owned = None
+        if ticket:
+            child = ticket.split("#")[1]
+            owned = next((name for name in order if ticket_epic.get(f"{name}#{child}") == f"{name}#{number}"), None)
+            if owned:
+                ticket = f"{owned}#{child}"
+        epic = f"{owned}#{number}" if owned else next(
+            (k for k in (f"{name}#{number}" for name in order) if k in every_epic), epic)
     if not epic and ticket:
         epic = ticket_epic.get(ticket)
     owner = epic or ticket
