@@ -13,7 +13,7 @@
     planned: ["planned"], "private": ["private: container only"] };
   var CONTAINER = { data: ["data"], planned: ["planned"], "private": ["private"], "public": null };
   var GAP = { complete: ["claims complete", "ok"], gaps: ["gaps", "caution"], no_model: ["no model", "caution"],
-    unreadable: ["unreadable", "fault"] };
+    unreadable: ["unreadable", "fault"], unknown: ["unknown"] };
 
   function repositories(data) {
     return D.panel("Repositories", "Every repository system.yaml lists, and the commit of each that was read. " +
@@ -115,6 +115,7 @@
           var head = [D.tag(GAP[g.state] || [g.state]), " "];
           if (g.state === "unreadable") return head.concat(g.unreadable);
           if (g.state === "no_model") return head.concat("Its components, code and imports are unknown, not none: ", g.no_model);
+          if (g.state === "unknown") return head.concat("Its claims were not measured, so its gaps are unknown, not none.");
           return head.concat(g.unclaimed.length + " code files no component claims; " + g.stale.length +
             " claims that match no tracked file.", g.state === "gaps" ? el("ul", {},
               g.unclaimed.map(function (p) { return el("li", {}, "Unclaimed: ", el("code", {}, p)); }),

@@ -18,7 +18,7 @@ jobs:
         with:
           locked: true
 
-      # The site's suite draws its diagrams with graphviz's `dot`, which the
-      # environment has.
+      # The site's suite draws its diagrams with graphviz's `dot` and runs its view
+      # scripts with `node`, both of which the environment has.
       - name: Run the suites
         run: pixi run test

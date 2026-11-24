@@ -24,7 +24,7 @@ from pathlib import Path
 from unittest import mock
 
 import architecture_fixtures as fx
-from test_architecture_repositories import OGQUERY_FILES, World
+from test_architecture_repositories import OGQUERY_FILES, SYSTEM, World
 
 from project_site import site, staging
 from project_site.collect import __main__ as command, common
@@ -75,6 +75,11 @@ class SiteWorld:
 
     def __init__(self) -> None:
         self.world = World(unittest.TestCase())
+        # Two more containers: data (no repository) and a planned repository's, so the build decides those states too.
+        self.world.system.write_text(SYSTEM.replace("containers:\n", "containers:\n"
+            "  - {id: stores, name: GWAS Stores, repo: null, tech: Zarr, summary: The Stores.}\n"
+            "  - {id: data_api, name: Data API, repo: ogdb-api, tech: service, summary: Serves queries.}\n", 1),
+            encoding="utf-8")
         engine = {**fx.ENGINE_FILES, **fx.ENGINE_ADRS,
                   "docs/adr/0003-none.md": "# 0003. Nothing\n\nAs opengwasdb-stores ADR 0072 decided; ogld ADR 0001 too.\n"}
         registry = {**fx.REGISTRY_FILES, **fx.REGISTRY_ADRS, "docs/adr/0072-bundles.md": "# 0072. Release Bundles\n",
@@ -169,7 +174,10 @@ class ArchitectureViewTests(BuiltSite):
         self.assertIsNone(why["opengwasdb"])
         self.assertEqual({r["refresh_error"] for r in self.data["repos"]}, {None})
         states = {c["id"]: c["state"] for c in self.data["containers"]}
-        self.assertEqual((states["ld_lib"], states["engine"]), ("private", "public"))
+        self.assertEqual({k: states[k] for k in ("ld_lib", "engine", "stores", "data_api")},
+                         {"ld_lib": "private", "engine": "public", "stores": "data", "data_api": "planned"})
+        containers = next(d for d in self.data["diagrams"] if d["id"] == "containers")["svg"]
+        self.assertIn("planned; service", containers)
 
     def test_the_build_writes_the_figures_the_view_shows(self) -> None:
         self.assertEqual(self.data["counts"], {"components": 9, "repos_with_model": 3})
@@ -279,6 +287,7 @@ class ContextViewTests(BuiltSite):
         self.assertIn('<a href="https://github.com/opengwas/og-dev-hub/blob/main/docs/adr/0001-dev-hub-collects-and-owns-nothing.md">'
                       "ADR 0001</a>", html)
         self.assertIn("<strong>Dev Hub</strong>:", html)
+        self.assertEqual(self.data["source"], "https://github.com/opengwas/og-dev-hub/blob/main/CONTEXT.md")
         self.assertIn("<em>built state</em>", html)
         self.assertIn("<ul>\n<li>one</li>\n<li>two</li>\n</ul>", html)
 
@@ -292,6 +301,80 @@ class ContextViewTests(BuiltSite):
         self.assertEqual(glossaries["opengwasdb"]["note"], "no CONTEXT.md at the commit read")
         self.assertIsNone(glossaries["opengwas-gateway"]["url"])
         self.assertEqual(glossaries["opengwas-gateway"]["note"], "could not be read")
+
+
+class GapStateTests(unittest.TestCase):
+    """A gap's state follows the repository's (`repo_state`), and an unmeasured one is `unknown`, never `complete`."""
+
+    def view(self, architecture: dict) -> dict:
+        from project_site import architecture_public
+
+        return site.architecture_view(architecture_public.public_view({"architecture": architecture})["architecture"])
+
+    def test_a_read_repository_with_no_gap_record_is_unknown_never_complete(self) -> None:
+        import copy
+
+        doc = copy.deepcopy(site_world().architecture)
+        del doc["gaps"]["ogquery"]
+        gaps = {g["repo"]: g for g in self.view(doc)["gaps"]}
+        self.assertEqual((gaps["ogquery"]["state"], gaps["ogquery"]["unclaimed"], gaps["ogquery"]["stale"]),
+                         ("unknown", None, None))
+        self.assertEqual(gaps["opengwasdb"]["state"], "complete")
+
+    def test_an_unclaimed_file_is_a_gap(self) -> None:
+        world = World(self)
+        result = collected(world.variant(ogquery={**OGQUERY_FILES, "src/stray.py": "import os\n"}))
+        gaps = {g["repo"]: g for g in self.view(result)["gaps"]}
+        self.assertEqual((gaps["ogquery"]["state"], gaps["ogquery"]["unclaimed"]), ("gaps", ["src/stray.py"]))
+        self.assertEqual((gaps["opengwaspy"]["state"], gaps["opengwas-gateway"]["state"]), ("no_model", "unreadable"))
+
+
+class ViewScriptTests(unittest.TestCase):
+    """The view scripts run in node over a built site (`view_runner.js`): each view draws, and none throws."""
+
+    def drawn(self, architecture: dict) -> dict:
+        import subprocess
+
+        out = built(self.addCleanup, {"architecture": architecture})
+        runner = Path(__file__).with_name("view_runner.js")
+        done = subprocess.run(["node", str(runner), str(out)], capture_output=True, text=True, check=True, timeout=60)
+        return json.loads(done.stdout)
+
+    def test_every_view_draws_from_the_built_site(self) -> None:
+        drawn = self.drawn(site_world().architecture)
+        for view, text in drawn.items():
+            with self.subTest(view=view):
+                self.assertNotIn("could not be drawn", text)
+        self.assertIn("claims complete", drawn["architecture"])
+        self.assertIn("Release Bundles", drawn["decisions"])
+        self.assertIn("ogquery", drawn["context"])
+
+    def test_an_unknown_gap_is_drawn_as_unknown_without_reading_its_unclaimed_files(self) -> None:
+        import copy
+
+        doc = copy.deepcopy(site_world().architecture)
+        del doc["gaps"]["ogquery"]
+        drawn = self.drawn(doc)["architecture"]
+        self.assertNotIn("could not be drawn", drawn)
+        self.assertIn("Its claims were not measured, so its gaps are unknown, not none.", drawn)
+
+
+class RefreshErrorTests(unittest.TestCase):
+    def test_a_failed_refresh_of_a_public_repository_is_shown_with_its_host_path_cut(self) -> None:
+        from project_site import architecture_public
+
+        world = World(self)
+        fx.git(world.root / "opengwaspy", "remote", "add", "origin", str(world.root / "elsewhere" / "gone.git"))
+        repositories = staging.Repositories(refresh=True, checkouts={fx.REGISTRY: world.root / "registry"},
+                                            git_dirs=world.repositories.git_dirs)
+        from project_site.collect import architecture as collector
+
+        doc = collected(collector.collect(repositories, system_file=world.system))
+        view = site.architecture_view(architecture_public.public_view({"architecture": doc})["architecture"])
+        error = next(r for r in view["repos"] if r["name"] == "opengwaspy")["refresh_error"]
+        self.assertIn("'…/gone.git' does not appear to be a git repository", error)
+        self.assertNotIn(str(world.root), json.dumps(view))
+        self.assertIsNone(next(r for r in view["repos"] if r["name"] == "ogld")["refresh_error"], "private: never shown")
 
 
 class OwnerTests(unittest.TestCase):
@@ -343,17 +426,21 @@ class UnavailableTests(unittest.TestCase):
 
 
 class WorkRootTests(unittest.TestCase):
-    """The site's clones live in `$OPENGWASDB_SITE_ROOT`, else `<checkout>/.work/site`, on every machine (og-dev-hub#15)."""
+    """Two work roots, two variables: the site's `$DEV_HUB_SITE_ROOT`, else `<checkout>/.work/site`, on every machine;
+    `pixi run architecture`'s and `site-data`'s `$OPENGWASDB_SITE_ROOT`, else the build host's (og-dev-hub#15)."""
 
-    def test_the_sites_work_root_is_the_checkouts_unless_the_variable_names_another(self) -> None:
+    def test_each_root_has_its_own_variable_and_setting_one_never_moves_the_other(self) -> None:
         from project_site import paths
 
-        with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": ""}):
+        with mock.patch.dict(os.environ, {"DEV_HUB_SITE_ROOT": "", "OPENGWASDB_SITE_ROOT": ""}):
             self.assertEqual(paths.site_work_root(), paths.repo_root() / ".work" / "site")
-            # `pixi run architecture` keeps its own: the build host's.
             self.assertEqual(paths.work_root(), paths.WORK_ROOT)
-        with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": "/x/y"}):
-            self.assertEqual(paths.site_work_root(), Path("/x/y"))
+        with mock.patch.dict(os.environ, {"DEV_HUB_SITE_ROOT": "/x/site", "OPENGWASDB_SITE_ROOT": ""}):
+            self.assertEqual(paths.site_work_root(), Path("/x/site"))
+            self.assertEqual(paths.work_root(), paths.WORK_ROOT)
+        with mock.patch.dict(os.environ, {"DEV_HUB_SITE_ROOT": "", "OPENGWASDB_SITE_ROOT": "/x/host"}):
+            self.assertEqual(paths.site_work_root(), paths.repo_root() / ".work" / "site")
+            self.assertEqual(paths.work_root(), Path("/x/host"))
 
     def test_a_build_clones_into_the_sites_work_root_and_reads_public_git_alone(self) -> None:
         from project_site import paths
@@ -361,7 +448,7 @@ class WorkRootTests(unittest.TestCase):
 
         root = Path(tempfile.mkdtemp(prefix="site-main-"))
         self.addCleanup(shutil.rmtree, root, True)
-        with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": ""}), \
+        with mock.patch.dict(os.environ, {"DEV_HUB_SITE_ROOT": "", "OPENGWASDB_SITE_ROOT": "/x/host"}), \
                 mock.patch.object(command, "run", return_value=[]) as run, mock.patch.object(site, "build") as build:
             self.assertEqual(site.main(["--data-dir", str(root / "data"), "--out", str(root / "_site"), "--no-refresh"]), 0)
         kwargs = run.call_args.kwargs
@@ -378,14 +465,16 @@ class PublicGitOnlyTests(unittest.TestCase):
         world = World(self)
         work_root = world.root / "work"
         data = world.root / "collected"
-        repositories = staging.Repositories(
-            checkouts={fx.REGISTRY: world.root / "registry"},
-            # ogld is left to the work root, where a read would clone it from GitHub: it must never be asked for.
-            git_dirs={k: v for k, v in world.repositories.git_dirs.items() if k != "ogld"})
         refuse = mock.Mock(side_effect=AssertionError("the site build called gh"))
-        with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": str(work_root)}), \
+        with mock.patch.dict(os.environ, {"DEV_HUB_SITE_ROOT": str(work_root)}), \
                 mock.patch("project_site.collect.board.collect", refuse), \
                 mock.patch.object(common, "gh_runner", refuse):
+            from project_site import paths
+
+            repositories = staging.Repositories(
+                checkouts={fx.REGISTRY: world.root / "registry"}, root=paths.site_work_root(),
+                # ogld is left to the site's work root, where a read would clone it from GitHub: it must never be asked for.
+                git_dirs={k: v for k, v in world.repositories.git_dirs.items() if k != "ogld"})
             results = command.run(data, repositories=repositories, system_file=world.system, out=lambda line: None,
                                   public_only=True)
         self.assertEqual([r["source"] for r in results], ["architecture"])

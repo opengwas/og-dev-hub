@@ -4,11 +4,12 @@ Every repository og-dev-hub's `system.yaml` lists is read from a bare clone unde
 the work root, `<work root>/<name>.git`, through one read handle per run
 (`staging.Repositories`), which `staging.ensure_clone` clones and fetches.
 
-There are two work roots, and `$OPENGWASDB_SITE_ROOT` names either. The site's
-(`site_work_root`) is `.work/site` in this checkout, the same on every machine,
-and only ever holds public repositories. `pixi run architecture`'s
-(`work_root`) is the build host's `/data/opengwasdb/work/site`, where it also
-keeps the private repositories it reads.
+There are two work roots, each with its own variable, so setting one never
+moves the other. The site's (`site_work_root`) is `$DEV_HUB_SITE_ROOT`, else
+`.work/site` in this checkout, the same on every machine, and only ever holds
+public repositories. `pixi run architecture`'s and `site-data`'s (`work_root`)
+is `$OPENGWASDB_SITE_ROOT`, else the build host's `/data/opengwasdb/work/site`,
+where the private repositories they read are cloned too.
 """
 
 from __future__ import annotations
@@ -27,8 +28,9 @@ ENGINE = "opengwasdb"
 # `pixi run architecture`'s default: the build host's, where `git clone` keeps each repository's history.
 WORK_ROOT = Path("/data/opengwasdb/work/site")
 WORK_ROOT_ENV = "OPENGWASDB_SITE_ROOT"
-# The site's default, under this checkout (git-ignored).
+# The site's, under this checkout (git-ignored) unless its own variable names another.
 SITE_WORK_ROOT = Path(".work") / "site"
+SITE_WORK_ROOT_ENV = "DEV_HUB_SITE_ROOT"
 
 
 # og-dev-hub's system model (#8), read from this checkout's working tree.
@@ -45,19 +47,19 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _configured() -> Path | None:
-    configured = os.environ.get(WORK_ROOT_ENV, "")
+def _configured(variable: str) -> Path | None:
+    configured = os.environ.get(variable, "")
     return Path(configured) if configured.strip() else None
 
 
 def work_root() -> Path:
-    """`pixi run architecture`'s clones: `$OPENGWASDB_SITE_ROOT`, else `/data/opengwasdb/work/site`."""
-    return _configured() or WORK_ROOT
+    """`pixi run architecture`'s and `site-data`'s clones: `$OPENGWASDB_SITE_ROOT`, else `/data/opengwasdb/work/site`."""
+    return _configured(WORK_ROOT_ENV) or WORK_ROOT
 
 
 def site_work_root() -> Path:
-    """The site's clones (og-dev-hub#15): `$OPENGWASDB_SITE_ROOT`, else `.work/site` in this checkout, on every machine."""
-    return _configured() or repo_root() / SITE_WORK_ROOT
+    """The site's clones (og-dev-hub#15), public only: `$DEV_HUB_SITE_ROOT`, else `.work/site` in this checkout."""
+    return _configured(SITE_WORK_ROOT_ENV) or repo_root() / SITE_WORK_ROOT
 
 
 def checkout_name(repo: Path) -> str:

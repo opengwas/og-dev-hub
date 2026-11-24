@@ -4,7 +4,7 @@ Headings, paragraphs, bulleted and numbered lists, bold, italics, code spans and
 links, and nothing else: that is all a glossary uses. Every character of the
 source is escaped before any markup is added, so text can never become markup,
 and a link is kept only when it goes to `http(s)`, an anchor, or a relative path,
-which is resolved against `base` (the file's directory on GitHub).
+which is resolved against `base` (the file's own URL on GitHub).
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ def _emphasis(text: str) -> str:
 
 
 def render(text: str, *, base: str) -> str:
-    """`text` as HTML. `base` is the URL a relative link is resolved against (ending in `/`)."""
+    """`text` as HTML. `base` is the URL a relative link is resolved against: the file's own, or a directory's ending in `/`."""
     blocks: list[str] = []
     paragraph: list[str] = []
     items: list[str] = []

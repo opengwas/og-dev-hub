@@ -16,11 +16,12 @@ registry root it reads, because an installed package knows no checkout.
 og-dev-hub's `system.yaml` lists in `repos` is read from `main` of the site's
 bare clone of it under the work root, `<work root>/<name>.git`, cloned the first
 time it is needed and fetched only by `pixi run site` and by `--refresh`
-(`site-data`, `architecture`), **once per run**. There are two work roots, and
-`$OPENGWASDB_SITE_ROOT` names either. The site's is `.work/site` in the
-og-dev-hub checkout, the same on every machine, and holds public repositories
-only (`paths.site_work_root`, given to the run's `Repositories` as `root`).
-`site-data`'s and `pixi run architecture`'s is the build host's
+(`site-data`, `architecture`), **once per run**. There are two work roots, each
+with its own variable, so setting one never moves the other. The site's is
+`$DEV_HUB_SITE_ROOT`, else `.work/site` in the og-dev-hub checkout, the same on
+every machine, and holds public repositories only (`paths.site_work_root`,
+given to the run's `Repositories` as `root`). `site-data`'s and `pixi run
+architecture`'s is `$OPENGWASDB_SITE_ROOT`, else the build host's
 `/data/opengwasdb/work/site` (`paths.work_root`), where the private repositories
 they read are cloned too. One
 read handle per repository per run is the one owner of this
@@ -67,14 +68,15 @@ through `public_view`, and writes from that alone:
 
 | File | Content |
 |---|---|
-| `data/architecture.json` | the envelope; `repos` (a list, in `system.yaml`'s order: `name`, `label`, `url`, `state`, `visibility`, `status`, `ref`, `commit`, `committed`, `why` (the error of an `unreadable` one, the note of a `no_model` one, else `null`) and `refresh_error` (`null` unless the refresh failed)); `containers` (with `state`: `public`, `private`, `planned` or `data`); `diagrams` (`id`, `title`, `caption`, `svg`); `stages` (with the `components` serving each); `components` (with `anchor`, `container_name`, `size`, `paths` as `{path, url}` on GitHub at the commit read, and `adrs` placed on it with `via`); `component_repos` (the repositories with a component, for the view's filter); `counts` (`components`, `repos_with_model`); `gaps` (each public repository not planned: `state` (`unreadable`, `no_model`, `gaps` or `complete`), `unreadable`, `no_model`, `unclaimed`, `stale`, `system`); `layering` (`null` when no model declares layers, else each layered repository's `edges`, `imports` against the layering and its `upward` imports); `seam` (`imports`, `pairs`, `baseline`); `across` (imports per pair of repositories); `summary` |
+| `data/architecture.json` | the envelope; `repos` (a list, in `system.yaml`'s order: `name`, `label`, `url`, `state`, `visibility`, `status`, `ref`, `commit`, `committed`, `why` (the error of an `unreadable` one, the note of a `no_model` one, else `null`) and `refresh_error` (`null` unless the refresh failed)); `containers` (with `state`: `public`, `private`, `planned` or `data`); `diagrams` (`id`, `title`, `caption`, `svg`); `stages` (with the `components` serving each); `components` (with `anchor`, `container_name`, `size`, `paths` as `{path, url}` on GitHub at the commit read, and `adrs` placed on it with `via`); `component_repos` (the repositories with a component, for the view's filter); `counts` (`components`, `repos_with_model`); `gaps` (each public repository not planned: `state`, which follows the repository's: `unreadable` or `no_model` (with its `why` as `unreadable` or `no_model`), else `gaps` (an unclaimed file, a stale claim or a system gap), `complete`, or `unknown` when its claims were not measured (no gap record, or `unclaimed` or `stale` unknown), never `complete`; `unclaimed` and `stale` are lists only for `gaps` and `complete`, else `null`; `system`); `layering` (`null` when no model declares layers, else each layered repository's `edges`, `imports` against the layering and its `upward` imports); `seam` (`imports`, `pairs`, `baseline`); `across` (imports per pair of repositories); `summary` |
 | `data/decisions.json` | the envelope; `repos` (those with an ADR, in order); `adrs` in `system.yaml`'s order then by number: `repo`, `number`, `title`, `status`, `url`, `components` (`{id, name, via}`) and `cites` (`{repo, number, text, url}`, `url` `null` when the cited ADR was not collected or is a private repository's) |
 | `data/context.json` | `html` (the hub's `CONTEXT.md`, rendered by `project_site.markdown`: headings, paragraphs, lists, bold, italics, code spans and links, every character escaped first, a relative link resolved against og-dev-hub's `main` on GitHub, and a link to any other scheme than `http(s)` dropped); `source`; `glossaries`: each public listed repository but og-dev-hub, not planned, with `url` (its `CONTEXT.md` at the commit read) or `null` and a `note` (`no CONTEXT.md at the commit read`, `could not be read`) |
 
 A repository's `state` is decided once, by `site.repo_state`: `planned`,
 `private`, `unreadable` (no commit read), `no_model` or `read`; a container's
 follows its repository's (`site.container_state`). The diagrams and the view
-scripts read these states and never decide them again; every figure a view shows
+scripts read these states and never decide them again (a test runs the scripts in
+`node` over a built site, `tests/project-site-architecture/view_runner.js`); every figure a view shows
 is written by the build, and a script only renders it. Both the build and the
 diagrams read the public `architecture.json` through one reader,
 `architecture_public.parts`, and every link to a file or directory on GitHub is
@@ -228,9 +230,9 @@ The architecture of every repository og-dev-hub's `system.yaml` lists (#418, epi
 `docs/architecture/components.yaml` and the code it claims. It reads **git, not
 checkouts**, through each repository's read handle (above): `main` of its clone,
 or `HEAD` of the checkout `--registry` names for opengwasdb-stores (tracked
-files only). A clone is `<work root>/<name>.git`, so `OPENGWASDB_SITE_ROOT` names
-another set of clones (the tests' fixtures); no flag names one repository's git
-by its kind. `pixi run site` fetches every clone first; a failed fetch leaves
+files only). A clone is `<work root>/<name>.git`, so `OPENGWASDB_SITE_ROOT` (or,
+for the site, `DEV_HUB_SITE_ROOT`) names another set of clones (the tests'
+fixtures); no flag names one repository's git by its kind. `pixi run site` fetches every clone first; a failed fetch leaves
 the `main` the clone has and is recorded in `repos.<name>.refresh`.
 
 **Which repositories.** All of `system.yaml`'s `repos`, in its order:

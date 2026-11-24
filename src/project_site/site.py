@@ -190,25 +190,35 @@ def architecture_view(doc: Document) -> dict[str, Any]:
 
 
 def _gaps(doc: Document, model: Mapping[str, Any], repos: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Each public repository's gaps, in `system.yaml`'s order, with its `state`; unknown (`None`) is never an empty list.
+    """Each public repository's gaps, in `system.yaml`'s order, with its `state`.
 
-    `state` is `unreadable`, `no_model`, `gaps` (an unclaimed file, a stale claim or a system gap) or `complete`.
+    The state follows the repository's, as `repo_state` decided it: `unreadable`
+    and `no_model` carry its `why`. A repository read with a model is `gaps` (an
+    unclaimed file, a stale claim or a system gap) or `complete`, but only when
+    its claims were measured; without a gap record, or with `unclaimed` or `stale`
+    unknown (`None`), it is `unknown`, never `complete`.
     """
     gaps = doc.get("gaps") or {}
     out = []
     for name, repo in repos.items():
         if repo["state"] in ("planned", "private"):
             continue
-        found = gaps.get(name) or {}
-        unreadable = found.get("unreadable") or (repo["why"] if repo["state"] == "unreadable" else None)
-        no_model = found.get("no_model") or (repo["why"] if repo["state"] == "no_model" else None)
-        system = architecture_model.describe_system_gaps(found)
-        found_any = bool(found.get("unclaimed") or found.get("stale") or system)
+        found = gaps.get(name) if isinstance(gaps.get(name), Mapping) else None
+        unclaimed, stale = (found or {}).get("unclaimed"), (found or {}).get("stale")
+        system = architecture_model.describe_system_gaps(found or {})
+        if repo["state"] in ("unreadable", "no_model"):
+            state = repo["state"]
+        elif found is None or unclaimed is None or stale is None:
+            state = "unknown"
+        else:
+            state = "gaps" if unclaimed or stale or system else "complete"
         out.append({
-            "repo": name, "label": repo["label"],
-            "state": "unreadable" if unreadable else "no_model" if no_model else "gaps" if found_any else "complete",
-            "unreadable": unreadable, "no_model": no_model,
-            "unclaimed": found.get("unclaimed"), "stale": found.get("stale"), "system": system,
+            "repo": name, "label": repo["label"], "state": state,
+            "unreadable": repo["why"] if state == "unreadable" else None,
+            "no_model": repo["why"] if state == "no_model" else None,
+            "unclaimed": unclaimed if state in ("gaps", "complete") else None,
+            "stale": stale if state in ("gaps", "complete") else None,
+            "system": system,
         })
     return out
 
@@ -271,9 +281,10 @@ def decisions_view(doc: Document) -> dict[str, Any]:
 
 def context_view(text: str, doc: Document) -> dict[str, Any]:
     """`data/context.json`: the hub's `CONTEXT.md` as HTML, and each public repository's glossary on GitHub."""
+    source = paths.github_url(paths.HUB, "main", "CONTEXT.md")
     out: dict[str, Any] = {
-        "html": markdown.render(text, base=f"{paths.clone_url(paths.HUB)}/blob/main/"),
-        "source": f"{paths.clone_url(paths.HUB)}/blob/main/CONTEXT.md",
+        "html": markdown.render(text, base=source),
+        "source": source,
         "available": bool(doc.get("available")),
         "error": doc.get("error"),
         "glossaries": [],

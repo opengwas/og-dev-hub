@@ -38,11 +38,12 @@ operations dashboard's).
 - a planned one (`visibility: null`) is drawn as planned;
 - the board is not read.
 
-The site's work root is `$OPENGWASDB_SITE_ROOT`, else `.work/site` in the
+The site's work root is `$DEV_HUB_SITE_ROOT`, else `.work/site` in the
 checkout, the same on every machine; it only ever holds public repositories.
-(`pixi run architecture` keeps its own, the build host's
-`/data/opengwasdb/work/site`, where it also clones the private repositories it
-reads.) The collection goes to `docs/_data/` (`$OPENGWASDB_SITE_DATA` or `--data-dir` names
+(`pixi run architecture` and `site-data` keep their own: `$OPENGWASDB_SITE_ROOT`,
+else the build host's `/data/opengwasdb/work/site`, where they also clone the
+private repositories they read. Setting one variable never moves the other
+root.) The collection goes to `docs/_data/` (`$OPENGWASDB_SITE_DATA` or `--data-dir` names
 another), and the site to `_site/`; both are git-ignored.
 
 A repository that cannot be read, or has no model, is a gap the page draws, and
@@ -85,5 +86,7 @@ a diagram links to its row in the Components table (`#component-<id>`).
    which calls `DevHub.register("<view>", render)`. Decide every state and figure
    in the build and write it to the JSON; the script only renders what it is given.
    Set every fact as text (`DevHub.el`), never as markup.
-5. Test it in `tests/project-site-architecture/test_site.py`: the data file, and
-   that nothing of the private fixture repository reaches any file of `_site/`.
+5. Test it in `tests/project-site-architecture/test_site.py`: the data file, that
+   nothing of the private fixture repository reaches any file of `_site/`, and
+   that its script draws in `node` over a built site (`view_runner.js`, with the
+   few DOM calls the scripts make; `nodejs` is in the environment for this alone).

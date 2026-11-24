@@ -17,6 +17,9 @@ gh = "*"
 git = "*"
 # The site draws its diagrams to SVG at build time with `dot` (og-dev-hub#15).
 graphviz = "*"
+# The site's tests run its view scripts with `node` (`tests/project-site-architecture/view_runner.js`);
+# the site itself needs no JavaScript toolchain.
+nodejs = "*"
 
 [pypi-dependencies]
 # The site's own code, installed editable so it imports without sys.path
