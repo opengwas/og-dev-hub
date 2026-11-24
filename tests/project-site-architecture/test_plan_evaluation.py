@@ -20,16 +20,19 @@ import work_fixtures as fx
 ARCH = {
     **fx.ARCHITECTURE,
     "edges": [
-        {"from": "query", "to": "enc", "imports": 3, "scope": "engine", "upward": False},
-        {"from": "pages", "to": "enc", "imports": 2, "scope": "registry_to_engine", "upward": False},
+        {"from": "query", "to": "enc", "imports": 3, "scope": "within", "repo": fx.ENGINE, "upward": False},
+        {"from": "pages", "to": "enc", "imports": 2, "scope": "across", "from_repo": fx.STORES, "to_repo": fx.ENGINE,
+         "upward": False},
     ],
     "files": {
-        "engine": ["opengwasdb/encoding/association.py", "opengwasdb/query/association.py", "opengwasdb/nowhere/x.py",
+        fx.ENGINE: ["opengwasdb/encoding/association.py", "opengwasdb/query/association.py", "opengwasdb/nowhere/x.py",
                    "opengwasdb/store/paths.py", "opengwasdb/query/facade.py"],
-        "registry": ["src/project_site/new.py"],
+        fx.STORES: ["src/project_site/new.py"],
     },
 }
-NO_MODEL = {**fx.NO_ENGINE_MODEL, "edges": [], "files": ARCH["files"]}
+# Without its model a repository's code is not known, so neither are its files (og-dev-hub#9).
+NO_MODEL = {**fx.NO_ENGINE_MODEL, "edges": [], "files": {**ARCH["files"], fx.ENGINE: None}}
+MISSING = "opengwasdb has no model at the ref read"
 
 
 def planned(plan: dict, *, state: str = "CLOSED", key: str = "opengwasdb#350") -> dict:
@@ -54,11 +57,11 @@ class ClosedTicketTests(unittest.TestCase):
         ], "component": "enc"}])), architecture=ARCH))
         self.assertEqual(entry["checks"], [
             {"kind": "adds", "path": "opengwasdb/encoding/association.py", "component": "enc", "held": True,
-             "why": "claimed by `enc`", "repo": "engine"},
+             "why": "claimed by `enc`", "repo": fx.ENGINE},
             {"kind": "adds", "path": "opengwasdb/query/association.py", "component": "enc", "held": False,
-             "why": "claimed by `query`, not `enc`", "repo": "engine"},
+             "why": "claimed by `query`, not `enc`", "repo": fx.ENGINE},
             {"kind": "adds", "path": "opengwasdb/nowhere/x.py", "component": "enc", "held": False,
-             "why": "no component claims it", "repo": "engine"},
+             "why": "no component claims it", "repo": fx.ENGINE},
         ])
 
     def test_a_moved_path_is_held_when_the_target_claims_it(self) -> None:
@@ -74,13 +77,13 @@ class ClosedTicketTests(unittest.TestCase):
                                 architecture=ARCH))
         self.assertEqual(entry["checks"], [
             {"kind": "drops", "from": "query", "to": "store", "imports": 0, "held": True,
-             "why": "no import from `query` into `store`", "repo": "engine"},
+             "why": "no import from `query` into `store`", "repo": fx.ENGINE},
             {"kind": "drops", "from": "query", "to": "enc", "imports": 3, "held": False,
-             "why": "3 imports from `query` into `enc` remain", "repo": "engine"},
+             "why": "3 imports from `query` into `enc` remain", "repo": fx.ENGINE},
         ])
 
     def test_one_remaining_import_is_singular(self) -> None:
-        arch = {**ARCH, "edges": [{"from": "query", "to": "store", "imports": 1, "scope": "engine", "upward": False}]}
+        arch = {**ARCH, "edges": [{"from": "query", "to": "store", "imports": 1, "scope": "within", "repo": fx.ENGINE, "upward": False}]}
         entry = only(fx.compute(planned(plan(drops=[{"from": "query", "to": "store"}])), architecture=arch))
         self.assertEqual(entry["checks"][0]["why"], "1 import from `query` into `store` remains")
 
@@ -104,10 +107,24 @@ class ClosedTicketTests(unittest.TestCase):
                          (None, "this architecture collection lists no tracked files"))
 
     def test_a_tree_that_was_not_read_leaves_its_paths_unknown(self) -> None:
-        arch = {**ARCH, "files": {"engine": None, "registry": ARCH["files"]["registry"]}}
+        arch = {**ARCH, "files": {fx.ENGINE: None, fx.STORES: ARCH["files"][fx.STORES]}}
         entry = only(fx.compute(planned(plan(adds=[{"paths": ["opengwasdb/encoding/association.py"], "component": "enc"}])),
                                 architecture=arch))
         self.assertEqual(entry["checks"][0]["held"], None)
+
+    def test_a_repository_without_a_model_is_named_and_never_with_its_commit(self) -> None:
+        # og-dev-hub#9: the reason is shown on the public site, and a private repository's commit is not.
+        arch = {**NO_MODEL, "repos": {**NO_MODEL["repos"], "ogld": fx.repo("ogld", commit="9" * 40, model=False)}}
+        entry = only(fx.compute(planned(plan(adds=[{"paths": ["opengwasdb/encoding/new.py"], "component": "enc"}])),
+                                architecture=arch))
+        self.assertEqual(entry["checks"][0]["why"],
+                         "no model read covers it, so whether it exists is not known: opengwasdb, ogld have no model at the ref read")
+        self.assertNotIn("999999", str(entry))
+
+    def test_a_directory_under_a_models_code_is_not_code_and_says_so(self) -> None:
+        entry = only(fx.compute(planned(plan(adds=[{"paths": ["src/other/new/"], "component": "pages"}])), architecture=NO_MODEL))
+        self.assertEqual((entry["checks"][0]["held"], entry["checks"][0]["why"]),
+                         (None, "only code files are listed, so a non-code path's existence is not known"))
 
     def test_a_path_that_is_not_code_has_no_recorded_existence(self) -> None:
         entry = only(fx.compute(planned(plan(adds=[{"paths": ["docs/new.md"], "component": "pages"}])), architecture=ARCH))
@@ -118,11 +135,10 @@ class ClosedTicketTests(unittest.TestCase):
         entry = only(fx.compute(planned(plan(
             adds=[{"paths": ["opengwasdb/encoding/association.py", "src/project_site/new.py"], "component": "pages"}],
             drops=[{"from": "pages", "to": "enc"}])), architecture=NO_MODEL))
-        why = "the engine's model is missing at main (eeeeeeeeeeee)"
         self.assertEqual([(c.get("path") or c["from"], c["held"], c["why"]) for c in entry["checks"]], [
-            ("opengwasdb/encoding/association.py", None, why),
+            ("opengwasdb/encoding/association.py", None, f"no model read covers it, so whether it exists is not known: {MISSING}"),
             ("src/project_site/new.py", True, "claimed by `pages`"),
-            ("pages", None, why),
+            ("pages", None, "`enc` is in no model read, and the plan touches opengwasdb, which has no model at the ref read"),
         ])
 
     def test_a_component_the_plan_declares_is_not_unknown_to_it(self) -> None:
@@ -144,13 +160,73 @@ class ReviewFixTests(unittest.TestCase):
         entry = only(fx.compute(planned(plan(
             adds=[{"paths": ["src/project_site/new.py"], "component": "pages"}, {"paths": ["opengwasdb/encoding/association.py"], "component": "enc"}],
             drops=[{"from": "pages", "to": "enc"}, {"from": "query", "to": "store"}])), architecture=ARCH))
-        self.assertEqual([c["repo"] for c in entry["checks"]], ["registry", "engine", "registry", "engine"])
+        self.assertEqual([c["repo"] for c in entry["checks"]], [fx.STORES, fx.ENGINE, fx.STORES, fx.ENGINE])
 
-    def test_a_missing_file_without_the_engine_model_says_which_half_was_measured(self) -> None:
+    def test_a_missing_file_without_the_engine_model_is_unknown_naming_the_repository_without_one(self) -> None:
+        # og-dev-hub#9: what is code is derived from a model, so without one a path's existence is not known.
         entry = only(fx.compute(planned(plan(adds=[{"paths": ["opengwasdb/encoding/missing.py"], "component": "enc"}])),
                                 architecture=NO_MODEL))
         self.assertEqual((entry["checks"][0]["held"], entry["checks"][0]["why"]), (
-            False, "no such file at main (eeeeeeeeeeee); the tree was read, the claims were not judged (the engine's model is missing)"))
+            None, f"no model read covers it, so whether it exists is not known: {MISSING}"))
+
+
+# A third repository read without a model, and a fourth with one whose code roots (`src/`) overlap opengwasdb-stores'.
+WITH_UNMODELLED = {
+    **ARCH,
+    "repos": {**ARCH["repos"], "opengwaspy": fx.repo("opengwaspy", commit="9" * 40, model=False),
+              "ogquery": fx.repo("ogquery", source_root="src/")},
+    "components": [*ARCH["components"], fx.component("oq_read", "Light reads", "ogquery", ["src/ogquery/"])],
+    "files": {**ARCH["files"], "ogquery": ["src/ogquery/read.py"], "opengwaspy": None},
+}
+
+
+def planned_in(key: str, body: dict) -> dict:
+    t = fx.ticket(key, state="CLOSED")
+    t["plan"] = body
+    return fx.board(fx.epic("opengwasdb#58", "Active", [t]))
+
+
+class PlanIdTests(unittest.TestCase):
+    """#422's component ids are judged against every model read, whatever repositories have none (og-dev-hub#9)."""
+
+    def test_an_unknown_id_is_invalid_when_the_plan_touches_only_repositories_with_a_model(self) -> None:
+        entry = only(fx.compute(planned_in("opengwasdb#350", plan(moves=[{"paths": ["opengwasdb/store/paths.py"], "to": "ghost"}])),
+                                architecture=WITH_UNMODELLED))
+        self.assertEqual(entry["plan"], {"invalid": "component `ghost` is neither an existing component nor declared in `adds`"})
+
+    def test_an_unknown_id_is_unknown_when_the_tickets_own_repository_has_no_model(self) -> None:
+        entry = only(fx.compute(planned_in("opengwaspy#7", plan(moves=[{"paths": ["src/opengwaspy/a.py"], "to": "ghost"}],
+                                                                  drops=[{"from": "ghost", "to": "enc"}])),
+                                architecture=WITH_UNMODELLED))
+        self.assertNotIn("invalid", entry["plan"])
+        why = "`ghost` is in no model read, and the plan touches opengwaspy, which has no model at the ref read"
+        self.assertEqual([(c["held"], c["why"]) for c in entry["checks"]], [(None, why), (None, why)])
+
+
+    def test_an_unknown_id_is_unknown_when_a_path_no_model_covers_may_be_a_repository_without_one(self) -> None:
+        # The spec review's probe: the ticket's own repository has a model, but the path is in no model's code.
+        entry = only(fx.compute(planned_in("opengwasdb#350", plan(moves=[{"paths": ["opengwaspy/a.py"], "to": "ghost"}])),
+                                architecture=WITH_UNMODELLED))
+        self.assertNotIn("invalid", entry["plan"])
+        self.assertEqual((entry["checks"][0]["held"], entry["checks"][0]["why"]), (
+            None, "`ghost` is in no model read, and the plan touches opengwaspy, which has no model at the ref read"))
+
+
+class RepositoryOfAPathTests(unittest.TestCase):
+    """Which repository a planned path is in: whose claims cover it, never the first in `system.yaml`'s order."""
+
+    def check(self, path: str, component: str) -> dict:
+        return only(fx.compute(planned_in("opengwasdb#350", plan(adds=[{"paths": [path], "component": component}])),
+                               architecture=WITH_UNMODELLED))["checks"][0]
+
+    def test_a_path_two_models_code_roots_cover_is_in_the_one_whose_claims_cover_it(self) -> None:
+        found = self.check("src/ogquery/read.py", "oq_read")
+        self.assertEqual((found["repo"], found["held"]), ("ogquery", True))
+
+    def test_a_path_both_or_neither_claims_cover_is_in_no_known_repository(self) -> None:
+        found = self.check("src/elsewhere/new.py", "pages")
+        self.assertEqual((found["held"], found["why"]), (
+            None, "both opengwasdb-stores and ogquery count it as code and neither claims it, so which repository it is in is not known"))
 
 
 class OpenAndInvalidTests(unittest.TestCase):

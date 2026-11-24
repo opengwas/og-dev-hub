@@ -1,27 +1,25 @@
 """Who owns which file: the claims of an architecture model (#418, epic #416).
 
-Both repositories keep a `docs/architecture/components.yaml` whose components
+Each repository keeps a `docs/architecture/components.yaml` whose components
 claim code paths. A path ending in `/` claims a directory and any other path
 claims one file; the longest claimed prefix wins, so a file belongs to exactly
 one component. These functions are the one implementation of that rule: this
 repository's ownership test fails on what they report, and the site's collector
-reports the same things for the engine without failing the build.
+reports the same things for every repository without failing the build.
 
 They take plain data (a model, a list of tracked paths) and read no repository.
 """
 
 from __future__ import annotations
 
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any, Callable, Collection, Iterable, Mapping, Sequence
 
 import yaml
 
 Claims = list[tuple[str, str]]
 
-# What this repository counts as code, which every claim must keep covered.
-REGISTRY_CODE_ROOTS = ("src", "workflow", "tools")
-REGISTRY_CODE_SUFFIXES = (".py", ".smk", ".sh", ".R", ".r")
-ENGINE_PACKAGE = "opengwasdb"
+# What counts as code in every repository, under the roots its claims give (`code_roots`, og-dev-hub#9).
+CODE_SUFFIXES = (".py", ".smk", ".sh", ".R", ".r")
 
 
 def split_nul(listing: str) -> list[str]:
@@ -41,11 +39,53 @@ def _read_yaml(text: str, what: str) -> Any:
         raise ValueError(f"{what} is not valid YAML: {error}") from error
 
 
+def _entities(entries: Any, what: str, seen: set[str], twice: Callable[[str], str]) -> None:
+    """The one check of a list of entities: a model's components, and `system.yaml`'s people, external systems and containers.
+
+    Each is a mapping with an `id` and a `name` of text (an id that is not text is
+    refused, never turned into one), and no id is in `seen` already; `seen` gains
+    each. `what` names the list in the error, and `twice` says a repeated id.
+    """
+    if not isinstance(entries, list):
+        raise ValueError(f"{what} must be a list of mappings, each with an `id` and a `name`")
+    for number, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise ValueError(f"{what} #{number} is not a mapping with an `id` and a `name`")
+        for key in ("id", "name"):
+            if not isinstance(entry.get(key), str) or not entry[key]:
+                raise ValueError(f"{what} #{number} has no `{key}` of text; each needs an `id` and a `name`")
+        if entry["id"] in seen:
+            raise ValueError(twice(entry["id"]))
+        seen.add(entry["id"])
+
+
 def load_model(text: str) -> dict[str, Any]:
-    """A model file's content as a mapping; a file that is not one is an error."""
+    """A model file's content, checked for everything the collector reads of it; anything else is an error.
+
+    It is a mapping with a `components` list. Each component is a mapping with an
+    `id` and a `name` of text, ids unique; `paths` and `stages`, when given, are
+    lists of text, and `layer` a whole number. `layers` and `stages`, when given,
+    are lists of mappings. The error names the problem, and the collector makes it
+    that repository's gap (og-dev-hub ADR 0001).
+    """
     model = _read_yaml(text, "the architecture model")
     if not isinstance(model, dict) or not isinstance(model.get("components"), list):
         raise ValueError("the architecture model must be a mapping with a `components` list")
+    _entities(model["components"], "component", set(), lambda cid: f"component id {cid!r} is in the model twice")
+    for component in model["components"]:
+        for key in ("paths", "stages"):
+            if component.get(key) is not None and not (
+                isinstance(component[key], list) and all(isinstance(v, str) for v in component[key])
+            ):
+                raise ValueError(f"component {component['id']!r}: `{key}` must be a list of text")
+        layer = component.get("layer")
+        if layer is not None and (not isinstance(layer, int) or isinstance(layer, bool)):
+            raise ValueError(f"component {component['id']!r}: `layer` must be a whole number")
+    for key in ("layers", "stages"):
+        if model.get(key) is not None and not (
+            isinstance(model[key], list) and all(isinstance(v, dict) for v in model[key])
+        ):
+            raise ValueError(f"the architecture model's `{key}` must be a list of mappings")
     return model
 
 
@@ -54,15 +94,18 @@ def load_model(text: str) -> dict[str, Any]:
 # entities share one id space.
 SYSTEM_SECTIONS = ("system", "people", "external", "containers", "container_relations")
 SYSTEM_ENTITIES = ("people", "external", "containers")
+# A listed repository's `visibility`: `null` is one not created yet (planned), drawn and never cloned (og-dev-hub#9).
+VISIBILITIES = ("public", "private", None)
 
 
 def load_system(text: str) -> dict[str, Any]:
-    """`system.yaml`'s content: the five `SYSTEM_SECTIONS` checked, and `repos` carried along.
+    """`system.yaml`'s content: the five `SYSTEM_SECTIONS` and `repos` checked.
 
     `system` has a `name` and a `summary`; each person, external system and
     container has an `id` and a `name` (what the pages draw); ids are unique across
     the three lists; every `container_relations` entry is `[from, to, text]` and both
-    ends name one of them. A file that fails any of this is an error naming the problem.
+    ends name one of them; each of `repos` has a unique `name` and a `visibility` of
+    `public`, `private` or `null`. A file that fails any of this is an error naming the problem.
     """
     doc = _read_yaml(text, "system.yaml")
     if not isinstance(doc, dict):
@@ -75,13 +118,8 @@ def load_system(text: str) -> dict[str, Any]:
         raise ValueError("system.yaml: `system` must be a mapping with a `name` and a `summary`")
     seen: set[str] = set()
     for key in SYSTEM_ENTITIES:
-        entries = doc[key]
-        if not isinstance(entries, list) or not all(isinstance(e, dict) and e.get("id") and e.get("name") for e in entries):
-            raise ValueError(f"system.yaml: `{key}` must be a list of mappings, each with an `id` and a `name`")
-        for entry in entries:
-            if str(entry["id"]) in seen:
-                raise ValueError(f"system.yaml: duplicate id {str(entry['id'])!r} (in `{key}`)")
-            seen.add(str(entry["id"]))
+        _entities(doc[key], f"system.yaml: `{key}`", seen,
+                  lambda eid, key=key: f"system.yaml: duplicate id {eid!r} (in `{key}`)")
     relations = doc["container_relations"]
     if not isinstance(relations, list) or not all(isinstance(r, list) and len(r) == 3 for r in relations):
         raise ValueError("system.yaml: `container_relations` must be a list of [from, to, text]")
@@ -91,6 +129,16 @@ def load_system(text: str) -> dict[str, Any]:
                 raise ValueError(f"system.yaml: `container_relations` names {str(end)!r}, which is no person, external system or container")
     if "repos" in doc and not isinstance(doc["repos"], list):
         raise ValueError("system.yaml: `repos` must be a list")
+    names: set[str] = set()
+    for entry in doc.get("repos") or []:
+        if not isinstance(entry, dict) or not isinstance(entry.get("name"), str) or not entry["name"]:
+            raise ValueError("system.yaml: each of `repos` must be a mapping with a `name`")
+        if entry.get("visibility") not in VISIBILITIES:
+            raise ValueError(f"system.yaml: repository {entry['name']!r} has visibility {entry.get('visibility')!r}, "
+                             "which is none of public, private or null (planned)")
+        if entry["name"] in names:
+            raise ValueError(f"system.yaml: repository {entry['name']!r} is listed twice")
+        names.add(entry["name"])
     return doc
 
 
@@ -133,16 +181,27 @@ def owner(claims: Sequence[tuple[str, str]], path: str) -> str | None:
     return best[1] if best else None
 
 
-def is_registry_code(path: str) -> bool:
-    """A file of this repository that must be claimed: code under `src/`, `workflow/` or `tools/`."""
-    if path.split("/", 1)[0] not in REGISTRY_CODE_ROOTS:
+def code_roots(claims: Iterable[tuple[str, str]]) -> frozenset[str]:
+    """The top-level directories of every path the claims name: where a repository's code is (og-dev-hub#9).
+
+    Which files count as code is derived from the model, never written per
+    repository: a claim of `src/x/` or of `workflow/run.sh` makes `src` or
+    `workflow` a root. A claim of a top-level file makes no root.
+    """
+    return frozenset(path.split("/", 1)[0] for path, _ in claims if "/" in path)
+
+
+def is_code(path: str, roots: Collection[str]) -> bool:
+    """A file under one of `roots` with a code suffix, or a `Snakefile`: one that must be claimed."""
+    if path.split("/", 1)[0] not in roots:
         return False
-    return path.endswith(REGISTRY_CODE_SUFFIXES) or path.endswith("/Snakefile")
+    return path.endswith(CODE_SUFFIXES) or path.endswith("/Snakefile")
 
 
-def is_engine_code(path: str) -> bool:
-    """A file of the engine that must be claimed: a Python file of its package."""
-    return path.startswith(f"{ENGINE_PACKAGE}/") and path.endswith(".py")
+def code_rule(claims: Iterable[tuple[str, str]]) -> Callable[[str], bool]:
+    """`is_code` for the roots of `claims`: the one rule of what a repository's model must cover."""
+    roots = code_roots(claims)
+    return lambda path: is_code(path, roots)
 
 
 def check_claims(

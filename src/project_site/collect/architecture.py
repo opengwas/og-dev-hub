@@ -1,25 +1,26 @@
-"""The architecture of both repositories, drawn from their claims (#418, #421, epic #416).
+"""The architecture of every repository `system.yaml` lists, drawn from their claims (#418, #421, og-dev-hub#9).
 
-Each repository keeps a hand-written `docs/architecture/components.yaml` whose
-components claim code paths (`architecture_model` holds the one ownership rule).
-This collector reads both through git, without a checkout of either:
+Each repository may keep a hand-written `docs/architecture/components.yaml`
+whose components claim code paths (`architecture_model` holds the one ownership
+rule, and derives which files are code from the claims). This collector reads
+every repository og-dev-hub's `system.yaml` lists, through git and one read
+handle each (`staging.Repositories`), without a checkout of any:
 
-- the registry, opengwasdb-stores, at a ref of a git directory (by default its
-  clone's `main`, or the checkout `--registry` names at `HEAD`; `staging.registry_root`),
-  tracked files only;
-- the engine at a ref (default `main`) of a git directory, normally the bare
-  clone the site build already keeps. The site's *docs* mirror stays at the
-  revision `pixi.lock` pins; the map shows current work, so this reads `main`.
+- a repository with `visibility: null` is planned: it is listed, never cloned;
+- each other one is read at `main` of the site's bare clone (or the checkout
+  `--registry` names, for opengwasdb-stores, at `HEAD`), tracked files only;
+- a clone or fetch that fails is that repository's gap, with git's message, and
+  the rest is still collected;
+- a repository without a model file is a gap too: its components are unknown,
+  never zero.
 
-It reports the components of both repositories with their measured size, the
-files nobody claims and the claims that match nothing (gaps, reported never
-raised), the commit it read in each repository, and the baseline of this
-repository's imports of engine modules (#421): how many entries the committed
-`docs/architecture/engine-imports-baseline.yaml` holds, and how many engine
-imports the code makes. Whether a name is the engine's is decided by the name
-alone, so that figure needs no engine model. An engine ref that has no
-model yet is not an error: the output says so, with the ref and commit, and
-this repository's half is still there.
+It reports the components of every repository with a model, with their
+measured size, the files nobody claims and the claims that match nothing (gaps,
+reported never raised), the commit read in each repository, the import graph
+within and across them, every ADR, and the baseline of opengwasdb-stores'
+imports of engine modules (#421). The site's *docs* mirror stays at the
+opengwasdb revision `pixi.lock` pins; the map shows current work, so this reads
+`main`.
 """
 
 from __future__ import annotations
@@ -27,16 +28,14 @@ from __future__ import annotations
 import subprocess
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Collection, Mapping
 
 from project_site import paths, staging
 from project_site.collect import architecture_adrs, architecture_graph, architecture_model as model_rules
 from project_site.collect.common import CollectError
 
-ENGINE_REPO = "opengwas/opengwasdb"
-REGISTRY_REPO = "opengwas/opengwasdb-stores"
 MODEL_PATH = "docs/architecture/components.yaml"
-DEFAULT_ENGINE_REF = "main"
+DEFAULT_REF = "main"
 # The hub's own system model (#8): read from its working tree, which is the published state
 # because publishing renders a clean checkout of the hub.
 SYSTEM_FILE = "system.yaml"
@@ -48,10 +47,10 @@ class Tree:
     def __init__(self, git_dir: Path, ref: str) -> None:
         self.git = ["git", "-C", str(git_dir)]
         self.ref = ref
-        try:
-            self.commit = self._run(["rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"]).decode().strip()
-        except CollectError as error:
-            raise CollectError(f"{git_dir} has no ref {ref}: {error}") from error
+        commit, why = staging.resolve_ref(git_dir, ref)
+        if commit is None:
+            raise CollectError(f"{git_dir} has no ref {ref}: {why}")
+        self.commit = commit
         # `<mode> <type> <oid>\t<path>` per NUL-terminated record: the object id is how a file is read
         # back, because a path can hold a newline and an id cannot.
         self.oids: dict[str, str] = {}
@@ -93,111 +92,150 @@ class Tree:
 
 
 def collect(
-    source: staging.Registry | None = None,
+    repositories: staging.Repositories | None = None,
     *,
-    engine_git: Path | None = None,
-    engine_ref: str = DEFAULT_ENGINE_REF,
-    refresh_engine: bool = False,
     system_file: Path | None = None,
 ) -> dict[str, Any]:
-    """Both repositories' components, gaps, import graph and ADRs, as the site's `architecture` source.
+    """Every listed repository's components, gaps, import graph and ADRs, as the site's `architecture` source.
 
-    `source` is the registry (`staging.registry_root`'s, by default its clone's
-    `main`); `engine_git` the engine's git directory (by default the site's clone);
-    `system_file` the hub's `system.yaml` (by default the one in this checkout).
+    `repositories` is the run's read handles (`staging.Repositories`; by default
+    each repository's clone at `main`, unfetched); `system_file` the hub's
+    `system.yaml` (by default the one in this checkout's working tree).
     """
     system_file = system_file or paths.repo_root() / SYSTEM_FILE
     try:
         system = model_rules.load_system(system_file.read_text(encoding="utf-8"))
     except OSError as error:
         raise CollectError(f"{SYSTEM_FILE} cannot be read: {error}") from error
-    source = source or staging.registry_root(files=False)
-    engine_git = engine_git or paths.clone_dir(paths.ENGINE)
-    registry = Tree(source.git_dir, source.ref)
-    # A refresh that fails is recorded and the ref the clone already has is read:
-    # the page shows both, so a stale `main` is never silent.
-    refresh = staging.ensure_clone(
-        engine_git, refspec=f"+refs/heads/{engine_ref}:refs/heads/{engine_ref}") if refresh_engine else None
-    engine = Tree(engine_git, engine_ref)
-
-    registry_text = registry.read([MODEL_PATH]).get(MODEL_PATH)
-    if registry_text is None:
-        raise CollectError(f"{MODEL_PATH} is not in {REGISTRY_REPO} at {registry.commit[:12]}")
-    registry_model = model_rules.load_model(registry_text)
-    baseline_path = architecture_graph.BASELINE_PATH
-    baseline_text = registry.read([baseline_path]).get(baseline_path)
-    baseline = architecture_graph.load_baseline(baseline_text) if baseline_text is not None else None
-    engine_text = engine.read([MODEL_PATH]).get(MODEL_PATH)
-    engine_model = model_rules.load_model(engine_text) if engine_text is not None else None
-
-    trees = {"registry": registry, "engine": engine}
-    components = _components(registry_model, engine_model)
+    repositories = repositories or staging.Repositories()
     container_ids = {str(c["id"]) for c in system["containers"]}
-    models = {"registry": registry_model, "engine": engine_model}
-    claims = {repo: model_rules.claims_of(c for c in components if c["repo"] == repo) for repo in trees}
-    is_code = {"registry": model_rules.is_registry_code, "engine": model_rules.is_engine_code}
-    # Without a model there are no claims to judge the engine's files against: its gaps
-    # are unknown (`null`), never `0` unclaimed and `0` stale.
-    gaps = {
-        repo: model_rules.check_claims(claims[repo], trees[repo].files, is_code[repo])
-        | _system_gaps(repo, models[repo], components, container_ids)
-        if repo == "registry" or engine_model is not None
-        else None
-        for repo in trees
-    }
+
+    repos: dict[str, dict[str, Any]] = {}
+    trees: dict[str, Tree] = {}
+    models: dict[str, dict[str, Any]] = {}
+    gaps: dict[str, dict[str, Any]] = {}
+    for entry in system.get("repos") or []:
+        name = entry["name"]
+        record: dict[str, Any] = {
+            "name": name, "visibility": entry.get("visibility"), "status": entry.get("status"),
+            "planned": entry.get("visibility") is None, "url": paths.clone_url(name),
+            "ref": None, "commit": None, "committed": None, "refresh": None, "source_root": None,
+            "model": None, "note": None, "error": None,
+        }
+        repos[name] = record
+        if record["planned"]:
+            continue  # not created yet: drawn as planned, never cloned
+        handle = repositories.get(name)
+        record["refresh"] = handle.fetch
+        tree = None
+        if handle.readable:
+            try:
+                tree = Tree(handle.git_dir, str(handle.commit))
+            except CollectError as error:
+                record["error"] = f"{name} cannot be read at {handle.ref}: {error}"
+        else:
+            record["error"] = handle.error
+        if tree is None:
+            gaps[name] = _gap(unreadable=record["error"])
+            continue
+        trees[name] = tree
+        record |= {"ref": handle.ref, "commit": tree.commit, "committed": tree.committed,
+                   "source_root": architecture_graph.source_root(tree.files)}
+        text = tree.read([MODEL_PATH]).get(MODEL_PATH)
+        model, why = None, f"{MODEL_PATH} is not in {name} at {handle.ref} ({tree.commit[:12]})"
+        if text is not None:
+            try:
+                model, why = model_rules.load_model(text), None
+            except ValueError as error:
+                why = f"{MODEL_PATH} of {name} at {handle.ref} ({tree.commit[:12]}) cannot be used: {error}"
+        record |= {"model": model is not None, "note": why}
+        if model is None:
+            gaps[name] = _gap(no_model=why)
+        else:
+            models[name] = model
+
+    private = {str(e["name"]) for e in system.get("repos") or [] if e.get("visibility") == "private"}
+    components, refused = _components(models, private)
+    for name, why in refused.items():
+        # A component id another model already has: this repository's components are unknown, the rest stand.
+        del models[name]
+        repos[name] |= {"model": False, "note": why}
+        gaps[name] = _gap(no_model=why)
+    claims = {repo: model_rules.claims_of(c for c in components if c["repo"] == repo) for repo in models}
+    is_code = {repo: model_rules.code_rule(claims[repo]) for repo in models}
+    for repo in models:
+        gaps[repo] = _gap() | model_rules.check_claims(claims[repo], trees[repo].files, is_code[repo]) | _system_gaps(
+            repo, models[repo], components, container_ids)
     _measure(components, trees, claims, is_code)
 
     # One measurement of the imports, for both the graph's counts and the
-    # baseline this repository is held to (#421): they can never disagree.
-    imports = architecture_graph.imports_of(trees, claims)
-    edges = architecture_graph.import_edges(trees, claims, components, imports)
+    # baseline opengwasdb-stores is held to (#421): they can never disagree.
+    modelled = {repo: trees[repo] for repo in models}
+    imports = architecture_graph.imports_of(modelled, claims)
+    edges = architecture_graph.import_edges(modelled, claims, components, imports)
     found = architecture_graph.engine_imports(imports)
-    # The seam's import count is the name-based measurement, so it is the same
-    # with or without the engine's model. Every other figure on the engine's half
-    # of the graph is resolved through the engine's claims -- what the layers
-    # make upward, which component pairs the seam has, how many edges there are
-    # in all -- so without the model those are unknown, never 0 (#421 review).
-    summary = architecture_graph.summarise(edges) | {"registry_to_engine_imports": len(found)}
-    if engine_model is None:
-        summary |= {
-            key: None
-            for key in ("edges", "upward_edges", "upward_imports", "registry_to_engine_edges")
-        }
-    adrs = architecture_adrs.place(trees, claims, components, architecture_graph.modules_of(trees))
+    layers = {repo: list(model.get("layers") or []) for repo, model in models.items() if model.get("layers")}
+    seam_from, seam_to = architecture_graph.SEAM
+    # The seam's import count is the name-based measurement the baseline holds, so it
+    # stands without opengwasdb's model; its component pairs are resolved through
+    # opengwasdb's claims, so without that model they are unknown, never 0 (#421 review).
+    # The layering is measured only where a model declares layers; with none, unknown.
+    summary = architecture_graph.summarise(edges) | {
+        "registry_to_engine_imports": len(found) if seam_from in models else None,
+    }
+    if seam_to not in models or seam_from not in models:
+        summary["registry_to_engine_edges"] = None
+    if not layers:
+        summary |= {"upward_edges": None, "upward_imports": None}
+    baseline_path = architecture_graph.BASELINE_PATH
+    baseline_text = trees[seam_from].read([baseline_path]).get(baseline_path) if seam_from in trees else None
+    baseline = architecture_graph.load_baseline(baseline_text) if baseline_text is not None else None
+    names = [entry["name"] for entry in system.get("repos") or []]
+    adrs = architecture_adrs.place(trees, claims, components, architecture_graph.modules_of(trees), names)
     return {
-        "registry": _repository(REGISTRY_REPO, registry, True, None, source.fetch),
-        "engine": _repository(
-            ENGINE_REPO, engine, engine_model is not None,
-            None if engine_model is not None
-            else f"{MODEL_PATH} is not in {ENGINE_REPO} at {engine.ref} ({engine.commit[:12]})",
-            refresh,
-        ),
+        "repos": repos,
         "baseline": {
             "path": baseline_path,
+            "from": seam_from,
             "entries": len(baseline) if baseline is not None else None,
-            "measured": len(found),
+            "measured": len(found) if seam_from in models else None,
             "note": None if baseline is not None else (
-                f"{baseline_path} is not in {REGISTRY_REPO} at {registry.commit[:12]}"
+                f"{baseline_path} is not in {seam_from} at {repos[seam_from]['ref']} ({str(repos[seam_from]['commit'])[:12]})"
+                if seam_from in trees else f"{seam_from} was not read"
             ),
         },
         "model": {
             key: system[key] for key in model_rules.SYSTEM_SECTIONS if key != "system"
         } | {
-            "stages": registry_model.get("stages") or [],
+            # Each stage names the repository whose model holds it, so a private one's can be left out (og-dev-hub#9).
+            "stages": [{**stage, "repo": repo} for repo, model in models.items() for stage in model.get("stages") or []],
             "system": system["system"],
-            "layers": (engine_model or {}).get("layers") or [],
+            "layers": layers,
         },
         "components": components,
-        # Every tracked code file of each tree (#422), so a plan's `adds` can be told to exist.
-        "files": {repo: sorted(f for f in trees[repo].files if is_code[repo](f)) for repo in trees},
+        # Every tracked code file of each repository with a model (#422), so a plan's `adds` can be
+        # told to exist; unknown (`null`) where there is no model to say what is code.
+        "files": {
+            repo: sorted(f for f in trees[repo].files if is_code[repo](f)) if repo in models else None
+            for repo in repos if not repos[repo]["planned"]
+        },
         "gaps": gaps,
         "edges": edges,
-        # Unknown without the engine's model, like `summary.upward_imports`: never an empty list.
-        "upward_imports": None if engine_model is None else architecture_graph.upward_imports(imports, components),
+        # Unknown where no model declares layers, like `summary.upward_imports`: never an empty list.
+        "upward_imports": architecture_graph.upward_imports(imports, components) if layers else None,
         "adrs": adrs,
         "summary": summary
         | {"adrs_total": len(adrs), "adrs_placed": sum(1 for a in adrs if a["components"])},
     }
+
+
+def _gap(*, unreadable: str | None = None, no_model: str | None = None) -> dict[str, Any]:
+    """One repository's gaps: why it could not be read, or why it has no model, and then nothing is judged.
+
+    `unclaimed` and `stale` are `None` (unknown, never empty) until a model is read.
+    """
+    return {"unreadable": unreadable, "no_model": no_model, "unclaimed": None, "stale": None,
+            "containers": [], "system_sections": []}
 
 
 def _system_gaps(
@@ -218,24 +256,30 @@ def _system_gaps(
     }
 
 
-def _repository(
-    repo: str, tree: Tree, model: bool, note: str | None, refresh: dict[str, Any] | None = None
-) -> dict[str, Any]:
-    return {
-        "repo": repo, "ref": tree.ref, "commit": tree.commit, "committed": tree.committed,
-        "refresh": refresh, "model": model, "note": note,
-    }
+def _components(
+    models: Mapping[str, Mapping[str, Any]], private: Collection[str] = (),
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """Each modelled repository's components, in `system.yaml`'s order, each tagged with its repository.
 
-
-def _components(registry_model: Mapping[str, Any], engine_model: Mapping[str, Any] | None) -> list[dict[str, Any]]:
-    """The registry's components, then the engine's, each tagged with its repository."""
+    A component id is one panel's address, so it is unique across the models. A
+    repository whose model repeats an id an earlier repository's has is refused
+    whole, `{repository: why}`, and never stops the others (og-dev-hub ADR 0001).
+    The reason is public, so it never names a `private` repository: that one is
+    "another repository".
+    """
     components: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for repo, source in (("registry", registry_model), ("engine", engine_model)):
-        for raw in (source or {}).get("components") or []:
-            if raw["id"] in seen:
-                raise CollectError(f"component id {raw['id']!r} is in both repositories' models")
-            seen.add(raw["id"])
+    seen: dict[str, str] = {}
+    refused: dict[str, str] = {}
+    for repo, source in models.items():
+        raws = source.get("components") or []
+        clash = next((raw["id"] for raw in raws if raw["id"] in seen), None)
+        if clash is not None:
+            first = "another repository" if seen[clash] in private else seen[clash]
+            refused[repo] = (f"component id {clash!r} of {repo}'s model is also {first}'s, "
+                             f"so {repo}'s components are unknown")
+            continue
+        for raw in raws:
+            seen[raw["id"]] = repo
             components.append(
                 {
                     "id": raw["id"],
@@ -251,13 +295,14 @@ def _components(registry_model: Mapping[str, Any], engine_model: Mapping[str, An
                     "tracked": 0,
                 }
             )
-    return components
+    return components, refused
 
 
 def _measure(components: list[dict[str, Any]], trees: Mapping[str, Tree], claims: Mapping[str, Any], is_code: Mapping[str, Any]) -> None:
     """Code files, their lines, and every tracked file each component owns."""
     by_id = {c["id"]: c for c in components}
-    for repo, tree in trees.items():
+    for repo in claims:
+        tree = trees[repo]
         code = [f for f in tree.files if is_code[repo](f)]
         text = tree.read(code)
         for path in tree.files:

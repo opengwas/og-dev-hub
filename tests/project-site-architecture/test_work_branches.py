@@ -133,20 +133,22 @@ class BranchTests(unittest.TestCase):
         self.assertEqual([b["name"] for b in result["branches"]], ["fix/issue-345", "orch/302-integration", "orch/416/419"])
 
 
-class RegistryCloneTests(unittest.TestCase):
-    """The registry's clone is fetched once per refresh, and its branches are read at the `main` it read (og-dev-hub#7)."""
+class OneHandlePerRepositoryTests(unittest.TestCase):
+    """Each listed repository's clone is fetched once per run, and work reads the `main` the architecture read (og-dev-hub#7, #9)."""
 
-    def test_a_refresh_fetches_the_registrys_clone_once_and_work_reads_the_same_main(self) -> None:
+    NAMES = ("opengwasdb-stores", "opengwasdb", "ogquery")
+
+    def test_a_refresh_fetches_each_clone_once_and_reads_the_branches_of_every_repository(self) -> None:
         fixture = Fixture(self)
         github = fixture.root / "github"
         github.mkdir()
-        fx.git(fixture.root, "clone", "-q", "--bare", str(fixture.repo), str(github / "opengwasdb-stores"))
-        engine = fixture.root / "engine.git"
-        fx.git(fixture.root, "clone", "-q", "--bare", str(fixture.repo), str(engine))
+        for name in self.NAMES:
+            fx.git(fixture.root, "clone", "-q", "--bare", str(fixture.repo), str(github / name))
         with mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": str(fixture.root / "work")}), \
                 mock.patch.object(staging.paths, "GITHUB", str(github)):
-            staging.registry_root(files=False)  # the first read clones it
-            clone = staging.paths.clone_dir("opengwasdb-stores")
+            first = staging.Repositories()
+            for name in self.NAMES:
+                first.get(name)  # the first read clones each
             calls = []
             real = staging.ensure_clone
 
@@ -155,14 +157,37 @@ class RegistryCloneTests(unittest.TestCase):
                 return real(git_dir, **kwargs)
 
             with mock.patch.object(staging, "ensure_clone", counted):
-                registry = staging.registry_root(files=False, refresh=True)
-                sets = work.read_branches(registry=registry, engine_git=engine, refresh=True, now=NOW)
+                repositories = staging.Repositories(refresh=True)
+                read = {name: repositories.get(name) for name in self.NAMES}  # as the architecture collector reads them
+                sets = work.read_branches(repositories, list(self.NAMES), now=NOW)
+            clones = {name: staging.paths.clone_dir(name) for name in self.NAMES}
 
-        self.assertEqual(calls.count(clone), 1, calls)
-        found = next(s for s in sets if s["repo"] == "opengwasdb-stores")
-        self.assertEqual(found["fetch"], {"ok": True, "error": None})
-        self.assertEqual(found["main"], registry.ref)
-        self.assertEqual([b["name"] for b in found["branches"]], ["fix/issue-345", "orch/302-integration", "orch/416/419"])
+        self.assertEqual(sorted(calls), sorted(clones.values()), "one fetch per repository, none for the work")
+        for name in self.NAMES:
+            found = next(s for s in sets if s["repo"] == name)
+            self.assertEqual(found["fetch"], {"ok": True, "error": None})
+            self.assertIs(read[name], repositories.get(name))
+        # A third repository's branches are read like the two the site always read.
+        third = next(s for s in sets if s["repo"] == "ogquery")
+        self.assertEqual([b["name"] for b in third["branches"]], ["fix/issue-345", "orch/302-integration", "orch/416/419"])
+        self.assertEqual({b["repo"] for b in third["branches"]}, {"ogquery"})
+
+    def test_a_repository_whose_branches_cannot_be_read_is_recorded_and_the_others_are_read(self) -> None:
+        fixture = Fixture(self)
+        repositories = staging.Repositories(git_dirs={"opengwasdb": fixture.repo, "ogld": fixture.root / "nowhere.git"})
+        sets = work.read_branches(repositories, ["opengwasdb", "ogld"], now=NOW)
+        broken = next(s for s in sets if s["repo"] == "ogld")
+        self.assertIn("ogld cannot be read", broken["error"])
+        self.assertEqual(broken["branches"], [])
+        self.assertEqual(len(next(s for s in sets if s["repo"] == "opengwasdb")["branches"]), 3)
+
+    def test_a_local_clone_is_recognised_by_its_origin_and_one_of_no_listed_repository_is_refused(self) -> None:
+        fixture = Fixture(self)
+        fx.git(fixture.repo, "remote", "add", "origin", "https://github.com/opengwas/ogquery.git")
+        self.assertEqual(work.repo_of(fixture.repo, ["opengwasdb", "ogquery"]), "ogquery")
+        with self.assertRaises(CollectError) as caught:
+            work.repo_of(fixture.repo, ["opengwasdb"])
+        self.assertIn("is not a clone of a repository system.yaml lists", str(caught.exception))
 
 
 class GitFailureTests(unittest.TestCase):
@@ -227,11 +252,11 @@ class OrphanBranchTests(unittest.TestCase):
         (data / "board.json").write_text(json.dumps({"source": "board", "available": True, "epics": []}))
         (data / "architecture.json").write_text(json.dumps({
             "source": "architecture", "available": True, "components": [],
-            "engine": {"ref": "main", "commit": "0" * 40, "model": True},
+            "repos": {"opengwasdb": {"ref": "main", "commit": "0" * 40, "model": True}},
         }))
 
         result = common.collect_source("work", lambda: work.collect(
-            data, registry=staging.registry_root(fixture.repo), engine_git=fixture.repo, now=NOW))
+            data, staging.Repositories(git_dirs={"opengwasdb": fixture.repo}), now=NOW))
 
         self.assertTrue(result["available"], result["error"])
         # The fixture stands in for the engine's clone, whose branches are read as `refs/heads/*`.

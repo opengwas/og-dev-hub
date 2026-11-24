@@ -15,28 +15,33 @@ and `yardstick.result`, and nothing else; every call names the registry root it
 reads, because an installed package knows no checkout. It reads
 `/data/opengwasdb/stores` only through read-only SQLite URIs.
 
-**Where the registry is read from.** `main` of the site's bare clone,
-`/data/opengwasdb/work/site/opengwasdb-stores.git`, cloned the first time it is
-needed and fetched only by a render (`pixi run site`, `site-preview`,
-`site-publish`) and by `--refresh` (`--refresh-engine` for `site-data`), once
-per run, with the files the collectors read (`stores/`, `docs/`, `CONTEXT.md`,
-`pixi.lock`, `ogstores.yaml`) extracted at that commit by `git archive`, and git
-read at the same commit: the architecture and the work read the same `main`.
-`--registry PATH` reads that checkout instead, at its `HEAD`
-(`project_site.staging.registry_root`, the one owner of this choice).
+**Where each repository is read from** (og-dev-hub#9). Every repository
+og-dev-hub's `system.yaml` lists in `repos` is read from `main` of the site's
+bare clone of it, `/data/opengwasdb/work/site/<name>.git`, cloned the first time
+it is needed and fetched only by a render (`pixi run site`, `site-preview`,
+`site-publish`) and by `--refresh` (`site-data`, `architecture`), **once per
+run**. One read handle per repository per run is the one
+owner of this (`project_site.staging.Repositories`: given a name, the handle's
+clone, ref, commit and fetch record), so the architecture, the work and the
+render's engine docs read the same commit of each. A repository with
+`visibility: null` is planned, and never cloned. Only opengwasdb-stores also has
+its files extracted (`stores/`, `docs/`, `CONTEXT.md`, `pixi.lock`,
+`ogstores.yaml`, by `git archive` at that commit), because only its readers need
+files. `--registry PATH` reads that checkout instead, at its `HEAD`.
 
 Every clone and fetch of the site's clones under the work root, and of the git
 directories the collectors read, goes through one owner,
 `project_site.staging.ensure_clone`: a fetch prunes, and one that fails is
 recorded and never raised, so what the clone already holds is read. A failed
-refresh of the registry's clone is shown on the architecture pages as the
-engine's is, and leaves `architecture check` and `conflicts` undecided (exit
-2) unless they find a problem anyway. A registry that cannot be read at all (no
-clone, and no network to make one) makes each source that reads it
-unavailable, naming why, and no other source. The engine's clone is fetched
-only when it lacks the revision the registry's `pixi.lock` pins; if it still
-lacks it, there is no older engine to stage instead, so the render stops with
-git's message and exits 2. A publish's own `git fetch` of og-dev-hub's
+refresh of any repository's clone is shown on the architecture pages, and leaves
+`architecture check` and `conflicts` undecided (exit 2) unless they find a
+problem anyway. A repository that cannot be read at all (no clone, and no
+network to make one) is that repository's gap on the architecture pages; for
+opengwasdb-stores it also makes each source that reads its files unavailable,
+naming why, and no other source. The engine's clone, when no refresh fetched
+it, is fetched only when it lacks the revision the registry's `pixi.lock` pins;
+if it still lacks it, there is no older engine to stage instead, so the render
+stops with git's message and exits 2. A publish's own `git fetch` of og-dev-hub's
 `origin`, which decides the commit it publishes, is not one of these: it must
 succeed, or the publish is refused.
 
@@ -137,7 +142,7 @@ others.
 ## The collectors
 
 ```text
-pixi run site-data [--data-dir PATH] [--catalog-root PATH] [--registry PATH] [--strict]
+pixi run site-data [--data-dir PATH] [--catalog-root PATH] [--registry PATH] [--refresh] [--strict]
 ```
 
 `pixi run site-data` runs every collector and prints one line per source. Each
@@ -212,6 +217,18 @@ complete.
 - `tests/project-site-data/fixtures/board-graphql.json` is a response recorded
   once from the real API by `board.fetch`.
 
+
+**Private repositories on the board** (og-dev-hub#9). The board lists issues of
+every repository, private ones too. Its public view (above, *Visibility*) keeps
+an epic, ticket or milestone of a private repository, or of one `system.yaml`
+does not list, only as a count in `private` (`epics`, `active_epics`,
+`tickets`, `milestones`) and an epic's `private_children`: no title, number,
+link or Next text, and no blocked-by edge to it. No page is generated for such
+an epic. The Epics index, the Overview and an epic's page each say how many
+they leave out ("2 epics in private repositories are not shown."). A public
+epic's own title, Next line and purpose, and a public ticket's title, are drawn
+as written, even where they name a private repository's issue.
+
 ### Citations
 
 One extractor and one resolver serve the tickets (Work) and the ADRs
@@ -222,7 +239,7 @@ text cites and `project_site.collect.citations` says which tracked file a path m
   `.sh`, `.toml`), the path of a GitHub link to a file, or a dotted module name. A
   trailing `:line` (`:551`, `:10-20`) is not part of the path.
 - **Which file a path means.** The file itself when it is tracked (in the issue's own
-  repository first); otherwise the one tracked file of either repository that ends
+  repository first); otherwise the one tracked file of any repository read that ends
   with `/<path>`, so `encoding/codec.py` means `opengwasdb/encoding/codec.py`. When
   **more than one** file ends that way the citation is **unresolved**: it places
   nothing, is never guessed, and is listed with its candidates (`work.json`
@@ -319,89 +336,106 @@ takes another validator as an argument, for tests.
 
 ### Architecture (`architecture.json`)
 
-The architecture of both repositories (#418, epic #416), from og-dev-hub's `system.yaml`, the two
-hand-written model files `docs/architecture/components.yaml` and the code they
-claim. It reads **git, not checkouts**: the registry at the commit its clone's `main` names, or `HEAD` of the checkout `--registry` names (tracked files
-only) and the engine at its `main` through the bare clone the site build already
-keeps (`/data/opengwasdb/work/site/opengwasdb.git`, or `--engine-git`; `--engine-ref`
-names another ref). `pixi run site` fetches `main` into that clone first (`--refresh-engine`);
-a failed fetch leaves the `main` the clone has and is recorded in `engine.refresh`. The site's *docs* mirror stays at the
-engine revision `pixi.lock` pins; the map shows current work, so it does not.
+The architecture of every repository og-dev-hub's `system.yaml` lists (#418, epic
+#416, og-dev-hub#9), from that file, each repository's hand-written
+`docs/architecture/components.yaml` and the code it claims. It reads **git, not
+checkouts**, through each repository's read handle (above): `main` of its clone,
+or `HEAD` of the checkout `--registry` names for opengwasdb-stores (tracked
+files only). A clone is `<work root>/<name>.git`, so `OPENGWASDB_SITE_ROOT` names
+another set of clones (the tests' fixtures); no flag names one repository's git
+by its kind. `pixi run site` fetches every clone first; a failed fetch leaves
+the `main` the clone has and is recorded in `repos.<name>.refresh`. The site's
+*docs* mirror stays at the engine revision `pixi.lock` pins; the map shows
+current work, so it does not.
+
+**Which repositories.** All of `system.yaml`'s `repos`, in its order:
+
+- `visibility: null` is **planned**: listed, drawn as a planned container, never cloned;
+- a clone or fetch that fails is **that repository's gap**, with git's message (`gaps.<repo>.unreadable`), and the rest is collected;
+- a repository without `docs/architecture/components.yaml`, or with one that cannot be used, is a gap too (`gaps.<repo>.no_model`): its components, code and gaps are **unknown**, never zero. `load_model` checks everything the collector reads: each component is a mapping with an `id` and a `name` of text, ids unique, `paths` and `stages` lists of text, `layer` a whole number, and the model's `layers` and `stages` lists of mappings;
+- a component id is one panel's address, so it is unique across the models: a model that repeats an id an earlier repository's model (in `system.yaml`'s order) has is that later repository's gap, naming the id and the first repository ("another repository" when that one is private), and its components are unknown. No repository's model ever makes the source unavailable for the others (og-dev-hub ADR 0001);
+- og-dev-hub itself is one of them, read through its clone like any other (its `system.yaml` is read from the working tree);
+- a `private` repository is collected whole (orchestration needs its branches), and the pages draw it as its container only (see *Visibility* below).
 
 The model files. Each has `repo` and `components`: `id`, `name`, `container`,
-`stages`, `summary`, `paths`. The engine's has `layers` (top to bottom, `layer`
-and `name`) and a `layer` on every component. The registry's also has `stages`
-(the pipeline's stages stay with opengwasdb-stores). The system itself (`system`,
-`people`, `external`, `containers`, `container_relations`) is og-dev-hub's
-`system.yaml` (#8), read from this checkout's working tree: publishing renders a clean
-checkout, so the tree is the published state. `collect/architecture_model.py`'s
-`load_system` checks the five keys and their shapes, that ids are unique across
-`people`, `external` and `containers`, and that every relation names one of them; a
+`stages`, `summary`, `paths`. A model may declare `layers` (top to bottom,
+`layer` and `name`, today opengwasdb's), and then every component has a `layer`;
+it may hold `stages` (the pipeline's stages stay with opengwasdb-stores). The
+system itself (`system`, `people`, `external`, `containers`,
+`container_relations`, `repos`) is og-dev-hub's `system.yaml` (#8), read from
+this checkout's working tree: publishing renders a clean checkout, so the tree
+is the published state. `collect/architecture_model.py`'s `load_system` checks
+the keys and their shapes, that each person, external system and container has
+an `id` and a `name` of text (the same check, with the same rule, as a model's
+components: an id that is not text is refused), that ids are unique across
+`people`, `external` and `containers`, that every relation names one of them, and that each of `repos`
+has a unique `name` and a `visibility` of `public`, `private` or `null`; a
 `system.yaml` that fails makes the source unavailable with the error naming the
-problem, and the tests read the real file through it. Its `repos` list is loaded and not
-drawn. A components file that still holds a system section has it **ignored and reported
-as a gap**, never a failed build; a component whose `container` is no container of
-`system.yaml` is a gap naming both. A path
-ending in `/` claims a directory; any other path claims one file; the longest
-claimed prefix wins. Nothing else is written by hand: edges, counts and ADR
-placement are measured.
+problem, and the tests read the real file through it. A components file that
+still holds a system section has it **ignored and reported as a gap**, never a
+failed build; a component whose `container` is no container of `system.yaml` is
+a gap naming both. A path ending in `/` claims a directory; any other path
+claims one file; the longest claimed prefix wins. Nothing else is written by
+hand: edges, counts and ADR placement are measured.
 
 | Key | Content |
 |---|---|
-| `registry`, `engine` | `repo`, `ref`, `commit` read, `committed` (that commit's date), `refresh`, `model` (`true`, or `false` when the ref has no model file) and `note`. Each `refresh` is `null` when no fetch was asked for, else `{ok, error}` with git's own message (the registry's is its clone's refresh; a named checkout is never fetched); the pages show the commit and its date, and a visible line when the refresh failed |
-| `model` | `system`, `people`, `external`, `containers`, `container_relations` (all `system.yaml`'s), `stages` (the registry's), `layers` (the engine's; `[]` without its model) |
-| `components` | this repository's, then the engine's: the model's keys plus `repo` (`registry` or `engine`), `files` and `lines` (claimed code files), `tracked` (every tracked file claimed) |
-| `files` | `{registry: [...], engine: [...]}` (#422): every tracked code file of each tree at the ref read (the files the ownership rule counts as code), sorted, read NUL-safely. A planned `adds` is told to exist from it. Added to the file; no other field changed |
-| `gaps.<repo>` | `unclaimed` (code files no component claims, by path) and `stale` (`{path, component}` claims matching no tracked file), `system_sections` (system keys the model file still holds, ignored) and `containers` (`{component, container}` for a container `system.yaml` lacks); `gaps.engine` is `null` (unknown, not `0`/`0`) when the engine has no model at the ref |
-| `baseline` | `path`, `entries` (how many imports the committed baseline lists; `null` with a `note` when it is not in this repository at the commit read, never 0) and `measured` (the engine imports the code makes) |
-| `edges` | `from`, `to`, `imports`, `scope` (`engine`, `registry`, `registry_to_engine`), `upward` |
-| `upward_imports` | each engine import that goes up a layer (#419), sorted by `file` then `name`: `file` (the importing file), `name` (the absolute imported name, a relative import resolved), `from`, `to` (component ids), `from_layer`, `to_layer`. The engine's layering baseline lists the same pairs. `null` when the engine has no model at the ref (the layering cannot be measured), like `summary.upward_imports`; never `[]` |
-| `adrs` | every `docs/adr/NNNN-*.md` of both repositories: `repo`, `number`, `path`, `title`, `status`, `url`, `components` |
-| `summary` | `edges`, `upward_edges`, `upward_imports`, `registry_to_engine_edges`, `registry_to_engine_imports`, `adrs_total`, `adrs_placed`; the engine's half of the graph is `null` without its model (see below) |
+| `repos.<name>` | every listed repository, in `system.yaml`'s order: `name`, `visibility`, `status`, `planned`, `url`, `ref`, `commit` read, `committed` (that commit's date), `refresh` (`null` when no fetch was asked for, else `{ok, error}` with git's own message), `source_root` (`src/` when it has one, else `""`), `model` (`true`; `false` with a `note` when the ref has no usable model file; `null` when planned or unreadable) and `error` (why it could not be read). The pages show each commit and its date, and a visible line when a refresh failed |
+| `model` | `system`, `people`, `external`, `containers`, `container_relations` (all `system.yaml`'s), `stages` (every model's that holds them, opengwasdb-stores', each with the `repo` it came from), `layers` (`{repo: [...]}`, each model's that declares them; `{}` when none does) |
+| `components` | each modelled repository's, in `system.yaml`'s order: the model's keys plus `repo` (the repository's name), `files` and `lines` (claimed code files), `tracked` (every tracked file claimed) |
+| `files` | `{<repo>: [...]}` (#422): every tracked code file of each repository with a model at the ref read, sorted, read NUL-safely; `null` for a repository read without a model (what is code is not known). A planned `adds` is told to exist from it |
+| `gaps.<repo>` | for each repository not planned: `unreadable` (git's reason, or `null`), `no_model` (why there is no model, or `null`), `unclaimed` (code files no component claims, by path) and `stale` (`{path, component}` claims matching no tracked file), both `null` (unknown, not empty) without a model; `system_sections` (system keys the model file still holds, ignored) and `containers` (`{component, container}` for a container `system.yaml` lacks) |
+| `baseline` | `path`, `from` (`opengwasdb-stores`), `entries` (how many imports its committed baseline lists; `null` with a `note` when it is not there at the commit read, never 0) and `measured` (the engine imports its code makes; `null` without its model) |
+| `edges` | `from`, `to`, `imports`, `scope` and `upward`: `scope` is `within` (with `repo`) or `across` (with `from_repo` and `to_repo`) |
+| `upward_imports` | each import within a repository that goes up its layers (#419), sorted by `file` then `name`: `file` (the importing file), `name` (the absolute imported name, a relative import resolved), `from`, `to` (component ids), `from_layer`, `to_layer`. The layering baseline of the repository that declares the layers lists the same pairs. `null` when no model read declares layers (the layering cannot be measured); never `[]` |
+| `adrs` | every `docs/adr/NNNN-*.md` of every repository read: `repo`, `number`, `path`, `title`, `status`, `url`, `components`, `cites` (`[{repo, number}]`, below) |
+| `summary` | `edges` (the edges measured), `upward_edges`, `upward_imports`, `registry_to_engine_edges`, `registry_to_engine_imports`, `adrs_total`, `adrs_placed`; what cannot be measured is `null` (see below) |
 
 A code file that cannot be read, or a Python file that does not parse, makes the
 source unavailable with an error naming the path; a count is never a guess of 0.
-A claimed script under `tools/` or `workflow/` is a source of imports even though
-no one can import it.
+A claimed Python file that is not importable (a script under `tools/` or
+`workflow/`) is a source of imports even though no one can import it.
 
-Code is a tracked `.py` under `opengwasdb/` in the engine, and a `.py`, `.smk`,
-`.sh`, `.R`, `.r` or `Snakefile` under `src/`, `workflow/` or `tools/` here (R counts for
-ownership and lines, not for the Python import graph). **Gaps never
-fail the build.** The engine's own CI fails on its unclaimed files, and this
-repository's test (opengwasdb-stores' `tests/architecture/test_architecture_ownership.py`)
-fails on its own; the collector only reports them, on the page. An engine ref with
-no model file is not an error either: `engine.model` is `false`, `engine.note`
-names the ref and commit, the engine has no components or edges and its gaps are unknown (`null`), and this
-repository's half is complete. Everything on the engine's half that its claims
-resolve is then `null` in `summary`, never 0: `edges`, `upward_edges`,
-`upward_imports` and `registry_to_engine_edges` (the seam's component pairs).
-`registry_to_engine_imports` stands, because it is measured from the names, and
-the page says the layering cannot be measured until the engine's model is at the
-ref read. A ref that cannot be read at all makes the source
-unavailable.
+**Code** is derived from the model, never written per repository
+(`architecture_model.code_roots`): the roots are the top-level directories of
+every path a repository's components claim, and a code file is a tracked `.py`,
+`.smk`, `.sh`, `.R`, `.r` or `Snakefile` under one of them (R counts for
+ownership and lines, not for the Python import graph). For opengwasdb that is
+`opengwasdb/`, and for opengwasdb-stores `src/`, `workflow/`, `tools/` and
+`stores/`; a claim of a file under `docs/` makes `docs` a root too. **Gaps never
+fail the build** (og-dev-hub ADR 0001). Each repository's own CI fails on its
+unclaimed files (opengwasdb-stores' `tests/architecture/test_architecture_ownership.py`
+with this rule); the collector only reports them, on the page.
 
-Files are read by object id, so a path holding a newline is its own file. An
-**import** is resolved against every tracked module first, then to that module's
-owner: an unclaimed module gives no edge (it is a gap), and never takes its
-package's owner. An import is counted per (file, imported name) between modules that components
-claim, relative imports resolved. An edge is `upward` when it is inside the engine
-and goes to a component on a higher layer; the same layer and lower layers are not.
-`registry_to_engine` is the seam between the repositories.
+A **module**'s dotted name is its path from a source root: `src/` when the
+repository has one, else its root. An **import** is resolved against every
+tracked module of the repositories with a model, the importing repository's
+first (two may hold a module of the same name), then to that module's owner: an
+unclaimed module gives no edge (it is a gap), and never takes its package's
+owner. An import is counted per (file, imported name) between modules that
+components claim, relative imports resolved. An edge is `within` one repository
+or `across` two. It is `upward` when it is within a repository and goes to a
+component on a higher layer; the same layer and lower layers are not.
 
-An **engine import** is a name that is `opengwasdb` or starts with
-`opengwasdb.`, counted per (importing file, imported name) over this
-repository's claimed Python files. The name alone decides it, so the seam does
-not need an engine checkout or the engine's model: `registry_to_engine_imports`
-is that count, and it stands whether or not the engine's model is there.
-`registry_to_engine_edges` is the number of component pairs those imports make,
-which the engine's claims resolve, so it is `null` when the engine has no model
-at the ref read — unknown, never 0. `baseline` reports
-`docs/architecture/engine-imports-baseline.yaml`, which lists those imports and
-only shrinks: opengwasdb-stores' `tests/architecture/test_engine_imports_baseline.py`
-fails on an import the file does not list (naming the file, the name and, when
-the engine was read, the engine component it lands in) and on a listed import
-that is gone. One measurement feeds both the seam counts and the baseline, so
-they cannot disagree.
+**The seam** between opengwasdb-stores and opengwasdb is the one pair of
+repositories held to a baseline (#421; `architecture_graph.SEAM`). An **engine
+import** is a name that is `opengwasdb` or starts with `opengwasdb.`, counted per
+(importing file, imported name) over opengwasdb-stores' claimed Python files.
+The name alone decides it, so the seam does not need an engine checkout or the
+engine's model: `registry_to_engine_imports` is that count, equal to the imports
+on the pair's across-edges, and it stands whether or not opengwasdb's model is
+there (`null` only without opengwasdb-stores' own). `registry_to_engine_edges`
+is the number of component pairs among the pair's across-edges, which
+opengwasdb's claims resolve, so it is `null` when opengwasdb has no model at the
+ref read — unknown, never 0. `upward_edges` and `upward_imports` are `null` when
+no model read declares layers. `baseline` reports
+`docs/architecture/engine-imports-baseline.yaml` in opengwasdb-stores, which
+lists those imports and only shrinks: opengwasdb-stores'
+`tests/architecture/test_engine_imports_baseline.py` fails on an import the file
+does not list (naming the file, the name and, when the engine was read, the
+engine component it lands in) and on a listed import that is gone. One
+measurement feeds both the seam counts and the baseline, so they cannot
+disagree.
 
 An **ADR** is placed by the code it cites (a path, a dotted module name such as
 `opengwasdb.store.paths`, or a GitHub link to a file, resolved through the
@@ -409,7 +443,45 @@ claims; a bare suffix such as `store/paths.py` only when exactly one tracked fil
 ends with it) and by a component's `name` in its title (case-insensitive, at the start of a word, with no boundary at its end). A
 component's name that appears only in the body places nothing, however often.
 `components` maps a component id to `code` or `title`; an ADR placed nowhere has
-`{}` and is listed on the page.
+`{}` and is listed on the page. ADRs are collected from every repository read,
+and code is placed only into repositories with a model. A citation is resolved
+in the ADR's own repository first, then in the repositories with a model; a
+GitHub link counts when it names a listed repository read.
+
+An ADR's text citing another decision across repositories in og-dev-hub ADR
+0002's form, `<repo> ADR NNNN` where `<repo>` is a listed repository, is
+recorded on it as `cites: [{repo, number}]`, and the pages show it as a link to
+that ADR (plain text when that ADR was not collected, or is a private
+repository's).
+
+**Visibility** (og-dev-hub#9). What "private" covers is **what the site
+collects from a private repository**, or from one `system.yaml` does not list:
+its files, paths, components, stages, gaps, commits, branches and work items,
+its ADRs (titles and bodies), its board items (epics, tickets and milestones:
+their titles, numbers, links, Next lines and purposes) and their pages. All of
+that is **hidden**: such a repository is drawn on the public site as its
+container only, in the pages and in the component panel's embedded JSON. Text
+**authored in a public repository or on a public item** is **passed through as
+written**, even where it mentions a private repository or one of its issue
+numbers: the hub's own docs, a public epic's title, body, Next line and purpose,
+public records and public ADRs. That text is already published on GitHub by its
+own repository; the site never rewrites it.
+
+One function makes the public view of the collected files
+(`project_site.architecture_public.public_view`), and every page and the panel
+render from it alone: `pages.generate` applies it to everything it loads, and
+each architecture page applies it again. It is an **allow-list**: it never
+starts from a collected document, but builds `architecture.json`, `work.json`
+and `board.json` from the fields a page or the panel draws, named in that
+module, so a field a collector adds reaches no page until it is named there.
+`records.json`, committed in a public repository, passes through less any
+private repository's epic, which gets no page. Which repositories are private is
+`system.yaml`'s `visibility`: through the `architecture.json` the same run
+collected, else `work.json`'s record of it, else the file in this checkout; a
+repository the board names that `system.yaml` does not list is treated as
+private, because a fallback must be safe. Its container comes from
+`system.yaml`'s `containers`, which is public. A gap or reason the collectors
+write names a repository, never a private repository's commit, component or path.
 
 **The component panel** (#435). On Pipeline, Structure and health and the Work
 map, a component's box in the engine and registry diagrams (a Graphviz `URL`),
@@ -420,10 +492,10 @@ the panel shows:
 
 - its name, repository, container, layer and summary;
 - its size and stages;
-- the paths it claims, each linked to GitHub at the commit read (`registry.commit` or `engine.commit`);
+- the paths it claims, each linked to GitHub at the commit read (`repos.<repo>.commit`);
 - the work on it now, from `work.json`'s `signals`: by owner, each item with its state and `what`;
 - its imports each way, from `edges`, with their counts, an upward one marked;
-- the ADRs placed on it, with how each was placed (`code`: cites its code; `title`: names it in its title).
+- the ADRs placed on it, with how each was placed (`code`: cites its code; `title`: names it in its title), and the ADRs each cites across repositories.
 
 Each page embeds the panel's data as JSON built from those fields only, never
 a collected document whole, because the collected files hold host paths, which
@@ -433,8 +505,8 @@ The script sets every fact as text.
 
 Unknown is never "none":
 - Without `work.json`, every component's work is unknown, with the reason.
-- So is each engine component's when `work.json`'s `unmeasured.engine` is set.
-- Without the engine's model, a registry component's imports into the engine are said not to be placed on components.
+- So is each component's of a repository named in `work.json`'s `unmeasured`.
+- While a repository read has no model, every component's imports into it are said not to be placed on components.
 
 Without `architecture.json` there is no panel, and no name is a link. Only an
 id of lower-case letters, digits and `_`, starting with a letter, becomes a
@@ -455,18 +527,28 @@ Paused (`kind: epic`); otherwise the epic or ticket a branch's name points at
 that the board does not list (`kind: issue`, status `Off board`, or the status
 of a closed epic); otherwise the branch itself (`kind: branch`, labelled by its
 name). A branch's owner is the epic its name gives (`orch/<epic>/<ticket>`, with an
-optional `-slug` after the ticket; `orch/<epic>-...`), looked up in either repository, else its ticket's epic
-(`fix/issue-345`, `345-...`), else the ticket, else the branch.
+optional `-slug` after the ticket; `orch/<epic>-...`), else its ticket's epic
+(`fix/issue-345`, `345-...`), else the ticket, else the branch. An epic's lanes live
+in each repository whose files it changes, so a lane's numbers are those of the
+listed repository whose epic `#<epic>` holds the ticket `#<ticket>` on the board
+(og-dev-hub#9: opengwasdb-stores' `orch/6/7-stores` is og-dev-hub#6's, for
+og-dev-hub#7). Otherwise, and for an epic's own branch, they are the repository's
+whose files the branch changes, which is its own; never another repository found
+by `system.yaml`'s order. A branch that changes no file has no such repository:
+its owner is unknown, it is its own owner (`kind: branch`, status `Owner unknown`),
+and `branches.list[].owner_unknown` says why.
 
 **Branches.** A branch counts when it is ahead of `main` and its newest commit
 is within `days` (21) days. Its files are `git diff --name-only -z main...<branch>`.
-The published page reads **pushed** branches only: the engine's bare clone after
-`git fetch origin +refs/heads/*:refs/heads/*`, and the registry's bare clone the
-same way; a registry checkout named by `--registry` as `refs/remotes/origin/*`
-after `git fetch origin`. A failed fetch is recorded in
-`branches.sources[].fetch` and shown on the page, and the refs already there are
-read. The `conflicts` command can add the local branches of other git
-directories (`--local`), which the page never shows. A branch read from two clones
+The published page reads **pushed** branches only, of every listed repository that
+was read (og-dev-hub#9): each bare clone after its run's one
+`git fetch origin +refs/heads/*:refs/heads/*`; a registry checkout named by
+`--registry` as `refs/remotes/origin/*` after `git fetch origin`. A failed fetch is
+recorded in `branches.sources[].fetch` and shown on the page, and the refs already
+there are read; a repository whose branches cannot be read at all is recorded in
+`branches.sources[].error` and the others are read. The `conflicts` command can add
+the local branches of other git directories (`--local`), each a clone of a listed
+repository recognised by its `origin` URL, which the page never shows. A branch read from two clones
 counts once, as the copy further ahead (a tie keeps the pushed one), and
 `branches.sources[].count` is what each read found. A branch with no merge base
 with `main`, such as the orphan `cla-signatures` the CLA check keeps, is no work
@@ -511,29 +593,29 @@ is `uncoordinated` if any pair is, else `unlinkable` if any pair is, else `coord
 its `coordinated` is `true` only for the last. The page and `conflicts` never call an
 `unlinkable` meet uncoordinated.
 
-**Unmeasured.** Without the engine's architecture model at the ref read
-(`architecture.engine.model` false) no engine file belongs to a component, so
-engine-side work is **unknown**, never "no work": `unmeasured` is
-`{"engine": <reason>}` (empty otherwise), engine signals and meets are not
-produced, the page says engine-side work was not measured, and `conflicts` on
-engine files or an engine branch exits 2. Registry-side meets are still measured.
+**Unmeasured.** Without a repository's architecture model at the ref read (or when
+it could not be read) none of its files belongs to a component, so its work is
+**unknown**, never "no work": `unmeasured` is `{<repo>: <reason>}` for each such
+repository (empty otherwise), its signals and meets are not produced, the page says
+its work was not measured, and `conflicts` on its files or a branch of it exits 2.
+The other repositories' meets are still measured.
 
 | Key | Content |
 |---|---|
 | `schema_version` | `1` |
-| `inputs` | `board.collected_at`; `architecture.collected_at` and the `ref`/`commit` read of each repository |
+| `inputs` | `board.collected_at`; `architecture.collected_at` and `architecture.repos.<name>` (`ref`, `commit`, `visibility`) of each listed repository |
 | `owners` | the owners with at least one signal: `key`, `kind`, `title`, `url`, `status`, `workstream` |
 | `components` | the components with at least one signal: `id`, `name`, `repo` |
 | `signals` | as above: `component`, `owner`, `item`, `via`, `state`, `path`, `what`; `path` is `found` (a tracked file, or a branch's file), `not found`, `unchecked` (existence not known) or `n/a` (a dotted module) |
-| `unmeasured` | `{}`, or `{engine: reason}` when the engine's model is missing (see above) |
+| `unmeasured` | `{}`, or `{<repo>: reason}` for each repository read without a model (see above) |
 | `not_found` | the cited code paths no tracked file matches, attributed by claim: `owner`, `item`, `cited`, `component` |
 | `unresolved` | the citations of live tickets and epics that more than one tracked file ends with: `owner`, `item`, `cited`, `candidates` (the paths) |
 | `meets` | `component`, `owners`, `items` (owner to its items there), `pairs` (`owners`, `coordinated`, `coordination`, `edges`, `epic_branches`), `coordinated`, `coordination` |
 | `plans` | the tickets' planned changes and, for a closed ticket, what was checked, as above (#422) |
 | `waits` | every open blocking edge among the live epics' tickets: `{item, on}` |
 | `tickets` | every open ticket of a live epic, to its owner (what `conflicts --ticket` reads) |
-| `branches.sources` | per repository read: `repo`, `git_dir`, `main`, `days`, `fetch` (`null`, or `{ok, error}`), `local`, `count`, `skipped` (each branch left out: `name`, `reason`) |
-| `branches.list` | `repo`, `name`, `ahead`, `committed`, `files`, `epic`, `ticket` (from the name), `local`, and the resolved `owner`, `item`, `components` |
+| `branches.sources` | per repository read: `repo`, `git_dir`, `main`, `days`, `fetch` (`null`, or `{ok, error}`), `error` (`null`, or why its branches could not be read), `local`, `count`, `skipped` (each branch left out: `name`, `reason`) |
+| `branches.list` | `repo`, `name`, `ahead`, `committed`, `files`, `epic`, `ticket` (from the name), `local`, and the resolved `owner`, `item`, `components`, `owner_unknown` (`null`, or why the owner could not be told) |
 | `summary` | `owners`, `meets`, `coordinated`, `uncoordinated`, `unlinkable` (these three add up to `meets`), `branches`, `unresolved`, `not_found` (the lengths of those lists) |
 
 The page's tiles are `summary`; every other figure on it is a count of these rows.
@@ -541,22 +623,37 @@ The page's tiles are `summary`; every other figure on it is a count of these row
 **The command line.** `pixi run architecture` (`python3 -m project_site.architecture`)
 runs the same collectors on the spot, or reads a collection with `--data DIR`:
 
-- `check`: for each repository, the code files no component claims and the
-  claims that match no tracked file, and the engine's `docs/architecture/layering-baseline.yaml`
-  at the ref read, entry by entry (importing file and imported name, never a count, so a new import
+```text
+pixi run architecture check [--repo NAME] [--registry PATH] [--system FILE] [--refresh] [--data DIR]
+pixi run architecture conflicts (--branch B [--repo NAME] | --files PATH... --repo NAME [--ticket repo#n])
+                                [--local GIT_DIR...] [--registry PATH] [--system FILE] [--refresh] [--days N] [--data DIR]
+```
+
+`--repo NAME` takes a repository `system.yaml` lists; `engine` and
+`registry` are accepted for `opengwasdb` and `opengwasdb-stores` **for this
+release only** (og-dev-hub#9), because the orchestrate preflight still passes
+them. `--system FILE` reads another `system.yaml` than this checkout's: its
+`repos` are the repositories collected and the names `--repo` accepts, so a
+test, or a question about a few repositories, reads only those. `--registry PATH`
+reads that opengwasdb-stores checkout instead of its clone, and `--refresh`
+fetches every listed repository once first.
+
+- `check [--repo NAME]`: for each repository with a model (or the one `--repo` names), the code files no component claims and the
+  claims that match no tracked file, and the `docs/architecture/layering-baseline.yaml`
+  of each repository whose model declares layers, at the ref read, entry by entry (importing file and imported name, never a count, so a new import
   cannot hide behind a fixed one): each `new:` import not in the baseline and each `stale:` entry no longer
   imported is named; no baseline file is not a failure. What cannot be measured is
-  printed with its reason and is **unknown, never a pass**: an engine ref with no model, an engine fetch recorded as failed (what was read may be out of date), a repository or file
+  printed with its reason and is **unknown, never a pass**: the repository `--repo` names having no model or being unreadable, a fetch recorded as failed (what was read may be out of date), a repository or file
   that cannot be read, a file YAML cannot load (any constructor failure too), one with no `allowed` list, an entry that is not
   exactly a `file` and a `name` of text, or an entry listed twice (this repository's own baseline is read by the same loader, with the same refusals). Exit **1** if anything measured has a problem (an unclaimed or stale claim, a new or
   stale baseline entry), whatever else is unknown; otherwise **2** if any part could not be measured;
-  otherwise 0.
-- `conflicts --branch B [--repo engine|registry]` or `--files PATH... --repo engine|registry [--ticket repo#n]` (`--files` without `--repo` exits 2: a bare path can mean a file of either repository):
+  otherwise 0. Without `--repo`, a repository with no model is named and is not a failure: it is a gap the site draws (og-dev-hub ADR 0001).
+- `conflicts --branch B [--repo NAME]` or `--files PATH... --repo NAME [--ticket repo#n]` (`--files` without `--repo` exits 2: a bare path can mean a file of any repository; a `NAME` `system.yaml` does not list exits 2):
   the components the work touches, the other owners' `building` or `active` work on each
   with its ticket, epic, branch and cited files, and whether a blocking edge links `--ticket`
   (or the branch's ticket) to theirs. Exit 1 when any meet is uncoordinated or unlinkable (asking a person is the safe default; the message says which); 0 when none is;
   **2 when it cannot decide** (a source is unavailable, the branch is not in the
-  collection, a git directory or branch diff cannot be read, or the work is the engine's and its model is missing). `--local GIT_DIR...` adds those clones' local branches, `--refresh` fetches first.
+  collection, a git directory or branch diff cannot be read, or the work is in a repository whose model is missing). `--local GIT_DIR...` adds those clones' local branches, `--refresh` fetches first.
   Two more things leave it undecided: code that no component claims (a mistyped path, or
   a new one whose claim does not exist yet, so what it meets is unknown), and a fetch
   recorded as failed in the data read (`--refresh`'s, or the collection's own), since
@@ -592,15 +689,21 @@ are non-empty lists of text; `name` and `container` are text and `layer` a whole
 number. A component id (`component`, `to`, either end of a drop) is lower-case
 letters, digits and `_`, starting with a letter (the model's form, so it can never
 be markup), and must be an existing component or declared in `adds`; a new one needs a
-`name`, and a new engine component (paths under `opengwasdb/`) a `container` and a
-`layer` too. The board
+`name`, and a new component of a repository whose model declares layers (paths under
+that repository's code roots, today `opengwasdb/`) a `container` and a `layer` too. The board
 collector parses the block into `children[].plan` with `adds`, `moves`, `drops`
 (each `{from, to}`) and `absorbs`, every key present as a list. A block that
 cannot be used is never dropped: `plan` is `{invalid: reason}` (not YAML, unknown
 key, empty, a malformed item, more than one block, a block never closed) and the
 page shows the reason. The board collector does not know the components, so the
-`work` collector judges their ids once it knows them: when the engine's model
-is missing it cannot, and an id it does not find is not called unknown.
+`work` collector judges their ids once it knows them, against the union of the
+components of every repository with a model (og-dev-hub#9). An id in none of them
+makes the plan invalid, unless the plan **touches a repository without a model**:
+the ticket's own repository, the repository a path in `adds` or `moves` is in,
+or, for such a path that no model's claims or code roots cover, every listed
+repository without a model, since any of them could hold it ("without a model"
+is read without one, or planned). `repo_of` sees every listed repository for this. Then the id is **unknown**: the checks that name it
+are `held: null`, and `why` names that repository.
 
 **Judging a plan.** The `work` collector lists every ticket that has a plan, of
 any epic, open or closed, as `work.json`'s `plans` (sorted by epic, ticket):
@@ -609,28 +712,30 @@ any epic, open or closed, as `work.json`'s `plans` (sorted by epic, ticket):
 true for one the plan declares) and `checks`. An open ticket's plan is carried
 as planned and `checks` is empty, as it is for an invalid plan; `absorbs` is
 carried and never checked. Once the ticket is closed each item is checked
-against what the architecture collector read (the engine at its ref, this
-repository at the site's checkout):
+against what the architecture collector read (each repository at its ref).
+**Which repository a path is in** is the one repository whose claims cover it,
+else the one whose code roots do. When two repositories' claims cover it, or two
+repositories' code roots do and no claim settles it, it is not known (`held: null`,
+`why` naming both), never the first in `system.yaml`'s order:
 
 - `adds`: for each path, `{kind: adds, path, component, held, why}`; held only when
   the path is a tracked file (in `architecture.files`) **and** the named component
-  claims it. A path that does not exist is not held, saying so with the ref; without
-the engine's model that is still a measured fact (the tree was read), and the
-`why` says the claims were not judged.
+  claims it. A path that does not exist is not held, saying so with the ref.
 - `moves`: the same, with `to` as the component.
 - `drops`: `{kind: drops, from, to, imports, held, why}`; held when no import goes
   from `from` into `to`, else not held, naming how many remain. Without `architecture.edges`
   (absent or `null`) it is unknown: absence is never zero imports.
 
-Every check also has `repo` (`registry` or `engine`), the tree it was read in;
+Every check also has `repo` (the repository's name), the tree it was read in;
 the page's warning names that repository's ref and commit.
 
-`held` is `true`, `false`, or `null` for **unknown**: without the engine's model
-(`architecture.engine.model` false) an engine path that no registry claim covers,
-a path whose existence is not known (no `architecture.files`, the tree not read,
-or not a code file, since only code files are listed), and a drop with an end that is not a registry component, cannot be judged, and
-`why` says the model is missing at that ref. Missing the model is never an unmet
-item. An unmet item is a warning on the page, never a build failure: the ticket
+`held` is `true`, `false`, or `null` for **unknown**: a path no model's code
+covers while a repository read has no model (the `why` names those repositories,
+never with a commit), a path whose existence is not known (no `architecture.files`,
+the tree not read, or not a code file, since only code files are listed), a path
+two repositories could hold (above), and an item naming an id no model has in a
+plan that touches a repository without one, cannot be judged. Missing a model is
+never an unmet item. An unmet item is a warning on the page, never a build failure: the ticket
 may have closed on an epic's integration branch whose PR has not merged to the
 ref read. The `plans` key is additive, so `schema_version` stays `1`.
 

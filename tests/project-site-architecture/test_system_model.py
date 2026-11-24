@@ -80,6 +80,13 @@ class LoadSystemTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "`system`.*`name` and a `summary`"):
             model.load_system(broken(system={"summary": "The system."}))
 
+    def test_an_id_that_is_not_text_is_refused_as_a_models_is(self) -> None:
+        # og-dev-hub#9: one entity check for system.yaml and the components files, with one rule.
+        with self.assertRaisesRegex(ValueError, "system.yaml: `containers` #0 has no `id` of text"):
+            model.load_system(broken(containers=[{"id": 5, "name": "Five", "repo": "r"}]))
+        with self.assertRaisesRegex(ValueError, "component #0 has no `id` of text"):
+            model.load_model("components:\n  - {id: 5, name: Five}\n")
+
     def test_a_duplicate_id_across_people_external_and_containers_is_named(self) -> None:
         with self.assertRaisesRegex(ValueError, "duplicate id 'a'"):
             model.load_system(broken(people=[{"id": "a", "name": "P", "summary": "x"}]))

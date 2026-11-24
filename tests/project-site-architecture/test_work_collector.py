@@ -137,7 +137,7 @@ class UnmeasuredEngineTests(unittest.TestCase):
     def test_engine_side_work_is_reported_unmeasured_with_the_reason(self) -> None:
         self.assertEqual(
             self.result()["unmeasured"],
-            {"engine": "docs/architecture/components.yaml is not in opengwas/opengwasdb at main (eeeeeeeeeeee)"},
+            {"opengwasdb": "docs/architecture/components.yaml is not in opengwasdb at main (eeeeeeeeeeee)"},
         )
 
     def test_a_measured_engine_has_nothing_unmeasured(self) -> None:
@@ -271,6 +271,48 @@ class BranchOwnerTests(unittest.TestCase):
                               ticket="opengwasdb-stores#419"), repo=STORES),
         )
         self.assertEqual(states(result, "pages"), {("opengwasdb-stores#416", "opengwasdb-stores#419"): "building"})
+
+    def test_a_lane_belongs_to_the_repository_whose_epic_holds_its_ticket(self) -> None:
+        # og-dev-hub#9: `orch/6/7-stores` in opengwasdb-stores is og-dev-hub#6's lane for og-dev-hub#7,
+        # though ogdb-dashboard, listed earlier, also has an epic #6 on the board.
+        import work_fixtures as fx
+
+        arch = {**ARCHITECTURE, "repos": {**ARCHITECTURE["repos"], "ogdb-dashboard": fx.repo("ogdb-dashboard", model=False),
+                                          "og-dev-hub": fx.repo("og-dev-hub", model=False)}}
+        result = compute(
+            board(epic("ogdb-dashboard#6", "Active", [ticket("ogdb-dashboard#2")]),
+                  epic("og-dev-hub#6", "Active", [ticket("og-dev-hub#7"), ticket("og-dev-hub#9")])),
+            branch_set(branch("orch/6/7-stores", ["src/project_site/pages.py"], repo=STORES, epic="opengwasdb-stores#6",
+                              ticket="opengwasdb-stores#7"), repo=STORES),
+            architecture=arch,
+        )
+        self.assertEqual(states(result, "pages"), {("og-dev-hub#6", "og-dev-hub#7"): "building"})
+        self.assertEqual((result["branches"]["list"][0]["owner"], result["branches"]["list"][0]["item"]),
+                         ("og-dev-hub#6", "og-dev-hub#7"))
+
+    def test_without_an_epic_holding_its_ticket_a_lane_is_the_repositorys_whose_files_it_touches(self) -> None:
+        # Never system.yaml's order: og-dev-hub, listed first here, has an epic #58 on the board, and does not get it.
+        import work_fixtures as fx
+
+        arch = {**ARCHITECTURE, "repos": {"og-dev-hub": fx.repo("og-dev-hub", model=False), **ARCHITECTURE["repos"]}}
+        result = compute(
+            board(epic("og-dev-hub#58", "Active", [ticket("og-dev-hub#1")])),
+            branch_set(branch("orch/58-deepen-modules", ["opengwasdb/store/s.py"], epic="opengwasdb#58"),
+                       branch("orch/58/59", ["opengwasdb/query/q.py"], epic="opengwasdb#58", ticket="opengwasdb#59")),
+            architecture=arch,
+        )
+        owners = {b["name"]: (b["owner"], b["item"]) for b in result["branches"]["list"]}
+        self.assertEqual(owners, {"orch/58-deepen-modules": ("opengwasdb#58", "branch:opengwasdb:orch/58-deepen-modules"),
+                                  "orch/58/59": ("opengwasdb#58", "opengwasdb#59")})
+        self.assertEqual(next(o for o in result["owners"] if o["key"] == "opengwasdb#58")["status"], "Off board")
+
+    def test_a_lane_that_touches_no_file_has_an_unknown_owner_and_is_named_as_such(self) -> None:
+        result = compute(board(epic("opengwasdb#58", "Active", [ticket("opengwasdb#1")])),
+                         branch_set(branch("orch/58-empty", [], epic="opengwasdb#58")))
+        listed = result["branches"]["list"][0]
+        self.assertEqual((listed["owner"], listed["item"]), ("branch:opengwasdb:orch/58-empty", "branch:opengwasdb:orch/58-empty"))
+        self.assertEqual(listed["owner_unknown"], "it changes no file, so which repository's epic #58 it is is not known")
+        self.assertNotIn("opengwasdb#58", [o["key"] for o in result["owners"]])
 
     def test_a_branch_naming_only_a_ticket_belongs_to_that_tickets_epic(self) -> None:
         result = compute(

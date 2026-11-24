@@ -32,14 +32,21 @@ def component(cid: str, name: str, repo: str, paths: list[str]) -> dict:
     return {"id": cid, "name": name, "repo": repo, "paths": paths}
 
 
+def repo(name: str, *, ref: str = "main", commit: str = "e" * 40, model: bool | None = True, note: str | None = None,
+         **more: object) -> dict:
+    """One repository as `architecture.json`'s `repos` records it (og-dev-hub#9)."""
+    return {"name": name, "visibility": "public", "status": None, "planned": False, "ref": ref, "commit": commit,
+            "committed": None, "refresh": None, "model": model, "note": note, "error": None, **more}
+
+
 ARCHITECTURE = {
     "source": "architecture", "available": True, "collected_at": "2026-11-02T12:00:00Z", "error": None,
-    "engine": {"ref": "main", "commit": "e" * 40, "model": True, "note": None}, "registry": {"ref": "HEAD", "commit": "r" * 40},
+    "repos": {STORES: repo(STORES, ref="HEAD", commit="r" * 40, source_root="src/"), ENGINE: repo(ENGINE, source_root="")},
     "components": [
-        component("enc", "Store Encoding", "engine", ["opengwasdb/encoding/"]),
-        component("query", "Query", "engine", ["opengwasdb/query/"]),
-        component("store", "Store envelope", "engine", ["opengwasdb/store/"]),
-        component("pages", "Site pages", "registry", ["src/project_site/"]),
+        component("enc", "Store Encoding", ENGINE, ["opengwasdb/encoding/"]),
+        component("query", "Query", ENGINE, ["opengwasdb/query/"]),
+        component("store", "Store envelope", ENGINE, ["opengwasdb/store/"]),
+        component("pages", "Site pages", STORES, ["src/project_site/"]),
     ],
 }
 
@@ -53,12 +60,12 @@ def branch_set(*found: dict, repo: str = ENGINE, fetch: dict | None = None) -> d
     return {"repo": repo, "git_dir": f"/git/{repo}", "main": "main", "days": 21, "fetch": fetch, "branches": list(found)}
 
 
-# The engine ref has no architecture model yet: no engine components, and `engine.model` is false.
+# The engine ref has no architecture model yet: no engine components, and its `model` is false.
 NO_ENGINE_MODEL = {
     **ARCHITECTURE,
-    "engine": {"ref": "main", "commit": "e" * 40, "model": False,
-               "note": "docs/architecture/components.yaml is not in opengwas/opengwasdb at main (eeeeeeeeeeee)"},
-    "components": [c for c in ARCHITECTURE["components"] if c["repo"] == "registry"],
+    "repos": {**ARCHITECTURE["repos"], ENGINE: repo(
+        ENGINE, model=False, note="docs/architecture/components.yaml is not in opengwasdb at main (eeeeeeeeeeee)")},
+    "components": [c for c in ARCHITECTURE["components"] if c["repo"] == STORES],
 }
 
 

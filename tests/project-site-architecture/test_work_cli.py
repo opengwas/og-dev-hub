@@ -31,6 +31,26 @@ from project_site.collect import architecture as architecture_collector, common
 CITED = ["opengwasdb/encoding/se_range.py"]
 
 
+def engine_in_work_root(root: Path, engine: dict[str, str]) -> Path:
+    """A work root under `root` whose opengwasdb clone is the fixture `engine`, built in place; returns the work root.
+
+    The commands read every repository through its read handle, whose clone is
+    `<work root>/<name>.git`: this is how a test points them at a fixture
+    (og-dev-hub#9). The clone has no `origin`, so a `--refresh` fails to fetch it
+    on any host, and `work_root_patches` points GitHub nowhere: no test reaches
+    the network.
+    """
+    work = root / "work"
+    afx.make_bare_repo(work / "opengwasdb.git", engine)
+    return work
+
+
+def work_root_patches(work: Path, root: Path) -> list:
+    """The patches that make the commands read `work` as the site's work root, and find no network."""
+    return [mock.patch.dict(os.environ, {cli.site_paths.WORK_ROOT_ENV: str(work)}),
+            mock.patch.object(cli.site_paths, "GITHUB", str(root / "no-network"))]
+
+
 def run(*argv: str) -> tuple[int, str]:
     out = io.StringIO()
     code = cli.main(list(argv), stdout=out)
@@ -82,7 +102,8 @@ class ConflictsTests(unittest.TestCase):
     def test_files_without_a_repo_exit_2_with_a_one_line_reason(self) -> None:
         code, text = run("conflicts", "--data", self.data(blocked=False), "--files", "opengwasdb/encoding/new.py")
         self.assertEqual(code, 2)
-        self.assertEqual(text.strip(), "cannot decide: --files needs --repo engine or --repo registry: a bare path can mean a file of either repository")
+        self.assertEqual(text.strip(), "cannot decide: --files needs --repo NAME (a repository system.yaml lists): "
+                                       "a bare path can mean a file of any repository")
 
     def test_files_that_meet_nothing_exit_0(self) -> None:
         code, text = run("conflicts", "--data", self.data(blocked=False), "--repo", "engine", "--files", "opengwasdb/store/x.py", "README.md")
@@ -110,8 +131,7 @@ class UnmeasuredAndUnlinkableTests(unittest.TestCase):
         )
         code, text = run("conflicts", "--data", self.collection(result, NO_ENGINE_MODEL), "--repo", "engine", "--files", "opengwasdb/encoding/a.py")
         self.assertEqual(code, 2)
-        self.assertIn("cannot decide", text)
-        self.assertIn("engine", text)
+        self.assertIn("cannot decide: work on opengwasdb was not measured", text)
         self.assertNotIn("meets no other work", text)
 
     def test_registry_files_are_still_decided_without_the_engines_model(self) -> None:
@@ -164,9 +184,10 @@ class UnplacedAndUnrefreshedTests(unittest.TestCase):
         self.assertNotIn("meets no other work", text)
 
     def test_registry_code_no_component_claims_cannot_be_decided(self) -> None:
-        code, text = run("conflicts", "--data", self.cited(), "--repo", "registry", "--files", "workflow/rules/new.smk")
+        # Code is what lies under the roots the claims name (og-dev-hub#9): `src/` here.
+        code, text = run("conflicts", "--data", self.cited(), "--repo", "registry", "--files", "src/newpkg/new.py")
         self.assertEqual(code, 2, text)
-        self.assertIn("workflow/rules/new.smk", text)
+        self.assertIn("no component claims src/newpkg/new.py", text)
 
     def test_a_meet_still_exits_1_beside_an_unplaced_file_and_names_it(self) -> None:
         code, text = run("conflicts", "--data", self.cited(), "--repo", "engine",
@@ -205,8 +226,9 @@ class UnplacedAndUnrefreshedTests(unittest.TestCase):
         self.assertNotIn("meets no other work", text)
 
     def test_a_failed_engine_fetch_cannot_be_decided(self) -> None:
-        stale = {**ARCHITECTURE, "engine": {**ARCHITECTURE["engine"],
-                                            "refresh": {"ok": False, "error": "fatal: could not read from remote repository."}}}
+        repos = ARCHITECTURE["repos"]
+        stale = {**ARCHITECTURE, "repos": {**repos, "opengwasdb": {
+            **repos["opengwasdb"], "refresh": {"ok": False, "error": "fatal: could not read from remote repository."}}}}
         result = compute(board(), architecture=stale)
         code, text = run("conflicts", "--data", self.collection(result, stale), "--repo", "registry",
                          "--files", "src/project_site/x.py")
@@ -215,13 +237,14 @@ class UnplacedAndUnrefreshedTests(unittest.TestCase):
 
     def test_a_failed_registry_refresh_cannot_be_decided(self) -> None:
         # og-dev-hub#7: a registry read from a stale clone is not answered as if fresh.
-        stale = {**ARCHITECTURE, "registry": {**ARCHITECTURE["registry"],
-                                              "refresh": {"ok": False, "error": "fatal: could not read opengwasdb-stores."}}}
+        repos = ARCHITECTURE["repos"]
+        stale = {**ARCHITECTURE, "repos": {**repos, "opengwasdb-stores": {
+            **repos["opengwasdb-stores"], "refresh": {"ok": False, "error": "fatal: could not read opengwasdb-stores."}}}}
         result = compute(board(), architecture=stale)
         code, text = run("conflicts", "--data", self.collection(result, stale), "--repo", "registry",
                          "--files", "src/project_site/x.py")
         self.assertEqual(code, 2, text)
-        self.assertIn("cannot decide: the fetch failed for opengwasdb-stores' main", text)
+        self.assertIn("cannot decide: the fetch failed for opengwasdb-stores' HEAD", text)
         self.assertIn("could not read opengwasdb-stores", text)
 
     def test_a_meet_found_in_data_a_fetch_could_not_refresh_still_exits_1(self) -> None:
@@ -230,6 +253,38 @@ class UnplacedAndUnrefreshedTests(unittest.TestCase):
         self.assertEqual(code, 1, text)
         self.assertIn("UNCOORDINATED", text)
         self.assertIn("also: the fetch failed", text)
+
+
+class RepositoryNameTests(unittest.TestCase):
+    """`--repo` takes a repository name; `engine` and `registry` are aliases for this release only (og-dev-hub#9)."""
+
+    def collection(self) -> str:
+        result = compute(board(epic("opengwasdb-stores#9", "Active", [ticket("opengwasdb-stores#10",
+                                                                             cited=["src/project_site/pages.py"])])))
+        directory = Path(tempfile.mkdtemp(prefix="cli-"))
+        self.addCleanup(shutil.rmtree, directory, True)
+        common.write_source(directory, common.envelope("work", available=True, error=None, **result))
+        common.write_source(directory, ARCHITECTURE)
+        return str(directory)
+
+    def test_a_repository_name_and_its_alias_give_the_same_answer(self) -> None:
+        data = self.collection()
+        named = run("conflicts", "--data", data, "--repo", "opengwasdb-stores", "--files", "src/project_site/new.py")
+        alias = run("conflicts", "--data", data, "--repo", "registry", "--files", "src/project_site/new.py")
+        self.assertEqual(named, alias)
+        self.assertEqual(named[0], 1, named[1])
+        self.assertIn("opengwasdb-stores#10", named[1])
+
+    def test_a_repository_system_yaml_does_not_list_cannot_be_decided(self) -> None:
+        code, text = run("conflicts", "--data", self.collection(), "--repo", "nowhere", "--files", "a.py")
+        self.assertEqual(code, 2)
+        self.assertIn("nowhere is not a repository system.yaml lists", text)
+
+    def test_the_help_says_the_aliases_are_for_this_release_only(self) -> None:
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out), self.assertRaises(SystemExit):
+            cli.main(["conflicts", "--help"])
+        self.assertIn("for this release only", " ".join(out.getvalue().split()))
 
 
 class OffBoardEpicBranchTests(unittest.TestCase):
@@ -251,17 +306,24 @@ class OffBoardEpicBranchTests(unittest.TestCase):
 
 
 class GitFailureTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="cli-git-"))
-        self.addCleanup(shutil.rmtree, self.root, True)
-        afx.make_repo(self.root / "registry", afx.REGISTRY_FILES, branch="trunk")
-        afx.make_repo(self.root / "engine", afx.ENGINE_FILES)
-        self.data = self.root / "data"
-        common.write_source(self.data, board())
-        common.write_source(self.data, common.collect_source("architecture", lambda: architecture_collector.collect(
-            staging.registry_root(self.root / "registry"), engine_git=self.root / "engine", engine_ref="main")))
-        self.args = ["--data", str(self.data), "--registry", str(self.root / "registry"),
-                     "--engine-git", str(self.root / "engine"), "--repo", "registry", "--files", "src/gen/x.py"]
+    """Its fixtures never vary, so the class builds them once (og-dev-hub#9)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.root = Path(tempfile.mkdtemp(prefix="cli-git-"))
+        cls.addClassCleanup(shutil.rmtree, cls.root, True)
+        afx.make_repo(cls.root / "registry", afx.REGISTRY_FILES, branch="trunk")
+        cls.work = engine_in_work_root(cls.root, afx.ENGINE_FILES)
+        cls.data = cls.root / "data"
+        common.write_source(cls.data, board())
+        cls.system = cls.root / "system.yaml"
+        cls.system.write_text(afx.SYSTEM_YAML, encoding="utf-8")
+        common.write_source(cls.data, common.collect_source("architecture", lambda: architecture_collector.collect(
+            afx.repositories(cls.root / "registry", cls.work / "opengwasdb.git"), system_file=cls.system)))
+        for patch in work_root_patches(cls.work, cls.root):
+            cls.enterClassContext(patch)
+        cls.args = ["--data", str(cls.data), "--registry", str(cls.root / "registry"), "--system", str(cls.system),
+                    "--repo", "registry", "--files", "src/gen/x.py"]
 
     def test_an_inaccessible_local_directory_exits_2_with_a_reason(self) -> None:
         code, text = run("conflicts", *self.args, "--local", str(self.root / "no-such-clone"))
@@ -290,8 +352,8 @@ class GitFailureTests(unittest.TestCase):
 
     def test_collecting_on_the_spot_with_no_usable_work_root_exits_2_naming_the_path_and_the_variable(self) -> None:
         root = self.unusable_work_root()
-        code, text = run("conflicts", "--registry", str(self.root / "registry"), "--engine-git", str(self.root / "engine"),
-                         "--repo", "registry", "--files", "src/gen/x.py")
+        code, text = run("conflicts", "--registry", str(self.root / "registry"),
+                         "--system", str(self.system), "--repo", "registry", "--files", "src/gen/x.py")
         self.assertEqual(code, 2)
         self.assertEqual(len(text.strip().splitlines()), 1)
         self.assertIn(str(root), text)
@@ -300,19 +362,24 @@ class GitFailureTests(unittest.TestCase):
     def test_a_local_orphan_branch_is_no_work_and_leaves_the_answer_decided(self) -> None:
         # An orphan branch (the CLA check's `cla-signatures`) has no merge base with
         # main, so it is no work against it: skipped, never "cannot decide" (og-dev-hub#7).
-        clone = self.root / "clone"
+        clone = Path(tempfile.mkdtemp(prefix="clone-", dir=self.root))
         afx.make_repo(clone, {"a.txt": "x\n"})
         afx.git(clone, "checkout", "-q", "--orphan", "unrelated")
         (clone / "b.txt").write_text("y\n")
         afx.git(clone, "add", "b.txt")
         afx.git(clone, "-c", "user.name=t", "-c", "user.email=t@e.org", "commit", "-q", "-m", "unrelated")
+        # A local clone is recognised by its origin (og-dev-hub#9).
+        afx.git(clone, "remote", "add", "origin", "https://github.com/opengwas/opengwasdb-stores.git")
         code, text = run("conflicts", *self.args, "--local", str(clone))
         self.assertEqual((code, text), (0, "1 files on 1 components\nmeets no other work\n"))
 
     def test_check_with_an_unreadable_engine_exits_2_naming_it(self) -> None:
-        code, text = run("check", "--data", str(self.data), "--engine-git", str(self.root / "no-such-engine.git"))
+        # A work root with no opengwasdb clone, and no network to make one.
+        empty = Path(tempfile.mkdtemp(prefix="empty-work-", dir=self.root))
+        with mock.patch.dict(os.environ, {cli.site_paths.WORK_ROOT_ENV: str(empty)}):
+            code, text = run("check", "--data", str(self.data), "--system", str(self.system))
         self.assertEqual(code, 2)
-        self.assertIn("no-such-engine.git", text)
+        self.assertIn("opengwasdb.git", text)
         self.assertIn("layering baseline", text)
 
 
@@ -337,13 +404,16 @@ class CheckTests(unittest.TestCase):
         root = Path(tempfile.mkdtemp(prefix="check-"))
         self.addCleanup(shutil.rmtree, root, True)
         afx.make_repo(root / "registry", registry or afx.REGISTRY_FILES, branch="trunk")
-        afx.make_repo(root / "engine", engine or afx.ENGINE_FILES)
-        return ["--registry", str(root / "registry"), "--engine-git", str(root / "engine"), "--engine-ref", "main"]
+        (root / "system.yaml").write_text(afx.SYSTEM_YAML, encoding="utf-8")
+        self.work = engine_in_work_root(root, engine or afx.ENGINE_FILES)
+        for patch in work_root_patches(self.work, root):
+            self.enterContext(patch)
+        return ["--registry", str(root / "registry"), "--system", str(root / "system.yaml")]
 
     def test_clean_claims_exit_0(self) -> None:
         code, text = run("check", *self.fixtures())
         self.assertEqual(code, 0, text)
-        self.assertIn("this repository: 0 unclaimed, 0 stale", text)
+        self.assertRegex(text, r"opengwasdb-stores \(HEAD [0-9a-f]{8}\): 0 unclaimed, 0 stale")
 
     def test_an_unclaimed_file_in_this_repository_exits_1_naming_it(self) -> None:
         code, text = run("check", *self.fixtures(registry={**afx.REGISTRY_FILES, "src/extra/new.py": "x = 1\n"}))
@@ -416,10 +486,16 @@ class CheckTests(unittest.TestCase):
 
     NO_MODEL = {k: v for k, v in afx.ENGINE_FILES.items() if k != "docs/architecture/components.yaml"}
 
-    def test_no_engine_model_and_a_clean_registry_is_undecided_not_a_pass(self) -> None:
-        code, text = run("check", *self.fixtures(engine=self.NO_MODEL))
+    def test_no_engine_model_asked_about_and_a_clean_registry_is_undecided_not_a_pass(self) -> None:
+        code, text = run("check", *self.fixtures(engine=self.NO_MODEL), "--repo", "opengwasdb")
         self.assertEqual(code, 2, text)
-        self.assertIn("this repository: 0 unclaimed, 0 stale", text)
+        self.assertIn("no architecture model there, so nothing to check", text)
+
+    def test_without_repo_a_repository_without_a_model_is_named_and_is_a_gap_not_a_failure(self) -> None:
+        # og-dev-hub#9, ADR 0001: most listed repositories have no model yet; each is drawn as a gap.
+        code, text = run("check", *self.fixtures(engine=self.NO_MODEL))
+        self.assertEqual(code, 0, text)
+        self.assertRegex(text, r"opengwasdb-stores \(HEAD [0-9a-f]{8}\): 0 unclaimed, 0 stale")
         self.assertIn("no architecture model there, so nothing to check", text)
 
     def test_no_engine_model_and_an_unclaimed_registry_file_still_exits_1(self) -> None:
@@ -438,7 +514,7 @@ class CheckTests(unittest.TestCase):
         # The fixture engine has no `origin`, so `--refresh` cannot fetch it on any host.
         code, text = run("check", *self.fixtures(), "--refresh")
         self.assertEqual(code, 2, text)
-        self.assertIn("cannot check: the fetch failed for the engine's main", text)
+        self.assertIn("cannot check: the fetch failed for opengwasdb's main", text)
         self.assertIn("origin", text)
 
     def test_a_registry_fetch_that_fails_is_undecided_not_a_pass(self) -> None:
@@ -446,12 +522,11 @@ class CheckTests(unittest.TestCase):
         root = Path(tempfile.mkdtemp(prefix="stale-registry-"))
         self.addCleanup(shutil.rmtree, root, True)
         afx.make_repo(root / "origin", afx.REGISTRY_FILES, branch="main")
-        clone = root / "work" / "opengwasdb-stores.git"
+        args = self.fixtures()[2:]  # without --registry: the site's clone is read
+        clone = self.work / "opengwasdb-stores.git"
         subprocess.run(["git", "clone", "-q", "--bare", str(root / "origin"), str(clone)], check=True)
         shutil.rmtree(root / "origin")
-        args = self.fixtures()[2:]  # without --registry: the site's clone is read
-        with mock.patch.dict(os.environ, {cli.site_paths.WORK_ROOT_ENV: str(root / "work")}):
-            code, text = run("check", *args, "--refresh")
+        code, text = run("check", *args, "--refresh")
         self.assertEqual(code, 2, text)
         self.assertIn("cannot check: the fetch failed for opengwasdb-stores' main", text)
 

@@ -25,7 +25,7 @@ from project_site.collect.common import CollectError
 
 def default_root(registry: Path | None = None) -> Path:
     """`<artifact root>/catalog/versions`, the root read from `registry`'s configuration, never an installed package's."""
-    registry = registry if registry is not None else staging.registry_root().root
+    registry = registry if registry is not None else staging.registry_files()
     return paths.artifact_root(repo_root=registry) / "catalog" / "versions"
 
 

@@ -1,30 +1,39 @@
-"""`python3 -m project_site.architecture`: ask the architecture map from a terminal (#419, epic #416).
+"""`python3 -m project_site.architecture`: ask the architecture map from a terminal (#419, epic #416, og-dev-hub#9).
 
-    check      [--registry P] [--engine-git P] [--engine-ref R] [--data DIR]
-    conflicts  (--branch B [--repo engine|registry] | --files PATH... --repo engine|registry [--ticket repo#n])
+    check      [--repo NAME] [--registry P] [--data DIR] [--system FILE] [--refresh]
+    conflicts  (--branch B [--repo NAME] | --files PATH... --repo NAME [--ticket repo#n])
                [--local GIT_DIR...] [--data DIR] [--refresh] [--days N]
 
+`NAME` is a repository `system.yaml` lists. `engine` and `registry` are accepted
+for `opengwasdb` and `opengwasdb-stores` for this release only.
+
 `check` reports the code files no component claims and the claims that match no
-file, in both repositories, and compares the engine's layering baseline with the
-upward imports measured, entry by entry (file and imported name), naming new and stale ones. It exits 1 on any of them, else 2 when a part could not be checked
-(no engine model at the ref, an unreadable baseline), else 0.
+file, in each repository with a model (or the one `--repo` names), and compares
+the layering baseline of each repository whose model declares layers with the
+upward imports measured, entry by entry (file and imported name), naming new and
+stale ones. It exits 1 on any of them, else 2 when a part could not be checked
+(the repository `--repo` names has no model or cannot be read, an unreadable
+baseline, a failed fetch), else 0. Without `--repo`, a repository with no model
+is named and is not a failure: it is a gap the site draws (og-dev-hub ADR 0001).
 
 `conflicts` says which components a piece of work touches, which other owners have
 live work (`building` or `active`) on each, and whether a blocking edge links its
 ticket to theirs. It exits 1 when any such meet is uncoordinated, naming the other
 work: its ticket, epic, branch and the files cited. Exit 2 means it could not decide
 (a branch the collection does not hold, a source that is unavailable, code that no
-component claims, a fetch that failed): never read that as "no conflict".
+component claims, work in a repository with no model, a fetch that failed): never
+read that as "no conflict".
 
 A fetch recorded as failed in the data read (`--refresh`, or the collection's own)
 leaves `check` and `conflicts` undecided unless they find a problem anyway: what
 was read may be out of date.
 
 Both run from data collected on the spot with the site's own collectors, or from an
-existing collection with `--data DIR`. opengwasdb-stores is read from the site's
-bare clone of it, fetched first with `--refresh`, or from the checkout
-`--registry` names. `--local GIT_DIR` adds the local branches of a
-clone (an orchestrate host's lanes live there), which the published page never shows.
+existing collection with `--data DIR`. Every repository is read from the site's
+bare clone of it, fetched once first with `--refresh`; opengwasdb-stores from the
+checkout `--registry` names instead. `--local GIT_DIR` adds the local branches of a
+clone of any listed repository, recognised by its `origin` (an orchestrate host's
+lanes live there), which the published page never shows.
 """
 
 from __future__ import annotations
@@ -38,11 +47,23 @@ from typing import Any, Callable, Mapping, Sequence, TextIO
 
 from project_site import paths as site_paths
 from project_site import staging
-from project_site.collect import architecture, architecture_graph, board, branches, common, work
+from project_site.collect import architecture, architecture_graph, architecture_model, board, branches, common, work
 
 BASELINE_PATH = "docs/architecture/layering-baseline.yaml"
 LIVE = ("building", "active")
 UNDECIDED = 2
+# The names `--repo` took before og-dev-hub#9, accepted for this release only: the orchestrate
+# preflight still passes them until agent-skills moves to repository names.
+REPO_ALIASES = {"engine": site_paths.ENGINE, "registry": site_paths.REGISTRY}
+
+
+def repo_name(value: str) -> str:
+    """A repository name as `--repo` gives it, with this release's aliases resolved."""
+    return REPO_ALIASES.get(value, value)
+
+
+def possessive(name: str) -> str:
+    return f"{name}'" if name.endswith("s") else f"{name}'s"
 
 
 class Unavailable(RuntimeError):
@@ -60,8 +81,7 @@ def _architecture(args: argparse.Namespace) -> dict[str, Any]:
         if document is None:
             raise Unavailable(why)
         return document
-    result = common.collect_source("architecture", lambda: architecture.collect(
-        args.source, engine_git=args.engine_git, engine_ref=args.engine_ref, refresh_engine=getattr(args, "refresh", False)))
+    result = common.collect_source("architecture", lambda: architecture.collect(args.repositories, system_file=args.system))
     if not result["available"]:
         raise Unavailable(f"architecture is unavailable: {result['error']}")
     return result
@@ -90,8 +110,7 @@ def _work(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any]]:
         directory = Path(scratch.name)
         for source, collect in (("board", lambda: board.collect(common.gh_runner)),
                                 ("architecture", lambda: architecture.collect(
-                                    args.source, engine_git=args.engine_git, engine_ref=args.engine_ref,
-                                    refresh_engine=args.refresh))):
+                                    args.repositories, system_file=args.system))):
             common.write_source(directory, common.collect_source(source, collect))
         return _collected(args, directory)
 
@@ -99,9 +118,7 @@ def _work(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any]]:
 def _collected(args: argparse.Namespace, directory: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     """`(work, architecture)` computed from the collection in `directory` and the branches read now."""
     try:
-        document = work.collect(
-            directory, registry=args.source, engine_git=args.engine_git,
-            refresh=args.refresh, local=[Path(p) for p in args.local], days=args.days)
+        document = work.collect(directory, args.repositories, local=[Path(p) for p in args.local], days=args.days)
     except common.CollectError as error:
         raise Unavailable(f"work is unavailable: {error}") from error
     architecture_doc, why = work._read(directory, "architecture")
@@ -118,27 +135,40 @@ def _collected(args: argparse.Namespace, directory: Path) -> tuple[dict[str, Any
 def check(args: argparse.Namespace, out: TextIO) -> int:
     document = _architecture(args)
     failed = unknown = False
-    names = (("registry", "this repository"), ("engine", "the engine"))
-    engine = document["engine"]
-    for failure in _fetch_failures(None, document):
+    repos, gaps = document.get("repos") or {}, document.get("gaps") or {}
+    if args.repo and args.repo not in repos:
+        raise Unavailable(f"{args.repo} is not a repository system.yaml lists")
+    names = [args.repo] if args.repo else list(repos)
+    for failure in _fetch_failures(None, document, names):
         print(f"cannot check: the fetch failed for {failure}, so what was read may be out of date", file=out)
         unknown = True
-    for repo, label in names:
-        if repo == "engine" and not engine.get("model"):
-            print(f"{label} ({engine['ref']} {str(engine['commit'])[:8]}): no architecture model there, so nothing to check", file=out)
-            unknown = True
+    for name in names:
+        repo = repos[name]
+        at = f" ({repo.get('ref')} {str(repo.get('commit'))[:8]})"
+        if repo.get("planned"):
+            print(f"{name}: planned (not created yet), so nothing to check", file=out)
+            unknown |= bool(args.repo)
             continue
-        gap = document["gaps"][repo]
-        suffix = f" ({engine['ref']} {str(engine['commit'])[:8]})" if repo == "engine" else ""
-        print(f"{label}{suffix}: {len(gap['unclaimed'])} unclaimed, {len(gap['stale'])} stale", file=out)
+        if repo.get("error"):
+            print(f"{name}: cannot be read: {repo['error']}", file=out)
+            unknown |= bool(args.repo)
+            continue
+        if not repo.get("model"):
+            print(f"{name}{at}: no architecture model there, so nothing to check", file=out)
+            unknown |= bool(args.repo)
+            continue
+        gap = gaps[name]
+        print(f"{name}{at}: {len(gap['unclaimed'])} unclaimed, {len(gap['stale'])} stale", file=out)
         for path in gap["unclaimed"]:
             print(f"  unclaimed: {path}", file=out)
         for claim in gap["stale"]:
             print(f"  stale: {claim['path']} (claimed by {claim['component']})", file=out)
         failed |= bool(gap["unclaimed"] or gap["stale"])
-    if engine.get("model"):
+    for name in (document.get("model") or {}).get("layers") or {}:
+        if name not in names:
+            continue
         try:
-            failed |= _baseline(args, document, out)
+            failed |= _baseline(args, document, name, out)
         except Unavailable as error:
             print(f"cannot check: {error}", file=out)
             unknown = True
@@ -146,26 +176,27 @@ def check(args: argparse.Namespace, out: TextIO) -> int:
     return 1 if failed else UNDECIDED if unknown else 0
 
 
-def _baseline(args: argparse.Namespace, document: Mapping[str, Any], out: TextIO) -> bool:
-    """Print how the engine's baseline compares with the measured upward imports; True when it does not match."""
-    engine = document["engine"]
+def _baseline(args: argparse.Namespace, document: Mapping[str, Any], name: str, out: TextIO) -> bool:
+    """Print how repository `name`'s layering baseline compares with its measured upward imports; True when it does not match."""
+    repo = document["repos"][name]
     try:
-        git_dir = args.engine_git or site_paths.clone_dir(site_paths.ENGINE)
-        text = architecture.Tree(Path(git_dir), engine["commit"]).read([BASELINE_PATH]).get(BASELINE_PATH)
+        handle = args.repositories.get(name).require()
+        text = architecture.Tree(handle.git_dir, repo["commit"]).read([BASELINE_PATH]).get(BASELINE_PATH)
     except (common.CollectError, OSError) as error:
         # An unreadable repository is not an absent baseline: never certify the check.
-        raise Unavailable(f"layering baseline: not read ({error})") from error
+        raise Unavailable(f"{name} layering baseline: not read ({error})") from error
     if text is None:
-        print(f"no layering baseline at {engine['ref']} ({BASELINE_PATH} is not there)", file=out)
+        print(f"{name}: no layering baseline at {repo['ref']} ({BASELINE_PATH} is not there)", file=out)
         return False
     try:
         listed = set(architecture_graph.load_baseline(text, BASELINE_PATH, key="allowed"))
     except common.CollectError as error:
-        raise Unavailable(str(error)) from error
+        raise Unavailable(f"{name}: {error}") from error
     if document.get("upward_imports") is None:
-        raise Unavailable("layering baseline: the upward imports were not measured, so there is nothing to compare it with")
-    found = {(u["file"], u["name"]): u for u in document.get("upward_imports") or []}
-    print(f"layering baseline: {len(listed)} allowed, {len(found)} measured upward imports", file=out)
+        raise Unavailable(f"{name} layering baseline: the upward imports were not measured, so there is nothing to compare it with")
+    repo_of = {c["id"]: c["repo"] for c in document["components"]}
+    found = {(u["file"], u["name"]): u for u in document.get("upward_imports") or [] if repo_of.get(u["from"]) == name}
+    print(f"{name} layering baseline: {len(listed)} allowed, {len(found)} measured upward imports", file=out)
     names = {c["id"]: c["name"] for c in document["components"]}
     for key in sorted(set(found) - listed):
         u = found[key]
@@ -183,7 +214,7 @@ def _baseline(args: argparse.Namespace, document: Mapping[str, Any], out: TextIO
 
 def conflicts(args: argparse.Namespace, out: TextIO) -> int:
     if args.files and not args.repo:
-        raise Unavailable("--files needs --repo engine or --repo registry: a bare path can mean a file of either repository")
+        raise Unavailable("--files needs --repo NAME (a repository system.yaml lists): a bare path can mean a file of any repository")
     document, architecture_doc = _work(args)
     components = {c["id"]: c for c in architecture_doc["components"]}
     own_owner, own_items, touched, label, unplaced, outside = _candidate(args, document, architecture_doc)
@@ -240,31 +271,30 @@ def conflicts(args: argparse.Namespace, out: TextIO) -> int:
     return 0
 
 
-def _fetch_failures(document: Mapping[str, Any] | None, architecture_doc: Mapping[str, Any]) -> list[str]:
-    """Each fetch the data read records as failed: the engine's ref, the registry's clone, and each repository's branches.
+def _fetch_failures(
+    document: Mapping[str, Any] | None, architecture_doc: Mapping[str, Any], names: Sequence[str] | None = None,
+) -> list[str]:
+    """Each fetch the data read records as failed, of the repositories `names` (default every one).
 
-    The registry's clone is fetched once for both its `main` and its branches
-    (og-dev-hub#7), so that one failure is named once.
+    A repository's clone is fetched once per run for both its `main` and its
+    branches (og-dev-hub#7, #9), so that one failure is named once.
     """
     def said(error: Any) -> str:
         return " ".join(str(error).split())[:200]
 
     failures = []
-    engine = architecture_doc.get("engine") or {}
-    refresh = engine.get("refresh")
-    if isinstance(refresh, Mapping) and refresh.get("ok") is False:
-        failures.append(f"the engine's {engine.get('ref')} ({said(refresh.get('error'))})")
-    registry_refresh = (architecture_doc.get("registry") or {}).get("refresh")
-    if isinstance(registry_refresh, Mapping) and registry_refresh.get("ok") is False:
-        failures.append(f"opengwasdb-stores' main ({said(registry_refresh.get('error'))})")
+    named = set()
+    for name, repo in (architecture_doc.get("repos") or {}).items():
+        refresh = repo.get("refresh") if isinstance(repo, Mapping) else None
+        if (names is None or name in names) and isinstance(refresh, Mapping) and refresh.get("ok") is False:
+            failures.append(f"{possessive(name)} {repo.get('ref') or 'main'} ({said(refresh.get('error'))})")
+            named.add(name)
     for source in ((document or {}).get("branches") or {}).get("sources") or []:
         fetch = source.get("fetch")
-        if isinstance(fetch, Mapping) and fetch.get("ok") is False and fetch != registry_refresh:
+        if isinstance(fetch, Mapping) and fetch.get("ok") is False and source.get("repo") not in named:
             failures.append(f"the {source.get('repo')} branches ({said(fetch.get('error'))})")
+            named.add(source.get("repo"))
     return failures
-
-
-IS_CODE = {"registry": work.model_rules.is_registry_code, "engine": work.model_rules.is_engine_code}
 
 
 def _candidate(
@@ -277,35 +307,43 @@ def _candidate(
     model claims (tests, docs), which the map never judges.
     """
     ticket = args.ticket
-    reason = (document.get("unmeasured") or {}).get("engine")
-    claims = {
-        kind: work.model_rules.claims_of(c for c in architecture_doc["components"] if c["repo"] == kind and c.get("paths"))
-        for kind in ("registry", "engine")
-    }
+    unmeasured = document.get("unmeasured") or {}
+    claims: dict[str, list[tuple[str, str]]] = {}
+    for c in architecture_doc["components"]:
+        if c.get("paths"):
+            claims.setdefault(c["repo"], []).extend(architecture_model.claims_of([c]))
 
-    def unclaimed_code(kind: str, files: Sequence[str]) -> list[str]:
-        return [f for f in files if IS_CODE[kind](f) and work.model_rules.owner(claims[kind], f) is None]
+    def is_code(repo: str) -> Any:
+        return architecture_model.code_rule(claims.get(repo) or [])
+
+    def unclaimed_code(repo: str, files: Sequence[str]) -> list[str]:
+        rule = is_code(repo)
+        return [f for f in files if rule(f) and architecture_model.owner(claims.get(repo) or [], f) is None]
 
     if args.branch:
         found = [b for b in document["branches"]["list"]
-                 if b["name"] == args.branch and (not args.repo or work.REPO_KIND.get(b["repo"]) == args.repo)]
+                 if b["name"] == args.branch and (not args.repo or b["repo"] == args.repo)]
         if not found:
             raise Unavailable(
                 f"{args.branch}: no live branch of that name in the collection (ahead of main, within its window); "
                 "add its git directory with --local, or give --files")
         b = found[0]
-        if reason and work.REPO_KIND.get(b["repo"]) == "engine":
-            raise Unavailable(f"engine-side work was not measured: {reason}")
+        if reason := unmeasured.get(b["repo"]):
+            raise Unavailable(f"work on {b['repo']} was not measured: {reason}")
         items = {ticket} if ticket else {b["item"]}
         owner = document["tickets"].get(ticket) if ticket else b["owner"]
         return owner, items, set(b["components"]), (
             f"{b['repo']}:{b['name']}: {b['item']} of {b['owner']}, {len(b['files'])} files on "
-            f"{len(b['components'])} components"), unclaimed_code(work.REPO_KIND[b["repo"]], b["files"]), []
-    if reason and args.repo == "engine":
-        raise Unavailable(f"engine-side work was not measured: {reason}")
-    touched = {cid for f in args.files if (cid := work.model_rules.owner(claims[args.repo], f))}
+            f"{len(b['components'])} components"), unclaimed_code(b["repo"], b["files"]), []
+    if args.repo not in (architecture_doc.get("repos") or {}):
+        raise Unavailable(f"{args.repo} is not a repository system.yaml lists")
+    if reason := unmeasured.get(args.repo):
+        raise Unavailable(f"work on {args.repo} was not measured: {reason}")
+    mine = claims.get(args.repo) or []
+    touched = {cid for f in args.files if (cid := architecture_model.owner(mine, f))}
     owner = document["tickets"].get(ticket) if ticket else None
-    outside = [f for f in args.files if not IS_CODE[args.repo](f) and work.model_rules.owner(claims[args.repo], f) is None]
+    rule = is_code(args.repo)
+    outside = [f for f in args.files if not rule(f) and architecture_model.owner(mine, f) is None]
     return owner, {ticket} if ticket else set(), touched, (
         f"{len(args.files)} files on {len(touched)} components" + (f" for {ticket}" if ticket else "")
     ), unclaimed_code(args.repo, args.files), outside
@@ -314,36 +352,49 @@ def _candidate(
 # ---------------------------------------------------------------------------
 
 
+def _listed(args: argparse.Namespace) -> list[str]:
+    """The repository names `system.yaml` lists, from the file the command reads."""
+    system = args.system or site_paths.repo_root() / architecture.SYSTEM_FILE
+    try:
+        loaded = architecture_model.load_system(Path(system).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise Unavailable(f"{architecture.SYSTEM_FILE} cannot be read: {error}") from error
+    return [entry["name"] for entry in loaded.get("repos") or []]
+
+
 def main(argv: Sequence[str] | None = None, *, stdout: TextIO | None = None) -> int:
     out = stdout or sys.stdout
     parser = argparse.ArgumentParser(prog="project_site.architecture", description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
+    repo_help = ("a repository system.yaml lists; `engine` and `registry` are accepted for opengwasdb and "
+                 "opengwasdb-stores for this release only")
     for name in ("check", "conflicts"):
         p = sub.add_parser(name)
         p.add_argument("--data", type=Path, default=None, help="read this collection (docs/_data) instead of collecting now")
         p.add_argument("--registry", type=Path, default=None,
                        help="an opengwasdb-stores checkout or git directory (default: the site's clone of it, at main)")
-        p.add_argument("--engine-git", type=Path, default=None, help="the engine's git directory (default: the site's bare clone)")
-        p.add_argument("--engine-ref", default=architecture.DEFAULT_ENGINE_REF)
-        p.add_argument("--refresh", action="store_true", help="fetch the engine and both repositories' branches first")
+        p.add_argument("--system", type=Path, default=None, help="the system.yaml to read (default: this checkout's)")
+        p.add_argument("--refresh", action="store_true", help="fetch every listed repository once first")
+        p.add_argument("--repo", type=repo_name, help=repo_help)
     conflict = sub.choices["conflicts"]
     what = conflict.add_mutually_exclusive_group(required=True)
     what.add_argument("--branch")
     what.add_argument("--files", nargs="+", metavar="PATH")
     conflict.add_argument("--ticket", help="the ticket the work is for (repo#n), to look for a blocking edge")
-    conflict.add_argument("--repo", choices=("engine", "registry"), help="which repository the branch or files belong to")
-    conflict.add_argument("--local", nargs="+", default=[], metavar="GIT_DIR", help="add the local branches of these clones")
+    conflict.add_argument("--local", nargs="+", default=[], metavar="GIT_DIR",
+                          help="add the local branches of these clones of listed repositories")
     conflict.add_argument("--days", type=int, default=branches.WINDOW_DAYS)
     args = parser.parse_args(argv)
+    # One read handle per repository for the whole command, by its one owner.
+    args.repositories = staging.Repositories(refresh=args.refresh, checkouts={site_paths.REGISTRY: args.registry})
     try:
-        # One read of the registry for the whole command, by its one owner; a collection
-        # read with --data alone needs none.
-        args.source = None
-        if not (args.data and not getattr(args, "local", None)):
-            try:
-                args.source = staging.registry_root(args.registry, files=False, refresh=args.refresh)
-            except common.CollectError as error:
-                raise Unavailable(str(error)) from error
+        if args.repo and args.repo not in _listed(args):
+            raise Unavailable(f"{args.repo} is not a repository system.yaml lists")
+        # The repository asked about must be readable to answer at all; a collection read with --data alone needs none.
+        if args.repo and not (args.data and not getattr(args, "local", None)):
+            handle = args.repositories.get(args.repo)
+            if not handle.readable:
+                raise Unavailable(str(handle.error))
         return (check if args.command == "check" else conflicts)(args, out)
     except Unavailable as error:
         print(f"cannot decide: {error}", file=out)

@@ -85,7 +85,7 @@ class ContentTests(unittest.TestCase):
         gen = self.components["gen"]
         self.assertEqual(gen["name"], "Manifest Generation")
         self.assertEqual(gen["summary"], "Manifest Generation summary.")
-        self.assertEqual(gen["repo"], "registry")
+        self.assertEqual(gen["repo"], "opengwasdb-stores")
         self.assertEqual(gen["container"], "Manifest Generation")
         self.assertEqual(gen["size"], "3 files, 100 lines")
         self.assertEqual(gen["stages"], ["Build"])
@@ -107,8 +107,9 @@ class ContentTests(unittest.TestCase):
 
     def test_each_adr_says_how_it_was_placed(self) -> None:
         self.assertEqual(self.components["gen"]["adrs"], [{
-            "title": "0001. Manifest Generation is one pipeline", "repo": "registry", "status": "current",
+            "title": "0001. Manifest Generation is one pipeline", "repo": "opengwasdb-stores", "status": "current",
             "url": "https://github.com/opengwas/opengwasdb-stores/blob/main/docs/adr/0001-x.md", "via": "cites its code",
+            "cites": [],
         }])
         self.assertEqual([a["via"] for a in self.components["query"]["adrs"]], ["names it in its title"])
 
@@ -140,7 +141,7 @@ class UnknownWorkTests(unittest.TestCase):
 
     def test_with_the_engine_unmeasured_its_components_work_is_unknown_and_this_repositorys_is_not(self) -> None:
         unmeasured = work()
-        unmeasured["unmeasured"] = {"engine": "the engine has no model at main"}
+        unmeasured["unmeasured"] = {"opengwasdb": "the engine has no model at main"}
         data = panel_data(pages.render_structure(documents(work_doc=unmeasured)))
 
         self.assertIsNone(data["components"]["query"]["work"])
@@ -150,14 +151,15 @@ class UnknownWorkTests(unittest.TestCase):
     def test_without_the_engines_model_imports_into_it_are_said_to_be_unplaced(self) -> None:
         data = panel_data(pages.render_structure(documents(arch=architecture(engine_model=False))))
 
-        self.assertIn("model", data["components"]["gen"]["imports_note"])
+        self.assertIn("2 repositories have no architecture model at the ref read (opengwasdb, opengwaspy)",
+                      data["components"]["gen"]["imports_note"])
 
 
 class LeakTests(unittest.TestCase):
     def test_no_host_path_in_the_collected_data_reaches_a_page(self) -> None:
         arch, work_doc = architecture(), work()
-        arch["registry"]["git_dir"] = "/home/someone/registry-checkout"
-        arch["engine"]["clone"] = "/data/opengwasdb/work/site/opengwasdb.git"
+        arch["repos"]["opengwasdb-stores"]["git_dir"] = "/home/someone/registry-checkout"
+        arch["repos"]["opengwasdb"]["clone"] = "/data/opengwasdb/work/site/opengwasdb.git"
         work_doc["branches"]["sources"][0]["git_dir"] = "/home/someone/engine.git"
         docs = documents(arch=arch, work_doc=work_doc)
         for render in PAGES:

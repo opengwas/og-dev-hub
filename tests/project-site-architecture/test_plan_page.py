@@ -27,7 +27,7 @@ URL = "https://github.com/opengwas/opengwasdb/issues/{}"
 ENGINE = {"ref": "main", "commit": "e" * 40}
 
 
-def comp(cid: str, name: str, repo: str = "engine", new: bool = False) -> dict:
+def comp(cid: str, name: str, repo: str = "opengwasdb", new: bool = False) -> dict:
     return {"id": cid, "name": name, "repo": None if new else repo, "new": new}
 
 
@@ -48,18 +48,18 @@ CLOSED = entry(
      "moves": [{"paths": ["opengwasdb/build/eaf.py"], "to": "enc"}],
      "drops": [{"from": "dense", "to": "enc"}]},
     [comp("dense", "Dense layout"), comp("enc", "Store Encoding"), comp("fresh", "Fresh one", new=True)],
-    [{"kind": "adds", "path": "opengwasdb/fresh/a.py", "component": "fresh", "held": True, "why": "claimed by `fresh`"},
-     {"kind": "adds", "path": "opengwasdb/enc/gone.py", "component": "fresh", "held": False, "why": "no component claims it"},
-     {"kind": "moves", "path": "opengwasdb/build/eaf.py", "component": "enc", "held": None, "why": "the engine's model is missing at main (eeeeeeeeeeee)"},
-     {"kind": "drops", "from": "dense", "to": "enc", "imports": 4, "held": False, "why": "4 imports from `dense` into `enc` remain"}])
+    [{"kind": "adds", "path": "opengwasdb/fresh/a.py", "component": "fresh", "held": True, "why": "claimed by `fresh`", "repo": "opengwasdb"},
+     {"kind": "adds", "path": "opengwasdb/enc/gone.py", "component": "fresh", "held": False, "why": "no component claims it", "repo": "opengwasdb"},
+     {"kind": "moves", "path": "opengwasdb/build/eaf.py", "component": "enc", "held": None, "why": "the engine's model is missing at main (eeeeeeeeeeee)", "repo": "opengwasdb"},
+     {"kind": "drops", "from": "dense", "to": "enc", "imports": 4, "held": False, "why": "4 imports from `dense` into `enc` remain", "repo": "opengwasdb"}])
 INVALID = entry(362, "open", {"invalid": "unknown key `removes`"}, [], [])
 INVALID["plan"] = {"invalid": "unknown key `removes`"}
 
 
 def work(*plans: dict | None, key: bool = True) -> dict:
     doc = {"source": "work", "available": True, "collected_at": "2026-11-02T12:00:00Z", "error": None, "schema_version": 1,
-           "inputs": {"board": {"collected_at": "x"}, "architecture": {"collected_at": "x", "engine": ENGINE,
-                                                                       "registry": {"ref": "HEAD", "commit": "r" * 40}}},
+           "inputs": {"board": {"collected_at": "x"}, "architecture": {"collected_at": "x", "repos": {
+               "opengwasdb": ENGINE, "opengwasdb-stores": {"ref": "HEAD", "commit": "r" * 40}}}},
            "owners": [], "components": [], "signals": [], "meets": [], "unmeasured": {}, "waits": [], "tickets": {},
            "branches": {"sources": [], "list": []}, "summary": {}}
     if key:
@@ -163,13 +163,14 @@ class PlannedChangesTests(unittest.TestCase):
         self.assertEqual(sum(1 for line in source.splitlines() if "UNTRUSTED" in line), 1)
 
     def test_the_warning_names_the_ref_of_the_repository_the_item_was_read_in(self) -> None:
-        registry = entry(365, "closed", {"adds": [{"paths": ["src/x.py"], "component": "pages"}]}, [comp("pages", "Pages", "registry")],
-                         [{"kind": "adds", "path": "src/x.py", "component": "pages", "held": False, "why": "no such file", "repo": "registry"}])
+        registry = entry(365, "closed", {"adds": [{"paths": ["src/x.py"], "component": "pages"}]}, [comp("pages", "Pages", "opengwasdb-stores")],
+                         [{"kind": "adds", "path": "src/x.py", "component": "pages", "held": False, "why": "no such file",
+                           "repo": "opengwasdb-stores"}])
         block = planned(work(registry)).split("opengwasdb#365", 1)[1]
-        self.assertIn("registry `HEAD`, `rrrrrrrrrrrr`", block)
-        self.assertNotIn("engine `main`", block)
+        self.assertIn("opengwasdb-stores `HEAD`, `rrrrrrrrrrrr`", block)
+        self.assertNotIn("opengwasdb `main`", block)
         engine = planned(work(CLOSED)).split("opengwasdb#361", 1)[1]
-        self.assertIn("engine `main`, `eeeeeeeeeeee`", engine)
+        self.assertIn("opengwasdb `main`, `eeeeeeeeeeee`", engine)
 
 
 @unittest.skipUnless(QUARTO, "Quarto is not on PATH; the render assertion needs it")

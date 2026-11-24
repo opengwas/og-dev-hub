@@ -18,7 +18,6 @@ from pathlib import Path
 
 import architecture_fixtures as fx
 
-from project_site import staging
 from project_site.collect import architecture
 
 
@@ -27,7 +26,9 @@ def collect(test: unittest.TestCase) -> dict:
     test.addCleanup(__import__("shutil").rmtree, root, True)
     fx.make_repo(root / "registry", {**fx.REGISTRY_FILES, **fx.REGISTRY_ADRS})
     fx.make_repo(root / "engine", {**fx.ENGINE_FILES, **fx.ENGINE_ADRS})
-    return architecture.collect(staging.registry_root(root / "registry"), engine_git=root / "engine")
+    system = root / "system.yaml"
+    system.write_text(fx.SYSTEM_YAML, encoding="utf-8")
+    return architecture.collect(fx.repositories(root / "registry", root / "engine"), system_file=system)
 
 
 class AdrPlacementTests(unittest.TestCase):
@@ -36,16 +37,16 @@ class AdrPlacementTests(unittest.TestCase):
         self.assertEqual(
             placed,
             {
-                ("registry", "0001"): {"gen": "code"},
-                ("registry", "0002"): {"gen": "code", "store": "code"},
-                ("registry", "0003"): {"ogs": "title"},
-                ("registry", "0004"): {},
-                ("registry", "0005"): {"store": "code"},
-                ("registry", "0006"): {"ogs": "title"},
-                ("engine", "0001"): {"query": "title"},
-                ("engine", "0002"): {"check": "code", "cli": "code"},
-                ("engine", "0003"): {},
-                ("engine", "0004"): {},
+                (fx.REGISTRY, "0001"): {"gen": "code"},
+                (fx.REGISTRY, "0002"): {"gen": "code", "store": "code"},
+                (fx.REGISTRY, "0003"): {"ogs": "title"},
+                (fx.REGISTRY, "0004"): {},
+                (fx.REGISTRY, "0005"): {"store": "code"},
+                (fx.REGISTRY, "0006"): {"ogs": "title"},
+                (fx.ENGINE, "0001"): {"query": "title"},
+                (fx.ENGINE, "0002"): {"check": "code", "cli": "code"},
+                (fx.ENGINE, "0003"): {},
+                (fx.ENGINE, "0004"): {},
             },
         )
 
@@ -53,15 +54,15 @@ class AdrPlacementTests(unittest.TestCase):
         result = collect(self)
         self.assertEqual((result["summary"]["adrs_placed"], result["summary"]["adrs_total"]), (7, 10))
         unplaced = [(a["repo"], a["number"]) for a in result["adrs"] if not a["components"]]
-        self.assertEqual(unplaced, [("registry", "0004"), ("engine", "0003"), ("engine", "0004")])
+        self.assertEqual(unplaced, [(fx.REGISTRY, "0004"), (fx.ENGINE, "0003"), (fx.ENGINE, "0004")])
 
     def test_an_adr_carries_its_title_status_and_link(self) -> None:
         by_key = {(a["repo"], a["number"]): a for a in collect(self)["adrs"]}
-        cites = by_key[("engine", "0002")]
+        cites = by_key[(fx.ENGINE, "0002")]
         self.assertEqual(cites["title"], "0002. Layers")
         self.assertEqual(cites["status"], "superseded")
         self.assertEqual(cites["url"], "https://github.com/opengwas/opengwasdb/blob/main/docs/adr/0002-cites.md")
-        self.assertEqual(by_key[("registry", "0001")]["status"], "current")
+        self.assertEqual(by_key[(fx.REGISTRY, "0001")]["status"], "current")
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@
 A ticket or ADR writes `opengwasdb/encoding/codec.py`, or `encoding/codec.py`
 (relative to the package), or `layouts/ragged/zarr_csr.py:551` (with a line).
 A cited path means a tracked file when it is that file, or when **exactly one**
-tracked file of either repository ends with `/<path>`. When several do it means
+tracked file of the repositories listed ends with `/<path>`. When several do it means
 none: the citation is *unresolved*, naming its candidates, never guessed.
 """
 
@@ -16,7 +16,7 @@ LINE_SUFFIX = re.compile(r":\d+(?:[-:]\d+)*$")
 
 
 class Resolution(NamedTuple):
-    """`found` is `(repository kind, file)`, or `None`; `candidates` is non-empty only when ambiguous."""
+    """`found` is `(repository name, file)`, or `None`; `candidates` is non-empty only when ambiguous."""
 
     found: tuple[str, str] | None
     candidates: tuple[tuple[str, str], ...]
@@ -30,8 +30,8 @@ def without_line(cited: str) -> str:
 def resolve_path(cited: str, home: str, listings: Mapping[str, Sequence[str]]) -> Resolution:
     """The tracked file `cited` means, looking in repository `home` first.
 
-    `listings` maps a repository kind to its tracked files. An exact file wins (the
-    home repository's first); otherwise a single file ending `/<cited>` in either.
+    `listings` maps a repository name to its tracked files. An exact file wins (the
+    home repository's first); otherwise a single file ending `/<cited>` in any of them.
     """
     path = without_line(cited)
     order = [home, *[kind for kind in listings if kind != home]]

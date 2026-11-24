@@ -318,7 +318,8 @@ class PublishCollectsItsOwnData(unittest.TestCase):
         self.assertNotEqual(registry.parent, self.repo)
         self.assertEqual(Path(kwargs["epics_dir"]), registry.parent / "docs" / "_epics")
         self.assertEqual(Path(kwargs["yardstick_dir"]), registry.parent / "docs" / "_yardstick")
-        self.assertEqual(kwargs["source"].ref, self.registry_commit)
+        # One read handle per repository for the whole render (og-dev-hub#9).
+        self.assertEqual(kwargs["repositories"].get("opengwasdb-stores").commit, self.registry_commit)
         self.assertFalse(registry.exists(), "the extracted registry is this run's, and goes with it")
 
         published = sorted(git(self.repo, "ls-tree", "-r", "--name-only", "gh-pages").splitlines())
@@ -337,7 +338,8 @@ class PublishCollectsItsOwnData(unittest.TestCase):
     def test_a_named_data_directory_is_used_instead_of_collecting(self) -> None:
         with mock.patch.dict(os.environ, {collect_common.DATA_DIR_ENV_VAR: str(self.root / "collected")}), \
                 mock.patch("project_site.collect.__main__.run", stub_collect):
-            self.assertEqual(build.collect_data(self.root / "mirror", staging.registry_root(self.repo)), [])
+            self.assertEqual(build.collect_data(self.root / "mirror", staging.Repositories(
+                checkouts={"opengwasdb-stores": self.repo})), [])
 
         self.assertEqual(STUBBED, [])
 

@@ -37,11 +37,11 @@ def yardstick_errors(document: dict[str, Any]) -> list[str]:
 
 
 def default_epics_dir() -> Path:
-    return staging.registry_root().root / "docs" / "_epics"
+    return staging.registry_files() / "docs" / "_epics"
 
 
 def default_yardstick_dir() -> Path:
-    return staging.registry_root().root / "docs" / "_yardstick"
+    return staging.registry_files() / "docs" / "_yardstick"
 
 
 def _json_ready(value: Any) -> Any:

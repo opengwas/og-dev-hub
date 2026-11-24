@@ -18,21 +18,30 @@ from pathlib import Path
 
 import architecture_fixtures as fx
 
-from project_site import staging
 from project_site.collect import architecture
 
 
-def collect_edges(test: unittest.TestCase) -> list[dict]:
+def collect(test: unittest.TestCase, engine_files: dict[str, str] = fx.ENGINE_FILES) -> dict:
     root = Path(tempfile.mkdtemp(prefix="arch-"))
     test.addCleanup(__import__("shutil").rmtree, root, True)
     fx.make_repo(root / "registry", fx.REGISTRY_FILES)
-    fx.make_repo(root / "engine", fx.ENGINE_FILES)
-    result = architecture.collect(staging.registry_root(root / "registry"), engine_git=root / "engine")
-    return result["edges"]
+    fx.make_repo(root / "engine", engine_files)
+    system = root / "system.yaml"
+    system.write_text(fx.SYSTEM_YAML, encoding="utf-8")
+    return architecture.collect(fx.repositories(root / "registry", root / "engine"), system_file=system)
+
+
+def collect_edges(test: unittest.TestCase) -> list[dict]:
+    return collect(test)["edges"]
 
 
 def edge(src: str, dst: str, imports: int, scope: str, upward: bool = False) -> dict:
-    return {"from": src, "to": dst, "imports": imports, "scope": scope, "upward": upward}
+    """An edge within one repository (`engine`, `registry`), or across the seam (`registry_to_engine`)."""
+    if scope == "registry_to_engine":
+        return {"from": src, "to": dst, "imports": imports, "scope": "across",
+                "from_repo": fx.REGISTRY, "to_repo": fx.ENGINE, "upward": upward}
+    repo = fx.ENGINE if scope == "engine" else fx.REGISTRY
+    return {"from": src, "to": dst, "imports": imports, "scope": "within", "repo": repo, "upward": upward}
 
 
 class ImportGraphTests(unittest.TestCase):
@@ -62,24 +71,18 @@ class ImportGraphTests(unittest.TestCase):
             "opengwasdb/orphan.py": "",  # unclaimed: a gap, and no component
             "opengwasdb/check/run.py": "from opengwasdb.query import facade\nfrom opengwasdb import orphan\n",
         }
-        root = Path(tempfile.mkdtemp(prefix="arch-"))
-        self.addCleanup(__import__("shutil").rmtree, root, True)
-        fx.make_repo(root / "registry", fx.REGISTRY_FILES)
-        fx.make_repo(root / "engine", engine)
-        edges = architecture.collect(staging.registry_root(root / "registry"), engine_git=root / "engine")["edges"]
+        edges = collect(self, engine)["edges"]
         # `opengwasdb` (the package) is claimed by cli, but `opengwasdb.orphan` is a module of its own
         self.assertNotIn(("check", "cli"), [(e["from"], e["to"]) for e in edges])
         self.assertEqual([e for e in edges if e["from"] == "check"], [edge("check", "query", 1, "engine")])
 
     def test_the_summary_counts_upward_edges_imports_and_the_seam(self) -> None:
-        root = Path(tempfile.mkdtemp(prefix="arch-"))
-        self.addCleanup(__import__("shutil").rmtree, root, True)
-        fx.make_repo(root / "registry", fx.REGISTRY_FILES)
-        fx.make_repo(root / "engine", fx.ENGINE_FILES)
-        summary = architecture.collect(staging.registry_root(root / "registry"), engine_git=root / "engine")["summary"]
+        summary = collect(self)["summary"]
         self.assertEqual(summary["upward_edges"], 3)
         self.assertEqual(summary["upward_imports"], 3)
         self.assertEqual(summary["registry_to_engine_imports"], 5)
+        self.assertEqual(summary["registry_to_engine_edges"], 4)
+        self.assertEqual(summary["edges"], 13)
 
 
 if __name__ == "__main__":

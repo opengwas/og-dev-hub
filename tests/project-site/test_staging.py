@@ -13,6 +13,7 @@ Run from the repository root:
 
 from __future__ import annotations
 
+import shutil
 import os
 import subprocess
 import tempfile
@@ -120,7 +121,7 @@ class StageIntoTheMirrorTest(unittest.TestCase):
         self.hub.mkdir()
         git(self.hub, "init", "-q", "-b", "main")
         git(self.hub, "-c", "user.email=t@e.org", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "hub")
-        self.registry = staging.registry_root(self.repo)
+        self.repositories = staging.Repositories(checkouts={"opengwasdb-stores": self.repo})
 
         self.work = self.root / "work"
         self.environ = mock.patch.dict(os.environ, {"OPENGWASDB_SITE_ROOT": str(self.work)})
@@ -128,7 +129,7 @@ class StageIntoTheMirrorTest(unittest.TestCase):
         self.addCleanup(self.environ.stop)
 
     def stage(self) -> build.Stage:
-        return build.stage_everything(self.hub, registry=self.registry, clone=self.engine, revision=self.engine_commit)
+        return build.stage_everything(self.hub, repositories=self.repositories, clone=self.engine, revision=self.engine_commit)
 
     def status_of_checkout(self) -> str:
         """Every file git knows about or would ignore: the checkout's whole shape."""
@@ -432,58 +433,110 @@ class RegistryTreeTest(unittest.TestCase):
         self.assertFalse((self.tree / "docs" / "left-behind.md").exists())
 
     def test_without_a_checkout_the_registry_is_its_clones_main(self) -> None:
-        registry = staging.registry_root(tree=self.tree)
+        registry = staging.Repositories(tree=self.tree).get("opengwasdb-stores", files=True)
 
         self.assertEqual(registry.root, self.tree)
         self.assertEqual(registry.git_dir, self.hub.work / "opengwasdb-stores.git")
-        self.assertEqual(registry.ref, self.commit)
+        self.assertEqual((registry.ref, registry.commit), ("main", self.commit))
         self.assertTrue(registry.clone)
         self.assertTrue((self.tree / "docs" / "_epics" / "opengwasdb-stores-1.yaml").is_file())
         self.assertFalse((self.tree / "src").exists(), "only what the site reads is extracted")
 
     def test_reading_the_registry_fetches_only_when_a_refresh_is_asked_for(self) -> None:
-        staging.registry_root(tree=self.tree)
+        staging.Repositories(tree=self.tree).get("opengwasdb-stores")
         newer = self.hub.commit("opengwasdb-stores", {"docs/a.md": "# A, again\n"})
 
-        self.assertEqual(staging.registry_root(tree=self.tree).ref, self.commit, "a read is not a fetch")
-        refreshed = staging.registry_root(tree=self.tree, refresh=True)
+        self.assertEqual(staging.Repositories(tree=self.tree).get("opengwasdb-stores").commit, self.commit, "a read is not a fetch")
+        refreshed = staging.Repositories(tree=self.tree, refresh=True).get("opengwasdb-stores")
 
-        self.assertEqual(refreshed.ref, newer)
+        self.assertEqual(refreshed.commit, newer)
         self.assertEqual(refreshed.fetch, {"ok": True, "error": None})
 
     def test_a_failed_refresh_is_recorded_and_the_main_it_has_is_read(self) -> None:
-        staging.registry_root(tree=self.tree)
+        staging.Repositories(tree=self.tree).get("opengwasdb-stores")
         self.hub.offline()
 
-        registry = staging.registry_root(tree=self.tree, refresh=True)
+        registry = staging.Repositories(tree=self.tree, refresh=True).get("opengwasdb-stores")
 
-        self.assertEqual(registry.ref, self.commit)
+        self.assertEqual(registry.commit, self.commit)
         self.assertFalse(registry.fetch["ok"])
 
     def test_a_registry_that_cannot_be_cloned_cannot_be_read_and_says_why(self) -> None:
         self.hub.offline()
 
-        with self.assertRaises(CollectError) as caught:
-            staging.registry_root(tree=self.tree)
+        registry = staging.Repositories(tree=self.tree).get("opengwasdb-stores")
 
-        self.assertIn("opengwasdb-stores", str(caught.exception))
+        self.assertFalse(registry.readable)
+        self.assertIn("opengwasdb-stores", registry.error)
+        self.assertIn("no-network", registry.error)
+        with self.assertRaises(CollectError) as caught:
+            registry.require()
         self.assertIn("no-network", str(caught.exception))
 
     def test_a_reader_of_git_alone_extracts_nothing(self) -> None:
-        registry = staging.registry_root(tree=self.tree, files=False)
+        registry = staging.Repositories(tree=self.tree).get("opengwasdb-stores")
 
         self.assertIsNone(registry.root)
-        self.assertEqual((registry.git_dir, registry.ref), (self.hub.work / "opengwasdb-stores.git", self.commit))
+        self.assertEqual((registry.git_dir, registry.commit), (self.hub.work / "opengwasdb-stores.git", self.commit))
         self.assertFalse(self.tree.exists())
 
     def test_a_named_checkout_is_the_registry_itself(self) -> None:
-        registry = staging.registry_root(self.checkout)
+        registry = staging.Repositories(checkouts={"opengwasdb-stores": self.checkout}).get("opengwasdb-stores", files=True)
 
         self.assertEqual(registry.root, self.checkout.resolve())
         self.assertEqual(registry.git_dir, self.checkout.resolve())
-        self.assertEqual(registry.ref, "HEAD")
+        self.assertEqual((registry.ref, registry.commit), ("HEAD", self.commit))
         self.assertFalse(registry.clone)
         self.assertFalse((self.hub.work / "opengwasdb-stores.git").exists(), "a named checkout needs no clone")
+
+    def test_only_opengwasdb_stores_has_its_files_extracted(self) -> None:
+        with self.assertRaises(ValueError):
+            staging.Repositories(tree=self.tree).get("opengwasdb", files=True)
+
+
+class ReadHandleTest(unittest.TestCase):
+    """One read handle per listed repository per run: cloned, fetched once, and a failure recorded (og-dev-hub#9)."""
+
+    def setUp(self) -> None:
+        self.hub = GithubFixture(self)
+        self.commits = {name: self.hub.repository(name, {"README.md": f"# {name}\n"})
+                        for name in ("opengwasdb", "ogquery")}
+
+    def test_a_listed_repository_is_cloned_and_fetched_once_per_run(self) -> None:
+        staging.Repositories().get("ogquery")  # the first read clones it
+        calls = []
+        real = staging.ensure_clone
+
+        def counted(git_dir, **kwargs):
+            calls.append((Path(git_dir).name, kwargs.get("fetch")))
+            return real(git_dir, **kwargs)
+
+        with mock.patch.object(staging, "ensure_clone", counted):
+            run = staging.Repositories(refresh=True)
+            first = run.get("ogquery")
+            again = run.get("ogquery", revision="f" * 40)  # a revision it lacks is no second fetch
+
+        self.assertIs(first.git_dir, again.git_dir)
+        self.assertEqual(calls, [("ogquery.git", True)])
+        self.assertEqual((first.commit, first.fetch), (self.commits["ogquery"], {"ok": True, "error": None}))
+
+    def test_a_fetch_that_fails_is_that_repositorys_and_the_others_are_read(self) -> None:
+        run = staging.Repositories(refresh=True)
+        run.get("ogquery")
+        shutil.rmtree(self.hub.github / "ogquery")
+
+        again = staging.Repositories(refresh=True)
+        failed, other = again.get("ogquery"), again.get("opengwasdb")
+
+        self.assertFalse(failed.fetch["ok"])
+        self.assertEqual(failed.commit, self.commits["ogquery"], "what the clone holds is still read")
+        self.assertEqual((other.commit, other.fetch), (self.commits["opengwasdb"], {"ok": True, "error": None}))
+
+    def test_a_repository_that_does_not_exist_cannot_be_read_and_says_why(self) -> None:
+        missing = staging.Repositories().get("no-such-repository")
+
+        self.assertFalse(missing.readable)
+        self.assertIn("no-such-repository", missing.error)
 
 
 class EngineRevisionTest(unittest.TestCase):
@@ -495,27 +548,45 @@ class EngineRevisionTest(unittest.TestCase):
         self.clone = paths.clone_dir("opengwasdb")
 
     def test_a_pinned_revision_the_clone_lacks_is_fetched(self) -> None:
-        build._engine_clone(self.first)
+        build._engine_clone(self.first, staging.Repositories())
         newer = self.hub.commit("opengwasdb", {"docs/later.md": "# Later\n"})
 
-        self.assertEqual(build._engine_clone(newer), self.clone)
+        self.assertEqual(build._engine_clone(newer, staging.Repositories()), self.clone)
 
         self.assertTrue(staging.has_revision(self.clone, newer))
 
+    def test_the_engine_handle_a_refresh_fetched_is_not_fetched_again_for_the_pin(self) -> None:
+        # og-dev-hub#9: the build's refresh, the pinned revision and the collectors share one handle.
+        build._engine_clone(self.first, staging.Repositories())
+        newer = self.hub.commit("opengwasdb", {"docs/later.md": "# Later\n"})
+        run = staging.Repositories(refresh=True)
+        calls = []
+        real = staging.ensure_clone
+
+        def counted(git_dir, **kwargs):
+            calls.append(kwargs.get("fetch"))
+            return real(git_dir, **kwargs)
+
+        with mock.patch.object(staging, "ensure_clone", counted):
+            self.assertEqual(build._engine_clone(newer, run), self.clone)
+            self.assertEqual(run.get("opengwasdb").commit, newer)
+
+        self.assertEqual(calls, [True])
+
     def test_a_revision_the_engine_does_not_have_stops_the_render_naming_it(self) -> None:
         with self.assertRaises(CollectError) as caught:
-            build._engine_clone("f" * 40)
+            build._engine_clone("f" * 40, staging.Repositories())
 
         self.assertIn("f" * 40, str(caught.exception))
 
     def test_a_pin_fetch_that_fails_stops_the_render_with_gits_message(self) -> None:
         # There is no older engine to fall back to: without the pinned revision there
         # are no engine docs to stage, so the render stops, saying why (exit 2).
-        build._engine_clone(self.first)
+        build._engine_clone(self.first, staging.Repositories())
         self.hub.offline()
 
         with self.assertRaises(CollectError) as caught:
-            build._engine_clone("e" * 40)
+            build._engine_clone("e" * 40, staging.Repositories())
 
         self.assertIn("e" * 40, str(caught.exception))
         self.assertIn("opengwasdb", str(caught.exception))

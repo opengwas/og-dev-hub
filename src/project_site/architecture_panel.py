@@ -1,7 +1,7 @@
 """The component panel on the architecture pages (#435): click a component, see what the map knows.
 
 On Pipeline, Structure and health and the Work map, a component's box in the
-engine and registry diagrams and its name in the page's lists and tables are
+repositories' diagrams and its name in the page's lists and tables are
 links to `#component-<id>`. Following one opens a panel beside the page with the
 component's code (its size, stages and the paths it claims, linked to GitHub at
 the commit read), the work on it now, its imports each way and its ADRs. The
@@ -18,8 +18,12 @@ review, item 12). Every fact goes through `json.dumps` and then has `<`, `>`,
 the `<script>` it sits in, or close the page's raw block.
 
 What a collector could not measure is unknown, never "none": without
-`work.json`, or for the engine's components when `work.json` says the engine
+`work.json`, or for a repository's components when `work.json` says its work
 was not measured, a component's `work` is `null` with a `work_note` saying why.
+
+The panel is built from what `architecture_pages` hands it, which is
+`architecture_public.public_view` of the collected files: a private
+repository's components are not in it at all (og-dev-hub#9).
 """
 
 from __future__ import annotations
@@ -40,7 +44,10 @@ ANCHOR = "component-"
 # id is never markup and never needs escaping in an address.
 _ID = re.compile(r"[a-z][a-z0-9_]*\Z")
 
-REPOSITORY_URL = {"registry": paths.REGISTRY_URL, "engine": paths.ENGINE_URL}
+def repository_url(repo: Any) -> str | None:
+    """Where a listed repository is on GitHub, by its name (og-dev-hub#9)."""
+    return paths.clone_url(str(repo)) if isinstance(repo, str) and repo else None
+
 
 # How the architecture collector placed an ADR on a component.
 PLACED_BY = {"code": "cites its code", "title": "names it in its title"}
@@ -116,23 +123,28 @@ def _data(
             out[e["from"]].append([e["to"], e["imports"], bool(e.get("upward"))])
             into[e["to"]].append([e["from"], e["imports"], bool(e.get("upward"))])
 
+    from project_site import architecture_pages
+
     adrs: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for adr in arch.get("adrs") or []:
         if not isinstance(adr, Mapping):
             continue
+        cites = [[text, url] for text, url in architecture_pages.cited_adrs(arch, adr)]
         for cid, via in (adr.get("components") or {}).items():
             adrs[cid].append({
                 "title": adr.get("title"), "url": adr.get("url"), "repo": adr.get("repo"),
-                "status": adr.get("status"), "via": PLACED_BY.get(via, via),
+                "status": adr.get("status"), "via": PLACED_BY.get(via, via), "cites": cites,
             })
 
-    engine_model = bool((arch.get("engine") or {}).get("model"))
+    repos = {name: r for name, r in (arch.get("repos") or {}).items() if isinstance(r, Mapping)}
+    unmodelled = [name for name, r in repos.items() if r.get("model") is False]
     work, owners = _work(pages.available(documents, "work"), components, [state for state, _ in states])
     found: dict[str, Any] = {}
     for c in components:
         repo = c.get("repo")
-        commit = (arch.get(repo) or {}).get("commit") or (arch.get(repo) or {}).get("ref") or "main"
-        base = REPOSITORY_URL.get(repo)
+        read = repos.get(str(repo)) or {}
+        commit = read.get("commit") or read.get("ref") or "main"
+        base = repository_url(repo)
         found[c["id"]] = {
             "name": c.get("name"),
             "summary": c.get("summary"),
@@ -144,9 +156,9 @@ def _data(
             "paths": [[p, f"{base}/tree/{commit}/{p}" if base else None] for p in c.get("paths") or []],
             "out": sorted(out[c["id"]], key=lambda row: -row[1]),
             "in": sorted(into[c["id"]], key=lambda row: -row[1]),
-            "imports_note": None if engine_model or repo != "registry" else (
-                "The engine has no architecture model at the ref read, so its imports into the engine "
-                "cannot be placed on the engine's components."
+            "imports_note": None if not unmodelled else (
+                f"{len(unmodelled)} {'repository has' if len(unmodelled) == 1 else 'repositories have'} no architecture "
+                f"model at the ref read ({', '.join(unmodelled)}), so an import into one cannot be placed on its components."
             ),
             "adrs": adrs[c["id"]],
             **work[c["id"]],
@@ -174,7 +186,7 @@ def _work(
     for c in components:
         reason = unmeasured.get(c.get("repo"))
         if reason:
-            found[c["id"]] = {"work": None, "work_note": f"Work on the {c.get('repo')}'s side was not measured: {reason}."}
+            found[c["id"]] = {"work": None, "work_note": f"Work in {c.get('repo')} was not measured: {reason}."}
             continue
         groups = []
         for owner, items in sorted(by_component[c["id"]].items(), key=lambda pair: str(pair[0])):
@@ -288,7 +300,9 @@ SCRIPT = r"""
       el('h3', {}, 'ADRs'),
       c.adrs.length ? list(c.adrs.map(function (a) {
         return [el('a', {href: a.url}, a.title), el('span', {'class': 'arch-panel-note'},
-          ' (' + a.repo + '; ' + a.via + (a.status && a.status !== 'current' ? '; ' + a.status : '') + ')')];
+          ' (' + a.repo + '; ' + a.via + (a.status && a.status !== 'current' ? '; ' + a.status : '') + ')'),
+          (a.cites || []).length ? el('span', {'class': 'arch-panel-note'}, '; cites ',
+            a.cites.map(function (c, i) { return [i ? ', ' : '', c[1] ? el('a', {href: c[1]}, c[0]) : c[0]]; })) : ''];
       })) : note('No ADR cites its code or names it in its title.')
     ));
     panel.setAttribute('aria-labelledby', 'arch-panel-title');

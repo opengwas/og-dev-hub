@@ -1,4 +1,4 @@
-"""The import graph between components, across both repositories (#418, #421).
+"""The import graph between components, within and across the repositories read (#418, #421, og-dev-hub#9).
 
 The edges are not written in any model: they are read from the code. Every
 tracked Python module a component claims is parsed, and each import that lands
@@ -6,16 +6,17 @@ in another component's module is one import of that edge. An import is counted
 per (file, imported name), so one file importing three names of another
 component is three imports.
 
-An import inside the engine is `upward` when it goes to a component on a higher
-layer than the importing one (the engine's own file declares the layers, top to
-bottom); the same layer and lower layers are not. An import from this
-repository into the engine is a `registry_to_engine` edge.
+An edge is `within` one repository, or `across` two, and then it records
+`from_repo` and `to_repo`. An import within a repository is `upward` when it
+goes to a component on a higher layer than the importing one (the model that
+declares the layers lists them, top to bottom); the same layer and lower layers
+are not.
 
-The same measurement is what this repository's baseline of engine imports is
-held to (#421): `imports_of` yields every import once, `import_edges` counts
-them between components, and `engine_imports` keeps the ones that reach the
-engine. One pass over the sources, so the page's seam counts and the baseline
-cannot disagree about what an import is.
+One seam across repositories is held to a baseline (#421): opengwasdb-stores'
+imports of opengwasdb (`SEAM`). `imports_of` yields every import once,
+`import_edges` counts them between components, and `engine_imports` keeps the
+ones that reach the engine. One pass over the sources, so the page's seam counts
+and the baseline cannot disagree about what an import is.
 """
 
 from __future__ import annotations
@@ -31,17 +32,24 @@ from project_site.collect.common import CollectError
 
 Edge = dict[str, Any]
 
+#: The one seam between repositories held to a baseline (#421): `(from, to)` by repository name,
+#: and the package whose names are the engine's. The name alone decides an engine import, so the
+#: baseline needs no engine checkout and no engine model.
+SEAM = ("opengwasdb-stores", "opengwasdb")
+SEAM_PACKAGE = "opengwasdb"
+SOURCE_ROOT = "src/"
 
-def module_name(repo: str, path: str) -> str | None:
-    """The dotted module a Python file is: `opengwasdb/a/b.py` -> `opengwasdb.a.b`, `src/x/y.py` -> `x.y`."""
-    if not path.endswith(".py"):
+
+def source_root(files: Sequence[str]) -> str:
+    """Where a repository's modules are named from: `src/` when it has one, else its root."""
+    return SOURCE_ROOT if any(path.startswith(SOURCE_ROOT) for path in files) else ""
+
+
+def module_name(path: str, root: str = "") -> str | None:
+    """The dotted module a Python file is, from the source root: `opengwasdb/a/b.py` -> `opengwasdb.a.b`, `src/x/y.py` -> `x.y`."""
+    if not path.endswith(".py") or not path.startswith(root):
         return None
-    if repo == "engine":
-        relative = path
-    elif path.startswith("src/"):
-        relative = path[len("src/") :]
-    else:
-        return None
+    relative = path[len(root):]
     return relative[: -len(".py")].replace("/", ".").removesuffix(".__init__")
 
 
@@ -70,60 +78,69 @@ def imported_names(source: str, module: str, is_package: bool, path: str = "?") 
     return names
 
 
-def modules_of(trees: Mapping[str, Any]) -> dict[str, tuple[str, str]]:
-    """Dotted module -> (repository, file), for every tracked file of both repositories."""
-    return {
-        module: (repo, path)
-        for repo, tree in trees.items()
-        for path in tree.files
-        if (module := module_name(repo, path))
-    }
+def modules_of(trees: Mapping[str, Any]) -> dict[str, dict[str, str]]:
+    """Repository -> dotted module -> file, for every tracked Python file of each tree."""
+    found: dict[str, dict[str, str]] = {}
+    for repo, tree in trees.items():
+        root = source_root(tree.files)
+        found[repo] = {module: path for path in tree.files if (module := module_name(path, root))}
+    return found
+
+
+def resolve(name: str, home: str, modules: Mapping[str, Mapping[str, Any]]) -> tuple[str, Any] | None:
+    """`(repository, value)` of the module a dotted `name` lands in, looking in `home` first.
+
+    Trailing segments are dropped until a module answers, so `a.b.c` (a name
+    imported from module `a.b`) lands in `a.b`. The importing repository is
+    searched whole before any other, as Python finds its own package first: two
+    repositories may hold a module of the same name.
+    """
+    for repo in (home, *[r for r in modules if r != home]):
+        known = modules.get(repo) or {}
+        parts = name.split(".")
+        while parts:
+            if ".".join(parts) in known:
+                return repo, known[".".join(parts)]
+            parts.pop()
+    return None
 
 
 def imports_of(
     trees: Mapping[str, Any], claims: Mapping[str, Sequence[tuple[str, str]]]
 ) -> list[dict[str, Any]]:
-    """Every import a claimed file of either repository makes, one record per (file, imported name).
+    """Every import a claimed file of any tree makes, one record per (file, imported name).
 
-    `component` is the importing file's owner; `target` is the component the name
-    resolves to, or `None` for a name no tracked module answers to. An unclaimed
-    file is not a source here: it is a gap the ownership test fails on, so its
-    imports are reported there rather than hidden in a graph.
+    `trees` and `claims` are keyed by repository name. `component` is the
+    importing file's owner; `target` is the component the name resolves to (and
+    `target_repo` its repository), or `None` for a name no tracked module answers
+    to. An unclaimed file is not a source here: it is a gap the ownership check
+    fails on, so its imports are reported there rather than hidden in a graph.
     """
     # Every tracked module resolves to its own owner or to none: an unclaimed
     # module is a gap, and must not inherit the owner of the package around it.
     everything = modules_of(trees)
-    module_owner: dict[str, str | None] = {
-        module: model_rules.owner(claims[repo], path) for module, (repo, path) in everything.items()
+    module_owner = {
+        repo: {module: model_rules.owner(claims.get(repo) or [], path) for module, path in found.items()}
+        for repo, found in everything.items()
     }
-    sources: list[tuple[str, str, str]] = [
-        (repo, path, module) for module, (repo, path) in everything.items() if module_owner[module]
-    ]
-    # A claimed script (`tools/`, `workflow/`) is not importable, but it imports:
-    # it is a source of edges, never a target.
-    importable = {path for _, path, _ in sources}
-    for path in trees["registry"].files:
-        if path.endswith(".py") and path not in importable and model_rules.owner(claims["registry"], path):
-            sources.append(("registry", path, ""))
-
-    def resolve(name: str) -> str | None:
-        parts = name.split(".")
-        while parts:
-            if ".".join(parts) in module_owner:
-                return module_owner[".".join(parts)]
-            parts.pop()
-        return None
-
     records: list[dict[str, Any]] = []
     for repo, tree in trees.items():
-        mine = [(path, module) for r, path, module in sources if r == repo]
-        text = tree.read([path for path, _ in mine])
-        for path, module in mine:
-            source = model_rules.owner(claims[repo], path)
+        mine = claims.get(repo) or []
+        sources = [(path, module) for module, path in everything[repo].items() if module_owner[repo][module]]
+        # A claimed script (`tools/`, `workflow/`) is not importable, but it imports:
+        # it is a source of edges, never a target.
+        importable = {path for path, _ in sources}
+        sources += [(path, "") for path in tree.files
+                    if path.endswith(".py") and path not in importable and model_rules.owner(mine, path)]
+        text = tree.read([path for path, _ in sources])
+        for path, module in sources:
+            source = model_rules.owner(mine, path)
             for name in imported_names(text.get(path, ""), module, path.endswith("__init__.py"), path):
-                records.append(
-                    {"repo": repo, "file": path, "component": source, "name": name, "target": resolve(name)}
-                )
+                found = resolve(name, repo, module_owner)
+                records.append({
+                    "repo": repo, "file": path, "component": source, "name": name,
+                    "target": found[1] if found else None, "target_repo": found[0] if found and found[1] else None,
+                })
     return records
 
 
@@ -134,12 +151,11 @@ def is_engine_name(name: str) -> bool:
     this repository's own CI hold its engine imports to a baseline on its own.
     `opengwasdbx` is a different package, not the engine's.
     """
-    package = model_rules.ENGINE_PACKAGE
-    return name == package or name.startswith(f"{package}.")
+    return name == SEAM_PACKAGE or name.startswith(f"{SEAM_PACKAGE}.")
 
 
 def engine_imports(imports: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """This repository's imports of engine names, sorted by (file, name), one entry per pair.
+    """opengwasdb-stores' imports of engine names (`SEAM`), sorted by (file, name), one entry per pair.
 
     `engine_component` is the engine component the name resolves to, and is
     `None` when the engine was not read: the measurement does not need it.
@@ -147,7 +163,7 @@ def engine_imports(imports: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]
     found = [
         {"file": record["file"], "name": record["name"], "engine_component": record["target"]}
         for record in imports
-        if record["repo"] == "registry" and is_engine_name(record["name"])
+        if record["repo"] == SEAM[0] and is_engine_name(record["name"])
     ]
     return sorted(found, key=lambda entry: (entry["file"], entry["name"]))
 
@@ -239,22 +255,25 @@ def import_edges(
     edges = []
     for (source, target), count in sorted(counts.items()):
         a, b = by_id[source], by_id[target]
-        if a["repo"] == "engine" and b["repo"] == "engine":
-            scope = "engine"
-        elif a["repo"] == "registry" and b["repo"] == "engine":
-            scope = "registry_to_engine"
+        if a["repo"] == b["repo"]:
+            edges.append({"from": source, "to": target, "imports": count, "scope": "within", "repo": a["repo"],
+                          "upward": _upward(a, b)})
         else:
-            scope = "registry"
-        upward = scope == "engine" and None not in (a["layer"], b["layer"]) and b["layer"] > a["layer"]
-        edges.append({"from": source, "to": target, "imports": count, "scope": scope, "upward": upward})
+            edges.append({"from": source, "to": target, "imports": count, "scope": "across",
+                          "from_repo": a["repo"], "to_repo": b["repo"], "upward": False})
     return edges
 
 
-def upward_imports(imports: Sequence[Mapping[str, Any]], components: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Each engine import that goes up a layer, sorted by (file, name): file, name, components and layers (#419).
+def _upward(a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:
+    """Whether an import from component `a` into `b` of the same repository goes up its layers."""
+    return a["repo"] == b["repo"] and None not in (a.get("layer"), b.get("layer")) and b["layer"] > a["layer"]
 
-    The engine's layering baseline lists the same (file, name) pairs, so `check`
-    can compare entries rather than counts.
+
+def upward_imports(imports: Sequence[Mapping[str, Any]], components: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Each import within a repository that goes up a layer, sorted by (file, name): file, name, components and layers (#419).
+
+    The layering baseline of the repository that declares the layers lists the
+    same (file, name) pairs, so `check` can compare entries rather than counts.
     """
     by_id = {c["id"]: c for c in components}
     found = []
@@ -263,16 +282,21 @@ def upward_imports(imports: Sequence[Mapping[str, Any]], components: Sequence[Ma
         if not target or target == source:
             continue
         a, b = by_id[source], by_id[target]
-        if a["repo"] == b["repo"] == "engine" and None not in (a["layer"], b["layer"]) and b["layer"] > a["layer"]:
+        if _upward(a, b):
             found.append({"file": record["file"], "name": record["name"], "from": source, "to": target,
                           "from_layer": a["layer"], "to_layer": b["layer"]})
     return sorted(found, key=lambda u: (u["file"], u["name"]))
 
 
+def seam_edges(edges: Sequence[Edge]) -> list[Edge]:
+    """The across-edges of the one seam held to a baseline (`SEAM`)."""
+    return [e for e in edges if e["scope"] == "across" and (e["from_repo"], e["to_repo"]) == SEAM]
+
+
 def summarise(edges: Sequence[Edge]) -> dict[str, int]:
-    """The figures the pages state: upward edges and imports, and the registry's reach into the engine."""
+    """The figures the pages state: upward edges and imports, and the seam's (opengwasdb-stores into opengwasdb)."""
     upward = [e for e in edges if e["upward"]]
-    seam = [e for e in edges if e["scope"] == "registry_to_engine"]
+    seam = seam_edges(edges)
     return {
         "edges": len(edges),
         "upward_edges": len(upward),
