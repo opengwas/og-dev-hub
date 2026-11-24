@@ -31,21 +31,24 @@ from project_site.collect import architecture as architecture_collector, common
 CITED = ["opengwasdb/encoding/se_range.py"]
 
 
-def clone_into_work_root(test: unittest.TestCase, root: Path, engine: Path, *, origin: Path | None = None) -> Path:
-    """A work root under `root` holding opengwasdb's clone, made from the fixture `engine`, for this test only.
+def engine_in_work_root(root: Path, engine: dict[str, str]) -> Path:
+    """A work root under `root` whose opengwasdb clone is the fixture `engine`, built in place; returns the work root.
 
     The commands read every repository through its read handle, whose clone is
     `<work root>/<name>.git`: this is how a test points them at a fixture
-    (og-dev-hub#9). `origin` is where a `--refresh` fetches from; by default a
-    path that does not exist, so no test reaches the network.
+    (og-dev-hub#9). The clone has no `origin`, so a `--refresh` fails to fetch it
+    on any host, and `work_root_patches` points GitHub nowhere: no test reaches
+    the network.
     """
     work = root / "work"
-    work.mkdir(exist_ok=True)
-    subprocess.run(["git", "clone", "-q", "--bare", str(engine), str(work / "opengwasdb.git")], check=True)
-    afx.git(work / "opengwasdb.git", "remote", "set-url", "origin", str(origin or root / "no-such-origin"))
-    test.enterContext(mock.patch.dict(os.environ, {cli.site_paths.WORK_ROOT_ENV: str(work)}))
-    test.enterContext(mock.patch.object(cli.site_paths, "GITHUB", str(root / "no-network")))
+    afx.make_bare_repo(work / "opengwasdb.git", engine)
     return work
+
+
+def work_root_patches(work: Path, root: Path) -> list:
+    """The patches that make the commands read `work` as the site's work root, and find no network."""
+    return [mock.patch.dict(os.environ, {cli.site_paths.WORK_ROOT_ENV: str(work)}),
+            mock.patch.object(cli.site_paths, "GITHUB", str(root / "no-network"))]
 
 
 def run(*argv: str) -> tuple[int, str]:
@@ -303,20 +306,24 @@ class OffBoardEpicBranchTests(unittest.TestCase):
 
 
 class GitFailureTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="cli-git-"))
-        self.addCleanup(shutil.rmtree, self.root, True)
-        afx.make_repo(self.root / "registry", afx.REGISTRY_FILES, branch="trunk")
-        afx.make_repo(self.root / "engine", afx.ENGINE_FILES)
-        self.data = self.root / "data"
-        common.write_source(self.data, board())
-        self.system = self.root / "system.yaml"
-        self.system.write_text(afx.SYSTEM_YAML, encoding="utf-8")
-        common.write_source(self.data, common.collect_source("architecture", lambda: architecture_collector.collect(
-            afx.repositories(self.root / "registry", self.root / "engine"), system_file=self.system)))
-        self.work = clone_into_work_root(self, self.root, self.root / "engine")
-        self.args = ["--data", str(self.data), "--registry", str(self.root / "registry"), "--system", str(self.system),
-                     "--repo", "registry", "--files", "src/gen/x.py"]
+    """Its fixtures never vary, so the class builds them once (og-dev-hub#9)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.root = Path(tempfile.mkdtemp(prefix="cli-git-"))
+        cls.addClassCleanup(shutil.rmtree, cls.root, True)
+        afx.make_repo(cls.root / "registry", afx.REGISTRY_FILES, branch="trunk")
+        cls.work = engine_in_work_root(cls.root, afx.ENGINE_FILES)
+        cls.data = cls.root / "data"
+        common.write_source(cls.data, board())
+        cls.system = cls.root / "system.yaml"
+        cls.system.write_text(afx.SYSTEM_YAML, encoding="utf-8")
+        common.write_source(cls.data, common.collect_source("architecture", lambda: architecture_collector.collect(
+            afx.repositories(cls.root / "registry", cls.work / "opengwasdb.git"), system_file=cls.system)))
+        for patch in work_root_patches(cls.work, cls.root):
+            cls.enterClassContext(patch)
+        cls.args = ["--data", str(cls.data), "--registry", str(cls.root / "registry"), "--system", str(cls.system),
+                    "--repo", "registry", "--files", "src/gen/x.py"]
 
     def test_an_inaccessible_local_directory_exits_2_with_a_reason(self) -> None:
         code, text = run("conflicts", *self.args, "--local", str(self.root / "no-such-clone"))
@@ -355,7 +362,7 @@ class GitFailureTests(unittest.TestCase):
     def test_a_local_orphan_branch_is_no_work_and_leaves_the_answer_decided(self) -> None:
         # An orphan branch (the CLA check's `cla-signatures`) has no merge base with
         # main, so it is no work against it: skipped, never "cannot decide" (og-dev-hub#7).
-        clone = self.root / "clone"
+        clone = Path(tempfile.mkdtemp(prefix="clone-", dir=self.root))
         afx.make_repo(clone, {"a.txt": "x\n"})
         afx.git(clone, "checkout", "-q", "--orphan", "unrelated")
         (clone / "b.txt").write_text("y\n")
@@ -367,8 +374,10 @@ class GitFailureTests(unittest.TestCase):
         self.assertEqual((code, text), (0, "1 files on 1 components\nmeets no other work\n"))
 
     def test_check_with_an_unreadable_engine_exits_2_naming_it(self) -> None:
-        shutil.rmtree(self.work / "opengwasdb.git")  # and no network to clone it again
-        code, text = run("check", "--data", str(self.data), "--system", str(self.system))
+        # A work root with no opengwasdb clone, and no network to make one.
+        empty = Path(tempfile.mkdtemp(prefix="empty-work-", dir=self.root))
+        with mock.patch.dict(os.environ, {cli.site_paths.WORK_ROOT_ENV: str(empty)}):
+            code, text = run("check", "--data", str(self.data), "--system", str(self.system))
         self.assertEqual(code, 2)
         self.assertIn("opengwasdb.git", text)
         self.assertIn("layering baseline", text)
@@ -395,9 +404,10 @@ class CheckTests(unittest.TestCase):
         root = Path(tempfile.mkdtemp(prefix="check-"))
         self.addCleanup(shutil.rmtree, root, True)
         afx.make_repo(root / "registry", registry or afx.REGISTRY_FILES, branch="trunk")
-        afx.make_repo(root / "engine", engine or afx.ENGINE_FILES)
         (root / "system.yaml").write_text(afx.SYSTEM_YAML, encoding="utf-8")
-        self.work = clone_into_work_root(self, root, root / "engine")
+        self.work = engine_in_work_root(root, engine or afx.ENGINE_FILES)
+        for patch in work_root_patches(self.work, root):
+            self.enterContext(patch)
         return ["--registry", str(root / "registry"), "--system", str(root / "system.yaml")]
 
     def test_clean_claims_exit_0(self) -> None:

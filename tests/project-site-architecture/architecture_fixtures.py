@@ -29,6 +29,28 @@ def make_repo(root: Path, files: dict[str, str], *, branch: str = "main") -> str
     return git(root, "rev-parse", "HEAD")
 
 
+def make_bare_repo(git_dir: Path, files: dict[str, str], *, branch: str = "main") -> str:
+    """A bare repository at `git_dir` with `files` committed on `branch`, built in place; returns the commit.
+
+    It is what a clone under the site's work root is (`<work root>/<name>.git`),
+    without making a repository first and cloning it.
+    """
+    import tempfile
+
+    git_dir.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q", "--bare", "-b", branch, str(git_dir)], check=True)
+    with tempfile.TemporaryDirectory(prefix="bare-tree-", dir=git_dir.parent) as tree:
+        for name, text in files.items():
+            path = Path(tree) / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        both = ["--git-dir", str(git_dir), "--work-tree", tree]
+        subprocess.run(["git", *both, "add", "-A"], check=True, capture_output=True)
+        subprocess.run(["git", *both, "-c", "user.name=t", "-c", "user.email=t@example.org", "commit", "-q", "-m", "fixture"],
+                       check=True, capture_output=True)
+    return git(git_dir, "rev-parse", "HEAD")
+
+
 SYSTEM_SECTIONS = """\
 system: {name: OpenGWAS, summary: The system.}
 people:
