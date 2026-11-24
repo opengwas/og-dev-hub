@@ -16,6 +16,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -211,6 +212,17 @@ class UnplacedAndUnrefreshedTests(unittest.TestCase):
                          "--files", "src/project_site/x.py")
         self.assertEqual(code, 2, text)
         self.assertIn("could not read from remote repository", text)
+
+    def test_a_failed_registry_refresh_cannot_be_decided(self) -> None:
+        # og-dev-hub#7: a registry read from a stale clone is not answered as if fresh.
+        stale = {**ARCHITECTURE, "registry": {**ARCHITECTURE["registry"],
+                                              "refresh": {"ok": False, "error": "fatal: could not read opengwasdb-stores."}}}
+        result = compute(board(), architecture=stale)
+        code, text = run("conflicts", "--data", self.collection(result, stale), "--repo", "registry",
+                         "--files", "src/project_site/x.py")
+        self.assertEqual(code, 2, text)
+        self.assertIn("cannot decide: the fetch failed for opengwasdb-stores' main", text)
+        self.assertIn("could not read opengwasdb-stores", text)
 
     def test_a_meet_found_in_data_a_fetch_could_not_refresh_still_exits_1(self) -> None:
         code, text = run("conflicts", "--data", self.cited(branch_set(fetch={"ok": False, "error": "boom"})),
@@ -428,6 +440,20 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(code, 2, text)
         self.assertIn("cannot check: the fetch failed for the engine's main", text)
         self.assertIn("origin", text)
+
+    def test_a_registry_fetch_that_fails_is_undecided_not_a_pass(self) -> None:
+        # The registry's clone exists but its origin is gone, so `--refresh` cannot fetch it.
+        root = Path(tempfile.mkdtemp(prefix="stale-registry-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        afx.make_repo(root / "origin", afx.REGISTRY_FILES, branch="main")
+        clone = root / "work" / "opengwasdb-stores.git"
+        subprocess.run(["git", "clone", "-q", "--bare", str(root / "origin"), str(clone)], check=True)
+        shutil.rmtree(root / "origin")
+        args = self.fixtures()[2:]  # without --registry: the site's clone is read
+        with mock.patch.dict(os.environ, {cli.site_paths.WORK_ROOT_ENV: str(root / "work")}):
+            code, text = run("check", *args, "--refresh")
+        self.assertEqual(code, 2, text)
+        self.assertIn("cannot check: the fetch failed for opengwasdb-stores' main", text)
 
     def test_a_failed_engine_fetch_with_a_gap_still_exits_1(self) -> None:
         code, text = run("check", *self.fixtures(registry={**afx.REGISTRY_FILES, "src/extra/new.py": "x = 1\n"}), "--refresh")

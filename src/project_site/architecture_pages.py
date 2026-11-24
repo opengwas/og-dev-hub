@@ -488,6 +488,17 @@ def _engine_notice(data: Document) -> list[str]:
         f"committed {pages._cell(engine.get('committed'))}.",
         "",
     ]
+    # The registry is read from the site's clone too (og-dev-hub#7), and a refresh of
+    # it that failed is as visible as the engine's.
+    registry = data.get("registry") or {}
+    registry_refresh = registry.get("refresh")
+    if isinstance(registry_refresh, Mapping) and registry_refresh.get("ok") is False:
+        lines += [
+            f"> **The opengwasdb-stores refresh failed**: {pages._cell(registry_refresh.get('error'))}. "
+            f"This is the commit this clone already had ({pages._code(str(registry.get('commit'))[:12])}), "
+            "so it may be behind.",
+            "",
+        ]
     refresh = engine.get("refresh")
     if isinstance(refresh, Mapping) and refresh.get("ok") is False:
         lines += [

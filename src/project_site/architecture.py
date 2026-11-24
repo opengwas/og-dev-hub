@@ -241,7 +241,11 @@ def conflicts(args: argparse.Namespace, out: TextIO) -> int:
 
 
 def _fetch_failures(document: Mapping[str, Any] | None, architecture_doc: Mapping[str, Any]) -> list[str]:
-    """Each fetch the data read records as failed: the engine's ref, and each repository's branches."""
+    """Each fetch the data read records as failed: the engine's ref, the registry's clone, and each repository's branches.
+
+    The registry's clone is fetched once for both its `main` and its branches
+    (og-dev-hub#7), so that one failure is named once.
+    """
     def said(error: Any) -> str:
         return " ".join(str(error).split())[:200]
 
@@ -250,9 +254,12 @@ def _fetch_failures(document: Mapping[str, Any] | None, architecture_doc: Mappin
     refresh = engine.get("refresh")
     if isinstance(refresh, Mapping) and refresh.get("ok") is False:
         failures.append(f"the engine's {engine.get('ref')} ({said(refresh.get('error'))})")
+    registry_refresh = (architecture_doc.get("registry") or {}).get("refresh")
+    if isinstance(registry_refresh, Mapping) and registry_refresh.get("ok") is False:
+        failures.append(f"opengwasdb-stores' main ({said(registry_refresh.get('error'))})")
     for source in ((document or {}).get("branches") or {}).get("sources") or []:
         fetch = source.get("fetch")
-        if isinstance(fetch, Mapping) and fetch.get("ok") is False:
+        if isinstance(fetch, Mapping) and fetch.get("ok") is False and fetch != registry_refresh:
             failures.append(f"the {source.get('repo')} branches ({said(fetch.get('error'))})")
     return failures
 

@@ -160,6 +160,16 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("> **The engine refresh failed**: fatal: unable to access", page)
             self.assertIn("the `main` this clone already had", page)
 
+    def test_a_failed_registry_refresh_is_a_visible_line_too(self) -> None:
+        # og-dev-hub#7: the registry is read from the site's clone, refreshed like the engine's.
+        doc = architecture()
+        doc["registry"]["refresh"] = {"ok": False, "error": "fatal: unable to access 'https://github.com/opengwas/opengwasdb-stores/'"}
+        for function in (pages.render_pipeline, pages.render_structure):
+            page = render(function, doc)
+            self.assertIn("> **The opengwasdb-stores refresh failed**: fatal: unable to access", page)
+            self.assertIn("the commit this clone already had", page)
+            self.assertNotIn("The engine refresh failed", page)
+
     def test_an_unavailable_source_is_the_sites_usual_notice(self) -> None:
         failed = {"source": "architecture", "available": False, "collected_at": COLLECTED,
                   "error": "CollectError: no ref main"}
