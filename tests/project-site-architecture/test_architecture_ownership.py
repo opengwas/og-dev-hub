@@ -83,6 +83,22 @@ class OwnershipTests(unittest.TestCase):
         self.assertFalse(rule("opengwasdb/data.json"))
         self.assertFalse(rule("tests/test_x.py"))
 
+    def test_a_model_is_checked_for_everything_the_collector_reads_of_it(self) -> None:
+        # og-dev-hub#9: a model the collector cannot use is refused with the reason, and becomes its repository's gap.
+        for text, reason in (
+            ("components:\n  - {id: a}\n", "component #0 has no `name` of text"),
+            ("components:\n  - {name: A}\n", "component #0 has no `id` of text"),
+            ("components:\n  - just-text\n", "component #0 is not a mapping"),
+            ("components:\n  - {id: a, name: A}\n  - {id: a, name: B}\n", "component id 'a' is in the model twice"),
+            ("components:\n  - {id: a, name: A, paths: src/}\n", "component 'a': `paths` must be a list of text"),
+            ("components:\n  - {id: a, name: A, layer: top}\n", "component 'a': `layer` must be a whole number"),
+            ("layers: [1]\ncomponents: []\n", "the architecture model's `layers` must be a list of mappings"),
+        ):
+            with self.subTest(text=text), self.assertRaises(ValueError) as caught:
+                model.load_model(text)
+            self.assertIn(reason, str(caught.exception))
+        self.assertEqual(len(model.load_model("components:\n  - {id: a, name: A, paths: [src/], layer: 2}\n")["components"]), 1)
+
     def test_a_nul_separated_list_returns_a_path_with_a_tab_or_newline_whole(self) -> None:
         listing = "src/a\tb.py\0src/c\nd.py\0src/e.py\0"
         self.assertEqual(model.split_nul(listing), ["src/a\tb.py", "src/c\nd.py", "src/e.py"])

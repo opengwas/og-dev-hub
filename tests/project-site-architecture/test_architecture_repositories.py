@@ -21,7 +21,7 @@ from pathlib import Path
 import architecture_fixtures as fx
 
 from project_site import staging
-from project_site.collect import __main__ as command, architecture
+from project_site.collect import __main__ as command, architecture, common
 from project_site.collect import architecture_model as model
 
 OGQUERY_MODEL = """\
@@ -85,16 +85,48 @@ class World:
     def collect(self) -> dict:
         return architecture.collect(self.repositories, system_file=self.system)
 
+    def variant(self, **files: dict[str, str]) -> dict:
+        """A collection with some repositories replaced (`registry=`, `engine=`, `ogquery=`), built alone.
+
+        The other fixture repositories are this world's, read again through fresh handles:
+        a variant builds one repository, not five.
+        """
+        where = Path(tempfile.mkdtemp(prefix="variant-", dir=self.root))
+        dirs = {"registry": self.root / "registry", "engine": self.root / "engine", "ogquery": self.root / "ogquery"}
+        for name, content in files.items():
+            dirs[name] = where / name
+            fx.make_repo(dirs[name], content, branch="trunk" if name == "registry" else "main")
+        repositories = staging.Repositories(
+            checkouts={fx.REGISTRY: dirs["registry"]},
+            git_dirs={**self.repositories.git_dirs, fx.ENGINE: dirs["engine"], "ogquery": dirs["ogquery"]},
+        )
+        return architecture.collect(repositories, system_file=self.system)
+
+
+_SHARED: list[World] = []
+
+
+def shared_world() -> World:
+    """One set of fixture repositories for every class that only reads them, built once per run of this file."""
+    if not _SHARED:
+        _SHARED.append(World(unittest.TestCase()))
+        unittest.addModuleCleanup(shutil.rmtree, _SHARED[0].root, True)
+    return _SHARED[0]
+
+
+class SharedWorld(unittest.TestCase):
+    """The shared fixture repositories; each test varies what it needs (`World.variant`)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.world = shared_world()
+
 
 class EveryListedRepositoryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.world = World(unittest.TestCase())
+        cls.world = shared_world()
         cls.result = cls.world.collect()
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        shutil.rmtree(cls.world.root, True)
 
     def test_every_listed_repository_is_recorded_in_system_yamls_order(self) -> None:
         self.assertEqual(list(self.result["repos"]), [
@@ -168,10 +200,10 @@ class CodeRootsTests(unittest.TestCase):
             ["workflow/Snakefile", "workflow/a.smk", "src/x/y.R", "src/x/y.r"])
 
 
-class MissingModelTests(unittest.TestCase):
+class MissingModelTests(SharedWorld):
     def test_opengwasdb_stores_without_a_model_is_a_gap_not_an_error(self) -> None:
         registry = {k: v for k, v in fx.REGISTRY_FILES.items() if k != "docs/architecture/components.yaml"}
-        result = World(self, registry_files=registry).collect()
+        result = self.world.variant(registry=registry)
         self.assertIn("is not in opengwasdb-stores at HEAD", result["gaps"][fx.REGISTRY]["no_model"])
         self.assertIsNone(result["gaps"][fx.REGISTRY]["unclaimed"])
         self.assertNotIn(fx.REGISTRY, {c["repo"] for c in result["components"]})
@@ -183,16 +215,38 @@ class MissingModelTests(unittest.TestCase):
 
     def test_a_model_that_cannot_be_used_is_a_gap_naming_why(self) -> None:
         registry = {**fx.REGISTRY_FILES, "docs/architecture/components.yaml": "components: [unclosed\n"}
-        gap = World(self, registry_files=registry).collect()["gaps"][fx.REGISTRY]
+        gap = self.world.variant(registry=registry)["gaps"][fx.REGISTRY]
         self.assertIn("cannot be used", gap["no_model"])
 
+    def test_a_component_without_a_name_is_its_repositorys_gap_and_the_others_are_collected(self) -> None:
+        # ADR 0001: one repository's model never stops the others.
+        nameless = OGQUERY_MODEL.replace("name: Light reads, ", "")
+        result = common.collect_source("architecture", lambda: self.world.variant(
+            ogquery={**OGQUERY_FILES, "docs/architecture/components.yaml": nameless}))
+        self.assertTrue(result["available"], result["error"])
+        self.assertIn("`name`", result["gaps"]["ogquery"]["no_model"])
+        self.assertIs(result["repos"]["ogquery"]["model"], False)
+        self.assertEqual({c["repo"] for c in result["components"]}, {fx.REGISTRY, fx.ENGINE, "ogld"})
 
-class AdrCitationTests(unittest.TestCase):
+    def test_a_component_id_in_two_models_is_the_later_repositorys_gap_naming_both(self) -> None:
+        twice = OGQUERY_MODEL.replace("id: oq_read", "id: store")
+        result = common.collect_source("architecture", lambda: self.world.variant(
+            ogquery={**OGQUERY_FILES, "docs/architecture/components.yaml": twice}))
+        self.assertTrue(result["available"], result["error"])
+        self.assertEqual(result["gaps"]["ogquery"]["no_model"],
+                         "component id 'store' of ogquery's model is also opengwasdb's, so ogquery's components are unknown")
+        self.assertIsNone(result["gaps"]["ogquery"]["unclaimed"])
+        self.assertIsNone(result["files"]["ogquery"])
+        self.assertEqual(next(c for c in result["components"] if c["id"] == "store")["repo"], fx.ENGINE)
+        self.assertNotIn("ogquery", {c["repo"] for c in result["components"]})
+
+
+class AdrCitationTests(SharedWorld):
     def test_a_citation_naming_a_listed_repository_is_recorded_on_the_citing_adr(self) -> None:
         engine = {**fx.ENGINE_FILES, **fx.ENGINE_ADRS,
                   "docs/adr/0003-none.md": "# 0003. Nothing\n\nAs opengwasdb-stores ADR 0072 decided, and nowhere ADR 0001.\n"}
         registry = {**fx.REGISTRY_FILES, "docs/adr/0072-bundles.md": "# 0072. Release Bundles\n"}
-        result = World(self, registry_files=registry, engine_files=engine).collect()
+        result = self.world.variant(registry=registry, engine=engine)
         citing = next(a for a in result["adrs"] if (a["repo"], a["number"]) == (fx.ENGINE, "0003"))
         self.assertEqual(citing["cites"], [{"repo": "opengwasdb-stores", "number": "0072"}])
         self.assertEqual(next(a for a in result["adrs"] if a["number"] == "0072")["cites"], [])

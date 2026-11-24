@@ -40,10 +40,40 @@ def _read_yaml(text: str, what: str) -> Any:
 
 
 def load_model(text: str) -> dict[str, Any]:
-    """A model file's content as a mapping; a file that is not one is an error."""
+    """A model file's content, checked for everything the collector reads of it; anything else is an error.
+
+    It is a mapping with a `components` list. Each component is a mapping with an
+    `id` and a `name` of text, ids unique; `paths` and `stages`, when given, are
+    lists of text, and `layer` a whole number. `layers` and `stages`, when given,
+    are lists of mappings. The error names the problem, and the collector makes it
+    that repository's gap (og-dev-hub ADR 0001).
+    """
     model = _read_yaml(text, "the architecture model")
     if not isinstance(model, dict) or not isinstance(model.get("components"), list):
         raise ValueError("the architecture model must be a mapping with a `components` list")
+    seen: set[str] = set()
+    for number, component in enumerate(model["components"]):
+        if not isinstance(component, dict):
+            raise ValueError(f"component #{number} is not a mapping")
+        for key in ("id", "name"):
+            if not isinstance(component.get(key), str) or not component[key]:
+                raise ValueError(f"component #{number} has no `{key}` of text")
+        if component["id"] in seen:
+            raise ValueError(f"component id {component['id']!r} is in the model twice")
+        seen.add(component["id"])
+        for key in ("paths", "stages"):
+            if component.get(key) is not None and not (
+                isinstance(component[key], list) and all(isinstance(v, str) for v in component[key])
+            ):
+                raise ValueError(f"component {component['id']!r}: `{key}` must be a list of text")
+        layer = component.get("layer")
+        if layer is not None and (not isinstance(layer, int) or isinstance(layer, bool)):
+            raise ValueError(f"component {component['id']!r}: `layer` must be a whole number")
+    for key in ("layers", "stages"):
+        if model.get(key) is not None and not (
+            isinstance(model[key], list) and all(isinstance(v, dict) for v in model[key])
+        ):
+            raise ValueError(f"the architecture model's `{key}` must be a list of mappings")
     return model
 
 

@@ -154,7 +154,12 @@ def collect(
         else:
             models[name] = model
 
-    components = _components(models)
+    components, refused = _components(models)
+    for name, why in refused.items():
+        # A component id another model already has: this repository's components are unknown, the rest stand.
+        del models[name]
+        repos[name] |= {"model": False, "note": why}
+        gaps[name] = _gap(no_model=why)
     claims = {repo: model_rules.claims_of(c for c in components if c["repo"] == repo) for repo in models}
     is_code = {repo: model_rules.code_rule(claims[repo]) for repo in models}
     for repo in models:
@@ -201,7 +206,8 @@ def collect(
         "model": {
             key: system[key] for key in model_rules.SYSTEM_SECTIONS if key != "system"
         } | {
-            "stages": [stage for model in models.values() for stage in model.get("stages") or []],
+            # Each stage names the repository whose model holds it, so a private one's can be left out (og-dev-hub#9).
+            "stages": [{**stage, "repo": repo} for repo, model in models.items() for stage in model.get("stages") or []],
             "system": system["system"],
             "layers": layers,
         },
@@ -249,14 +255,24 @@ def _system_gaps(
     }
 
 
-def _components(models: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Each modelled repository's components, in `system.yaml`'s order, each tagged with its repository."""
+def _components(models: Mapping[str, Mapping[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """Each modelled repository's components, in `system.yaml`'s order, each tagged with its repository.
+
+    A component id is one panel's address, so it is unique across the models. A
+    repository whose model repeats an id an earlier repository's has is refused
+    whole, `{repository: why}`, and never stops the others (og-dev-hub ADR 0001).
+    """
     components: list[dict[str, Any]] = []
     seen: dict[str, str] = {}
+    refused: dict[str, str] = {}
     for repo, source in models.items():
-        for raw in source.get("components") or []:
-            if raw["id"] in seen:
-                raise CollectError(f"component id {raw['id']!r} is in the models of both {seen[raw['id']]} and {repo}")
+        raws = source.get("components") or []
+        clash = next((raw["id"] for raw in raws if raw["id"] in seen), None)
+        if clash is not None:
+            refused[repo] = (f"component id {clash!r} of {repo}'s model is also {seen[clash]}'s, "
+                             f"so {repo}'s components are unknown")
+            continue
+        for raw in raws:
             seen[raw["id"]] = repo
             components.append(
                 {
@@ -273,7 +289,7 @@ def _components(models: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]
                     "tracked": 0,
                 }
             )
-    return components
+    return components, refused
 
 
 def _measure(components: list[dict[str, Any]], trees: Mapping[str, Tree], claims: Mapping[str, Any], is_code: Mapping[str, Any]) -> None:

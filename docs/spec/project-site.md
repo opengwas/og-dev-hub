@@ -339,7 +339,8 @@ current work, so it does not.
 
 - `visibility: null` is **planned**: listed, drawn as a planned container, never cloned;
 - a clone or fetch that fails is **that repository's gap**, with git's message (`gaps.<repo>.unreadable`), and the rest is collected;
-- a repository without `docs/architecture/components.yaml`, or with one that cannot be used, is a gap too (`gaps.<repo>.no_model`): its components, code and gaps are **unknown**, never zero;
+- a repository without `docs/architecture/components.yaml`, or with one that cannot be used, is a gap too (`gaps.<repo>.no_model`): its components, code and gaps are **unknown**, never zero. `load_model` checks everything the collector reads: each component is a mapping with an `id` and a `name` of text, ids unique, `paths` and `stages` lists of text, `layer` a whole number, and the model's `layers` and `stages` lists of mappings;
+- a component id is one panel's address, so it is unique across the models: a model that repeats an id an earlier repository's model (in `system.yaml`'s order) has is that later repository's gap, naming the id and the first repository, and its components are unknown. No repository's model ever makes the source unavailable for the others (og-dev-hub ADR 0001);
 - og-dev-hub itself is one of them, read through its clone like any other (its `system.yaml` is read from the working tree);
 - a `private` repository is collected whole (orchestration needs its branches), and the pages draw it as its container only (see *Visibility* below).
 
@@ -365,7 +366,7 @@ hand: edges, counts and ADR placement are measured.
 | Key | Content |
 |---|---|
 | `repos.<name>` | every listed repository, in `system.yaml`'s order: `name`, `visibility`, `status`, `planned`, `url`, `ref`, `commit` read, `committed` (that commit's date), `refresh` (`null` when no fetch was asked for, else `{ok, error}` with git's own message), `source_root` (`src/` when it has one, else `""`), `model` (`true`; `false` with a `note` when the ref has no usable model file; `null` when planned or unreadable) and `error` (why it could not be read). The pages show each commit and its date, and a visible line when a refresh failed |
-| `model` | `system`, `people`, `external`, `containers`, `container_relations` (all `system.yaml`'s), `stages` (every model's that holds them: opengwasdb-stores'), `layers` (`{repo: [...]}`, each model's that declares them; `{}` when none does) |
+| `model` | `system`, `people`, `external`, `containers`, `container_relations` (all `system.yaml`'s), `stages` (every model's that holds them, opengwasdb-stores', each with the `repo` it came from), `layers` (`{repo: [...]}`, each model's that declares them; `{}` when none does) |
 | `components` | each modelled repository's, in `system.yaml`'s order: the model's keys plus `repo` (the repository's name), `files` and `lines` (claimed code files), `tracked` (every tracked file claimed) |
 | `files` | `{<repo>: [...]}` (#422): every tracked code file of each repository with a model at the ref read, sorted, read NUL-safely; `null` for a repository read without a model (what is code is not known). A planned `adds` is told to exist from it |
 | `gaps.<repo>` | for each repository not planned: `unreadable` (git's reason, or `null`), `no_model` (why there is no model, or `null`), `unclaimed` (code files no component claims, by path) and `stale` (`{path, component}` claims matching no tracked file), both `null` (unknown, not empty) without a model; `system_sections` (system keys the model file still holds, ignored) and `containers` (`{component, container}` for a container `system.yaml` lacks) |
