@@ -99,13 +99,22 @@
   }
   /* A drawing that can be enlarged: the SVG fills the width; "Enlarge" opens it over the page, where it can
    * be zoomed (buttons) and scrolled. Escape or "Close" returns. Plain JS; the SVG itself is the build's. */
+  function naturalWidth(frame) {
+    var svg = frame.querySelector && frame.querySelector("svg");
+    var m = svg && /^([\d.]+)(pt|px)?$/.exec(svg.getAttribute("width") || "");
+    return m ? Math.round(parseFloat(m[1]) * (m[2] === "pt" ? 4 / 3 : 1)) : 0;
+  }
   function zoomable(frame) {
     var level = 1, open = false;
     var bar = el("div", { class: "drawing-bar" });
     var wrap = el("div", { class: "drawing-wrap" }, bar, frame);
+    var natural = naturalWidth(frame);
     function apply() {
       var svg = frame.querySelector("svg");
-      if (svg) svg.style.width = open ? Math.round(level * 100) + "%" : "";
+      if (!svg) return;
+      svg.style.width = open ? Math.round(level * 100) + "%" : "";
+      svg.style.maxWidth = open || !natural ? "none" : natural + "px"; // a small diagram is never stretched past its own size
+      if (!open && !natural) svg.style.maxWidth = "";
     }
     function mode(on) {
       open = on; level = 1;

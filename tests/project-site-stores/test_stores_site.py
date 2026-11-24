@@ -22,7 +22,7 @@ from project_site.collect import common, stores
 
 RUNNER = Path(__file__).resolve().parents[1] / "project-site-architecture" / "view_runner.js"
 # An absolute path under /data on the host that built the site: not a `resources/data/` of a repository.
-HOST_PATH = re.compile(r"(?<![\w.:/~-])/data/")
+HOST_PATH_BYTES = re.compile(rb"(?<![\w.:/~-])/data/")
 
 
 def build(cleanup, *, stores_doc: dict | None) -> Path:
@@ -60,10 +60,10 @@ class BuiltStoresView(unittest.TestCase):
         files = [p for p in self.out.rglob("*") if p.is_file()]
         self.assertTrue(files)
         for path in files:
-            text = path.read_text(encoding="utf-8", errors="ignore")
+            raw = path.read_bytes()
             with self.subTest(path=str(path.relative_to(self.out))):
-                self.assertNotRegex(text, HOST_PATH)
-                self.assertNotIn("/data/opengwasdb", text)
+                self.assertIsNone(HOST_PATH_BYTES.search(raw))
+                self.assertNotIn(b"/data/opengwasdb", raw)
 
     def test_the_page_names_the_script_and_the_content_section(self) -> None:
         page = (self.out / "index.html").read_text(encoding="utf-8")
@@ -96,15 +96,17 @@ class StoresScript(unittest.TestCase):
                 self.assertIn(expected, text)
 
     def test_the_benchmarking_tab_is_drawn_with_its_line_and_the_runs(self) -> None:
-        text = self.drawn(build(self.addCleanup, stores_doc=None), "benchmarking")
+        self.out_page = build(self.addCleanup, stores_doc=None)
+        text = self.drawn(self.out_page, "benchmarking")
         self.assertNotIn("could not be drawn", text)
-        self.assertNotIn("Yardstick", text.split("One fixed query workload")[0])
-        for expected in ("One fixed query workload (the yardstick), run at the finish of every epic that changes the engine.",
-                         "20261118T000000Z-broken.json is not a valid result", "Not measured by yardstick",
+        for expected in ("20261118T000000Z-broken.json is not a valid result", "Not measured by yardstick",
                          "taken under load: load average 70 over 56", "answered by its scan", "not applicable", "unavailable"):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
         self.assertLess(text.index("Trends across engine versions"), text.index("OGS-00001"))
+        page = (self.out_page / "index.html").read_text(encoding="utf-8")
+        pane = page[page.index('id="pane-benchmarking"'):]
+        self.assertIn("One fixed query workload (the yardstick), run at the finish of every epic that changes the engine.", pane)
         self.assertNotIn("benchmark ", text.lower().replace("benchmarking", ""))
 
     def test_a_store_source_that_was_not_collected_is_a_notice_and_nothing_throws(self) -> None:

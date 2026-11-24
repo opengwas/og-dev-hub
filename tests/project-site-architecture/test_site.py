@@ -167,7 +167,7 @@ class PageTests(BuiltSite):
         for path in self.out.rglob("*"):
             if path.is_file():
                 with self.subTest(path=path.name):
-                    self.assertNotIn(root, path.read_text(encoding="utf-8", errors="ignore"))
+                    self.assertNotIn(root.encode(), path.read_bytes())
 
 
 class ArchitectureViewTests(BuiltSite):
@@ -255,10 +255,10 @@ class ArchitectureViewTests(BuiltSite):
         for path in self.out.rglob("*"):
             if not path.is_file():
                 continue
-            text = path.read_text(encoding="utf-8", errors="ignore")
+            raw = path.read_bytes()
             for secret in (*SECRETS, commit[:12]):
                 with self.subTest(path=path.relative_to(self.out).as_posix(), secret=secret):
-                    self.assertNotIn(secret, text)
+                    self.assertNotIn(secret.encode(), raw)
 
 
 class DecisionsViewTests(BuiltSite):

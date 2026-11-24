@@ -1,4 +1,4 @@
-/* The Stores view (og-dev-hub#16), from data/stores.json: every GWAS Store, .
+/* The Stores view (og-dev-hub#16), from data/stores.json: every GWAS Store in the registry.
  *
  * The build decides every figure and every gap and writes it as text; this script
  * only renders it. A field the registry does not hold yet is drawn as a gap that

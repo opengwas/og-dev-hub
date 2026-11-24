@@ -1,11 +1,12 @@
-"""`data/stores.json`: the Stores view, decided at build time from the collected `stores.json` (og-dev-hub#16).
+"""`data/stores.json` and `data/benchmarking.json`: the Stores and Benchmarking views, decided at build time
+from the collected `stores.json` (og-dev-hub#16, #19).
 
 The collector (`collect.stores`) read the registry; this turns what it read into
-what the page draws, so `static/js/stores.js` only renders:
+what the page draws, so `static/js/stores.js` and `static/js/benchmarking.js` only render:
 
 - **the inventory**: one row per Release Bundle, each field a `{text, gap}` cell.
   A gap names what fills it and is never drawn as zero;
-- **yardstick**: for each Store it measures, its latest run's median and p95 per
+- **yardstick** (`benchmarking_view`, the Benchmarking tab's file): for each Store it measures, its latest run's median and p95 per
   measure, peak memory, size on disk, engine version and date; one trend per
   measure across engine versions, as small inline SVG drawn here; and each run
   taken under load or in the Veeam window marked. Raw runs are not listed.
@@ -341,10 +342,16 @@ def yardstick_view(doc: Mapping[str, Any], labels: Mapping[str, Any], registry_i
 # ---------------------------------------------------------------------------
 
 
-def stores_view(doc: Document) -> dict[str, Any]:
-    """`data/stores.json` from the collected `stores.json`; a source that is not available says why."""
+def _envelope(doc: Document) -> dict[str, Any]:
+    """The envelope both files start with: what was collected, when, and (if it was not) why."""
     out = {k: doc.get(k) for k in architecture_public.ENVELOPE}
     out["error"] = text(out["error"])
+    return out
+
+
+def stores_view(doc: Document) -> dict[str, Any]:
+    """`data/stores.json` from the collected `stores.json`; a source that is not available says why."""
+    out = _envelope(doc)
     if not doc.get("available"):
         return out
     commit = doc.get("commit")
@@ -361,15 +368,12 @@ def stores_view(doc: Document) -> dict[str, Any]:
 
 
 def benchmarking_view(doc: Document) -> dict[str, Any]:
-    """`data/benchmarking.json`: yardstick's results (the tab's label is Benchmarking; the name stays yardstick).
-
-    The trends come first, then each Store's latest run."""
-    out = {k: doc.get(k) for k in architecture_public.ENVELOPE}
-    out["error"] = text(out["error"])
+    """`data/benchmarking.json`: yardstick's results (the tab's label is Benchmarking; the name stays yardstick)."""
+    out = _envelope(doc)
     if not doc.get("available"):
         return out
     rows = [r for r in doc.get("inventory") or [] if isinstance(r, Mapping)]
     labels = {r["store_id"]: text(r.get("label")) for r in rows}
     view = yardstick_view(doc.get("yardstick") or {}, labels, [r["store_id"] for r in rows])
-    out["yardstick"] = {k: view[k] for k in sorted(view, key=lambda k: k != "trends") if k in view}
+    out["yardstick"] = view
     return out

@@ -61,7 +61,6 @@
   function yardstick(y) {
     if (!y.available) return D.alert("", el("p", {}, el("strong", {}, "No yardstick results"), ": " + y.reason + "."));
     return [
-      el("p", { class: "measures-line" }, "One fixed query workload (the yardstick), run at the finish of every epic that changes the engine."),
       el("p", { class: "panel-note" }, y.runs + " runs committed (" + y.workloads.join(", ") + "). It records; it is not a gate. " +
         "A run is marked when " + y.veeam_rule + ", or when it recorded " + y.load_rule + "."),
       y.invalid.map(function (i) {

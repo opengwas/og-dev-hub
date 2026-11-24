@@ -372,12 +372,12 @@ class LatestRunTests(Fixture):
 
 
 class SplitTests(Fixture):
-    """Seam 2: the Stores data carries no yardstick panel; the Benchmarking data does, trends first."""
+    """Seam 2: the Stores data carries no yardstick panel; the Benchmarking data does."""
 
-    def test_stores_data_has_no_yardstick_and_benchmarking_lists_trends_first(self) -> None:
+    def test_stores_data_has_no_yardstick_and_benchmarking_carries_it(self) -> None:
         self.assertNotIn("yardstick", self.view)
         bench = stores_view.benchmarking_view(self.doc)["yardstick"]
-        self.assertEqual(next(iter(bench)), "trends")
+        self.assertIn("trends", bench)
         self.assertIn("stores", bench)
 
     def test_an_uncollected_source_is_an_envelope_with_its_reason(self) -> None:
