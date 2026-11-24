@@ -35,12 +35,26 @@ operations dashboard's).
 - **Build job:** `pixi install --locked`, `pixi run site`, then the `_site/` upload
   (`actions/upload-pages-artifact`). It needs no secret and no token.
 - **Deploy job:** `actions/deploy-pages`, with `pages: write` and `id-token: write`
-  on that job alone, and `concurrency: pages` without cancelling a running deploy.
-- **Pull requests** run the build job only, so a build error fails the check, and
-  the deploy job is skipped. One workflow serves both, so the pull-request build
-  cannot drift from the one that is published.
+  on that job alone. It runs only from `main`: a pull request, or a dispatch on
+  another branch, builds but never deploys.
+- **Ordering:** the workflow's `concurrency` group is `site-<ref>` with
+  `cancel-in-progress: false`, so runs on `main` queue one at a time and a running
+  deploy finishes. A pull request has its own ref, so it never waits on a deploy.
+- **Pull requests** run the build job only, so a build error fails the check. One
+  workflow serves both, so the pull-request build cannot drift from the published one.
 
-The repository's Pages source must be **GitHub Actions** for the deploy to take effect.
+**The 60-day pause.** GitHub disables a scheduled workflow after 60 days without
+activity in the repository, and the site then goes stale without warning. Re-enable
+it with `gh workflow enable site.yml -R opengwas/og-dev-hub`.
+
+### One-time switch to Actions (2026-11-24; the owner removes this list once done)
+
+The Pages source is still the `gh-pages` branch. In order:
+
+1. Switch the source: `gh api -X PUT repos/opengwas/og-dev-hub/pages -f build_type=workflow`
+2. Allow `main` to deploy: `gh api -X POST repos/opengwas/og-dev-hub/environments/github-pages/deployment-branch-policies -f name=main -f type=branch`
+3. Merge.
+4. After the first successful deploy, delete `gh-pages`: `gh api -X DELETE repos/opengwas/og-dev-hub/git/refs/heads/gh-pages`
 
 ## What a build reads
 

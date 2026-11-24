@@ -14,12 +14,20 @@ on:
 permissions:
   contents: read
 
+# Whole runs are ordered per ref and never cancelled: pushes to main queue behind
+# a running deploy, and a pull request (its own ref) never shares main's group.
+concurrency:
+  group: site-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     name: pixi run site
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: prefix-dev/setup-pixi@v0.10.1
         with:
@@ -34,8 +42,8 @@ jobs:
 
   deploy:
     name: Deploy to GitHub Pages
-    # A pull request builds the site but never publishes it.
-    if: github.event_name != 'pull_request'
+    # Only main publishes: a pull request, or a dispatch on another branch, builds only.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -45,10 +53,6 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    # One deploy at a time; a running deploy finishes rather than being cancelled.
-    concurrency:
-      group: pages
-      cancel-in-progress: false
     steps:
       - id: deployment
         uses: actions/deploy-pages@v5
