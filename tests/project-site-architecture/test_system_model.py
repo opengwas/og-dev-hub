@@ -77,6 +77,8 @@ class LoadSystemTests(unittest.TestCase):
             model.load_system(broken(external=[{"name": "X"}]))
         with self.assertRaisesRegex(ValueError, "`system`.*`name` and a `summary`"):
             model.load_system(broken(system={"name": "S"}))
+        with self.assertRaisesRegex(ValueError, "`system`.*`name` and a `summary`"):
+            model.load_system(broken(system={"summary": "The system."}))
 
     def test_a_duplicate_id_across_people_external_and_containers_is_named(self) -> None:
         with self.assertRaisesRegex(ValueError, "duplicate id 'a'"):
