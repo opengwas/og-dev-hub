@@ -4,8 +4,7 @@
     conflicts  (--branch B [--repo NAME] | --files PATH... --repo NAME [--ticket repo#n])
                [--local GIT_DIR...] [--data DIR] [--refresh] [--days N]
 
-`NAME` is a repository `system.yaml` lists. `engine` and `registry` are accepted
-for `opengwasdb` and `opengwasdb-stores` for this release only.
+`NAME` is a repository `system.yaml` lists.
 
 `check` reports the code files no component claims and the claims that match no
 file, in each repository with a model (or the one `--repo` names), and compares
@@ -52,14 +51,6 @@ from project_site.collect import architecture, architecture_graph, architecture_
 BASELINE_PATH = "docs/architecture/layering-baseline.yaml"
 LIVE = ("building", "active")
 UNDECIDED = 2
-# The names `--repo` took before og-dev-hub#9, accepted for this release only: the orchestrate
-# preflight still passes them until agent-skills moves to repository names.
-REPO_ALIASES = {"engine": site_paths.ENGINE, "registry": site_paths.REGISTRY}
-
-
-def repo_name(value: str) -> str:
-    """A repository name as `--repo` gives it, with this release's aliases resolved."""
-    return REPO_ALIASES.get(value, value)
 
 
 def possessive(name: str) -> str:
@@ -366,8 +357,6 @@ def main(argv: Sequence[str] | None = None, *, stdout: TextIO | None = None) -> 
     out = stdout or sys.stdout
     parser = argparse.ArgumentParser(prog="project_site.architecture", description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    repo_help = ("a repository system.yaml lists; `engine` and `registry` are accepted for opengwasdb and "
-                 "opengwasdb-stores for this release only")
     for name in ("check", "conflicts"):
         p = sub.add_parser(name)
         p.add_argument("--data", type=Path, default=None, help="read this collection (docs/_data) instead of collecting now")
@@ -375,7 +364,7 @@ def main(argv: Sequence[str] | None = None, *, stdout: TextIO | None = None) -> 
                        help="an opengwasdb-stores checkout or git directory (default: the site's clone of it, at main)")
         p.add_argument("--system", type=Path, default=None, help="the system.yaml to read (default: this checkout's)")
         p.add_argument("--refresh", action="store_true", help="fetch every listed repository once first")
-        p.add_argument("--repo", type=repo_name, help=repo_help)
+        p.add_argument("--repo", help="a repository system.yaml lists")
     conflict = sub.choices["conflicts"]
     what = conflict.add_mutually_exclusive_group(required=True)
     what.add_argument("--branch")

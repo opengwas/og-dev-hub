@@ -637,10 +637,9 @@ pixi run architecture conflicts (--branch B [--repo NAME] | --files PATH... --re
                                 [--local GIT_DIR...] [--registry PATH] [--system FILE] [--refresh] [--days N] [--data DIR]
 ```
 
-`--repo NAME` takes a repository `system.yaml` lists; `engine` and
-`registry` are accepted for `opengwasdb` and `opengwasdb-stores` **for this
-release only** (og-dev-hub#9), because the orchestrate preflight still passes
-them. `--system FILE` reads another `system.yaml` than this checkout's: its
+`--repo NAME` takes a repository `system.yaml` lists, and nothing else (the
+`engine` and `registry` aliases og-dev-hub#9 kept for one release are gone).
+`--system FILE` reads another `system.yaml` than this checkout's: its
 `repos` are the repositories collected and the names `--repo` accepts, so a
 test, or a question about a few repositories, reads only those. `--registry PATH`
 reads that opengwasdb-stores checkout instead of its clone, and `--refresh`
