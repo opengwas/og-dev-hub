@@ -172,15 +172,6 @@ def _built_with(value: Any) -> str:
     return f"opengwasdb {value}"
 
 
-def _date(value: Any) -> str:
-    """A `validated_at` as its date (`2026-11-13`): a timestamp, or one YAML read as a date, cut to the day; else as written."""
-    if hasattr(value, "date") and callable(value.date):
-        return value.date().isoformat()
-    if hasattr(value, "isoformat"):
-        return value.isoformat()
-    return str(value)[:10] if re.match(r"\d{4}-\d{2}-\d{2}", str(value)) else str(value)
-
-
 def _yes_no(value: Any) -> str:
     return "yes" if value else "no"
 
@@ -206,7 +197,7 @@ def inventory_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
         "completion_state": _cell(row.get("completion_state"), str),
         "format_version": _cell(row.get("format_version"), str),
         "built_with": _cell(row.get("built_with"), _built_with),
-        "last_built": _cell(row.get("last_built"), _date),
+        "last_built": _cell(row.get("last_built"), str),
         "coverage": _cell(row.get("coverage"), str),
         "status": _cell(row.get("status"), str),
         "store_bytes": _cell(row.get("store_bytes"), size),

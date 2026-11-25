@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import yaml
 import tempfile
 import unittest
 from pathlib import Path
@@ -156,7 +157,7 @@ class TileTests(Fixture):
             return {"facts": {f["label"]: f for f in out["facts"]}, "why": out["why_na"]}
 
         full = shown({
-            "format_version": {"value": "1.2"}, "built_with": {"value": "0.9.1"}, "last_built": {"value": "2026-11-13T09:30:00Z"}})
+            "format_version": {"value": "1.2"}, "built_with": {"value": "0.9.1"}, "last_built": {"value": "2026-11-13"}})
         self.assertEqual(full["facts"]["Format"]["display"], "1.2")
         self.assertEqual(full["facts"]["Built with"], {"label": "Built with", "display": "opengwasdb 0.9.1", "detail": None, "na": False})
         self.assertEqual(full["facts"]["Last built"]["display"], "2026-11-13")
@@ -174,8 +175,34 @@ class TileTests(Fixture):
         row = self.shown["OGS-00003"]  # built, with a Validation Record that has neither build_environment nor validated_at
         facts = {f["label"]: f["display"] for f in row["facts"]}
         self.assertEqual((facts["Format"], facts["Built with"], facts["Last built"]), ("n/a", "n/a", "n/a"))
-        self.assertIn({"label": "Format", "reason": "the format version is recorded once opengwasdb-stores#512 lands"}, row["why_na"])
+        self.assertIn({"label": "Format", "reason": "no format version is recorded in the Validation Record"}, row["why_na"])
         self.assertIn("Built with", [w["label"] for w in row["why_na"]])
+
+    def test_last_built_is_a_utc_date(self) -> None:
+        import datetime
+        from project_site.collect import inventory
+        for value, want in (("2026-11-13T23:30:00-05:00", "2026-11-14"), ("2026-11-13T09:30:00Z", "2026-11-13"),
+                            (datetime.datetime(2026, 11, 13, 23, 30, tzinfo=datetime.timezone(datetime.timedelta(hours=-5))), "2026-11-14"),
+                            (yaml.safe_load("validated_at: 2026-11-13 09:30:00")["validated_at"], "2026-11-13"),
+                            (datetime.date(2026, 11, 13), "2026-11-13")):
+            self.assertEqual(inventory.utc_date(value), want, value)
+
+    def test_a_bad_value_is_a_gap_that_names_it(self) -> None:
+        from project_site.collect import inventory
+        cells = inventory._record_cells({"validated_at": "last Tuesday", "build_environment": {"opengwasdb_version": 9},
+                                         "observed": {"format_version": 2}}, None, None)
+        self.assertEqual(cells["last_built"]["gap"], "validated_at 'last Tuesday' is not a timestamp")
+        self.assertEqual(cells["built_with"]["gap"], "build_environment.opengwasdb_version 9 is not a version string")
+        self.assertEqual(cells["format_version"]["gap"], "observed.format_version 2 is not a version string")
+
+    def test_each_format_gap_names_its_cause(self) -> None:
+        from project_site.collect import inventory
+        self.assertEqual(inventory._record_cells({"observed": {}}, None, None)["format_version"]["gap"], inventory.FORMAT_UNRECORDED)
+        self.assertEqual(inventory._record_cells({"observed": {"format_version": None}}, None, None)["format_version"]["gap"], inventory.FORMAT_UNRECORDED)
+        no_block = "the Validation Record has no observed block"
+        self.assertEqual(inventory._record_cells({}, None, no_block)["format_version"]["gap"], no_block)
+        self.assertEqual(inventory._record_cells({}, "not built yet (Release Status candidate)", None)["last_built"]["gap"],
+                         "not built yet (Release Status candidate)")
 
     def test_a_store_with_no_gap_has_no_reasons(self) -> None:
         self.assertEqual([w["label"] for w in self.shown["OGS-00001"]["why_na"]], [])
