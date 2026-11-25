@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import yaml
 import tempfile
 import unittest
 from pathlib import Path
@@ -48,7 +49,8 @@ class InventoryTests(Fixture):
     def test_the_dense_store_with_every_field(self) -> None:
         row = self.shown["OGS-00001"]
         self.assertEqual({k: row[k]["text"] for k in row if isinstance(row[k], dict)}, {
-            "layout": "dense", "completion_state": "reference_completed", "coverage": "gwas", "status": "validated",
+            "layout": "dense", "completion_state": "reference_completed", "format_version": "1.2",
+            "built_with": "opengwasdb 0.9.1", "last_built": "2026-11-13", "coverage": "gwas", "status": "validated",
             "store_bytes": "62.1 GB", "n_variants": "11,191,070",
             "top_hits": "p < 5e-04: 34,567 · p < 5e-06: 1,200 · p < 5e-08: 10",
             "has_hm3": "yes", "has_rho": "no", "n_clumped": None,
@@ -68,7 +70,7 @@ class InventoryTests(Fixture):
 
     def test_the_row_holds_the_ticket_fields_and_no_others(self) -> None:
         self.assertEqual(sorted(self.shown["OGS-00001"]), sorted([
-            "store_id", "url", "label", "description", "summary", "facts", "why_na", "layout", "completion_state", "coverage", "status", "store_bytes",
+            "store_id", "url", "label", "description", "summary", "facts", "why_na", "layout", "completion_state", "format_version", "built_with", "last_built", "coverage", "status", "store_bytes",
             "n_variants", "top_hits", "has_hm3", "has_rho", "n_clumped", "n_analyses", "median_sample_size", "ancestry"]))
 
 
@@ -148,6 +150,59 @@ class TileTests(Fixture):
         self.assertIn({"label": "Completion", "reason": "no build.yaml"}, gap["why"])
         labels = [f["label"] for f in self.shown["OGS-00001"]["facts"]]
         self.assertEqual(labels[:3], ["Layout", "Coverage", "Completion"])
+
+    def test_format_built_with_and_last_built(self) -> None:
+        def shown(row: dict) -> dict:
+            out = stores_view.inventory_row({"store_id": "X", **row}, None)
+            return {"facts": {f["label"]: f for f in out["facts"]}, "why": out["why_na"]}
+
+        full = shown({
+            "format_version": {"value": "1.2"}, "built_with": {"value": "0.9.1"}, "last_built": {"value": "2026-11-13"}})
+        self.assertEqual(full["facts"]["Format"]["display"], "1.2")
+        self.assertEqual(full["facts"]["Built with"], {"label": "Built with", "display": "opengwasdb 0.9.1", "detail": None, "na": False})
+        self.assertEqual(full["facts"]["Last built"]["display"], "2026-11-13")
+        gaps = shown({"built_with": {"gap": "no build_environment"}})
+        for label in ("Format", "Built with", "Last built"):
+            self.assertEqual((gaps["facts"][label]["display"], gaps["facts"][label]["na"]), ("n/a", True))
+        self.assertIn({"label": "Built with", "reason": "no build_environment"}, gaps["why"])
+        self.assertEqual([f["label"] for f in self.shown["OGS-00001"]["facts"]][2:6], ["Completion", "Format", "Built with", "Last built"])
+
+    def test_the_dense_fixture_reads_its_record(self) -> None:
+        facts = {f["label"]: f["display"] for f in self.shown["OGS-00001"]["facts"]}
+        self.assertEqual((facts["Format"], facts["Built with"], facts["Last built"]), ("1.2", "opengwasdb 0.9.1", "2026-11-13"))
+
+    def test_a_record_with_no_build_environment_shows_n_a_and_format_waits_for_512(self) -> None:
+        row = self.shown["OGS-00003"]  # built, with a Validation Record that has neither build_environment nor validated_at
+        facts = {f["label"]: f["display"] for f in row["facts"]}
+        self.assertEqual((facts["Format"], facts["Built with"], facts["Last built"]), ("n/a", "n/a", "n/a"))
+        self.assertIn({"label": "Format", "reason": "no format version is recorded in the Validation Record"}, row["why_na"])
+        self.assertIn("Built with", [w["label"] for w in row["why_na"]])
+
+    def test_last_built_is_a_utc_date(self) -> None:
+        import datetime
+        from project_site.collect import inventory
+        for value, want in (("2026-11-13T23:30:00-05:00", "2026-11-14"), ("2026-11-13T09:30:00Z", "2026-11-13"),
+                            (datetime.datetime(2026, 11, 13, 23, 30, tzinfo=datetime.timezone(datetime.timedelta(hours=-5))), "2026-11-14"),
+                            (yaml.safe_load("validated_at: 2026-11-13 09:30:00")["validated_at"], "2026-11-13"),
+                            (datetime.date(2026, 11, 13), "2026-11-13")):
+            self.assertEqual(inventory.utc_date(value), want, value)
+
+    def test_a_bad_value_is_a_gap_that_names_it(self) -> None:
+        from project_site.collect import inventory
+        cells = inventory._record_cells({"validated_at": "last Tuesday", "build_environment": {"opengwasdb_version": 9},
+                                         "observed": {"format_version": 2}}, None, None)
+        self.assertEqual(cells["last_built"]["gap"], "validated_at 'last Tuesday' is not a timestamp")
+        self.assertEqual(cells["built_with"]["gap"], "build_environment.opengwasdb_version 9 is not a version string")
+        self.assertEqual(cells["format_version"]["gap"], "observed.format_version 2 is not a version string")
+
+    def test_each_format_gap_names_its_cause(self) -> None:
+        from project_site.collect import inventory
+        self.assertEqual(inventory._record_cells({"observed": {}}, None, None)["format_version"]["gap"], inventory.FORMAT_UNRECORDED)
+        self.assertEqual(inventory._record_cells({"observed": {"format_version": None}}, None, None)["format_version"]["gap"], inventory.FORMAT_UNRECORDED)
+        no_block = "the Validation Record has no observed block"
+        self.assertEqual(inventory._record_cells({}, None, no_block)["format_version"]["gap"], no_block)
+        self.assertEqual(inventory._record_cells({}, "not built yet (Release Status candidate)", None)["last_built"]["gap"],
+                         "not built yet (Release Status candidate)")
 
     def test_a_store_with_no_gap_has_no_reasons(self) -> None:
         self.assertEqual([w["label"] for w in self.shown["OGS-00001"]["why_na"]], [])

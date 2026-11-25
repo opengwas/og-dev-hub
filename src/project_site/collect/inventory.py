@@ -17,6 +17,7 @@ never fails the build). A cell is `{"value", "gap"}`; the site's build writes th
 
 from __future__ import annotations
 
+import datetime
 import json
 from typing import Any, Mapping
 
@@ -29,6 +30,7 @@ BACKFILL = "recorded from opengwasdb-stores#502's backfill"
 HM3_UNRECORDED = "no record says how the HM3 step ended"
 COUNTS = "counts come with opengwasdb#488"
 CLUMPED = "pending opengwasdb-stores#507"
+FORMAT_UNRECORDED = "no format version is recorded in the Validation Record"
 
 
 def cell(value: Any = None, gap: str | None = None) -> dict[str, Any]:
@@ -103,6 +105,55 @@ def _top_hits(build: Mapping[str, Any], observed: Mapping[str, Any]) -> dict[str
     return cell([{"threshold": threshold, "count": count} for threshold, count in counts.items()])
 
 
+def utc_date(value: Any) -> str:
+    """The UTC date (`2026-11-14`) of a `validated_at`: an ISO string or a YAML datetime or date; `ValueError` for anything else."""
+    if isinstance(value, str):
+        try:
+            value = datetime.datetime.fromisoformat(value.strip())
+        except ValueError:
+            raise ValueError(f"validated_at {value!r} is not a timestamp") from None
+    if isinstance(value, datetime.datetime):  # a time with no offset is read as UTC, as the register command writes it
+        return (value if value.tzinfo else value.replace(tzinfo=datetime.timezone.utc)).astimezone(datetime.timezone.utc).date().isoformat()
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+    raise ValueError(f"validated_at {value!r} is not a timestamp")
+
+
+def _record_cells(validation: Mapping[str, Any], unbuilt: str | None, no_block: str | None) -> dict[str, dict[str, Any]]:
+    """`format_version`, `built_with` and `last_built`, read from the loaded Validation Record (the bundle has no reader for them).
+
+    A bad value is a gap that names it. A Store not built has no record of a build: these follow its not-built gap.
+    """
+    if unbuilt:
+        return {k: cell(gap=unbuilt) for k in ("format_version", "built_with", "last_built")}
+    version = _mapping(validation.get("observed")).get("format_version")
+    environment = validation.get("build_environment")
+    engine = environment.get("opengwasdb_version") if isinstance(environment, Mapping) else None
+    validated_at = validation.get("validated_at")
+    if no_block:
+        fmt = cell(gap=no_block)
+    elif isinstance(version, str) and version.strip():
+        fmt = cell(version)
+    elif version is None or version == "":
+        fmt = cell(gap=FORMAT_UNRECORDED)
+    else:
+        fmt = cell(gap=f"observed.format_version {version!r} is not a version string")
+    if engine is None or engine == "":
+        built = cell(gap="the Validation Record has no build_environment.opengwasdb_version")
+    elif isinstance(engine, str) and engine.strip():
+        built = cell(engine)
+    else:
+        built = cell(gap=f"build_environment.opengwasdb_version {engine!r} is not a version string")
+    if validated_at in (None, ""):
+        last = cell(gap="the Validation Record has no validated_at")
+    else:
+        try:
+            last = cell(utc_date(validated_at))
+        except ValueError as error:
+            last = cell(gap=str(error))
+    return {"format_version": fmt, "built_with": built, "last_built": last}
+
+
 def _manifest(bundle: release_bundle.Bundle) -> dict[str, dict[str, Any]]:
     """`n_analyses`, `median_sample_size` and `ancestry` from `bundle.manifest_summary`; or each as the gap naming why not."""
     try:
@@ -132,9 +183,10 @@ def _manifest(bundle: release_bundle.Bundle) -> dict[str, dict[str, Any]]:
 def row(bundle: release_bundle.Bundle) -> dict[str, Any]:
     """The inventory row of one Release Bundle: exactly the fields the Stores view draws."""
     release, build = _mapping(bundle.release), _mapping(bundle.build)
-    observed = _mapping(_mapping(bundle.validation).get("observed"))
+    validation = _mapping(bundle.validation)
+    observed = _mapping(validation.get("observed"))
     unbuilt = _not_built(bundle)
-    no_block = None if unbuilt or isinstance(_mapping(bundle.validation).get("observed"), Mapping) else (
+    no_block = None if unbuilt or isinstance(validation.get("observed"), Mapping) else (
         "the Validation Record has no observed block")  # the backfill skips such a record, so it never fills
     if unbuilt or no_block:
         # Nothing was built (or nothing observed): no backfill or engine release will fill these.
@@ -159,5 +211,6 @@ def row(bundle: release_bundle.Bundle) -> dict[str, Any]:
         "coverage": _from_bundle("association_coverage", lambda: bundle.association_coverage),
         "status": _from_bundle("Release Status", lambda: bundle.status),
         **observed_cells,
+        **_record_cells(validation, unbuilt, no_block),
         **_manifest(bundle),
     }
