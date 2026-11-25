@@ -123,7 +123,8 @@ def _cell(field: Mapping[str, Any] | None, show, *, detail: str | None = None) -
 NA = "n/a"
 SUMMARY_CUT = 160  # the short description is cut to about this many characters
 # The facts a tile lists, in order: (cell, label).
-TILE_FACTS = (("layout", "Layout"), ("coverage", "Coverage"), ("completion_state", "Completion"), ("store_bytes", "Size on disk"), ("n_variants", "Variants"),
+TILE_FACTS = (("layout", "Layout"), ("coverage", "Coverage"), ("completion_state", "Completion"), ("format_version", "Format"),
+              ("built_with", "Built with"), ("last_built", "Last built"), ("store_bytes", "Size on disk"), ("n_variants", "Variants"),
               ("n_analyses", "Analyses"), ("median_sample_size", "Median sample size"), ("ancestry", "Ancestry"),
               ("top_hits", "Top hits"), ("has_hm3", "HM3"), ("has_rho", "Rho"))
 _SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
@@ -167,6 +168,19 @@ def _completion(value: Any) -> str:
     return COMPLETION.get(value, str(value))
 
 
+def _built_with(value: Any) -> str:
+    return f"opengwasdb {value}"
+
+
+def _date(value: Any) -> str:
+    """A `validated_at` as its date (`2026-11-13`): a timestamp, or one YAML read as a date, cut to the day; else as written."""
+    if hasattr(value, "date") and callable(value.date):
+        return value.date().isoformat()
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)[:10] if re.match(r"\d{4}-\d{2}-\d{2}", str(value)) else str(value)
+
+
 def _yes_no(value: Any) -> str:
     return "yes" if value else "no"
 
@@ -190,6 +204,9 @@ def inventory_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
         "summary": text(summary(row.get("description"))),
         "layout": _cell(row.get("layout"), str),
         "completion_state": _cell(row.get("completion_state"), str),
+        "format_version": _cell(row.get("format_version"), str),
+        "built_with": _cell(row.get("built_with"), _built_with),
+        "last_built": _cell(row.get("last_built"), _date),
         "coverage": _cell(row.get("coverage"), str),
         "status": _cell(row.get("status"), str),
         "store_bytes": _cell(row.get("store_bytes"), size),

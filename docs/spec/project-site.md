@@ -234,11 +234,11 @@ listed and their number is unknown, never 0. The Stores view says so as `ld_stor
 
 **`inventory[]`** (`collect.inventory`, og-dev-hub#16), one row per Release Bundle: `store_id`,
 `label`, `description`, and a *cell* (`{value, gap}`, never both set) for each of `layout`,
-`completion_state`, `coverage`, `status`, `store_bytes`, `n_variants`, `top_hits`, `has_hm3`,
+`completion_state`, `format_version`, `built_with`, `last_built`, `coverage`, `status`, `store_bytes`, `n_variants`, `top_hits`, `has_hm3`,
 `has_rho`, `n_clumped`, `n_analyses`, `median_sample_size` and `ancestry`. Each reading rule is
 the registry's, called and not re-derived: the bundle through `ogstores.bundle.load` (`layout`,
 `completion_state`, `association_coverage`, `status`); the flags and the top-hit encoding through
-`bundle.observed_flag` and `bundle.top_hit_counts_text`; the Release Manifest through
+`bundle.observed_flag` and `bundle.top_hit_counts_text`; `format_version`, `built_with` and `last_built` from the loaded Validation Record's mapping (`observed.format_version`, `build_environment.opengwasdb_version`, `validated_at`), which the bundle has no reader for; the Release Manifest through
 `bundle.manifest_summary` (which reads `analyses.tsv` through the engine's `read_analyses` and splits it with
 `partition_membership`), **built rows only**: an `exclude_from_build` audit row is in no count, ancestry or median.
 A sample size the quantity rule refuses is counted as unparseable, never dropped silently.
@@ -288,8 +288,9 @@ error.
   - `url`: the Store's bundle on GitHub at the commit read;
   - `description`: the full text, host paths cut to the last name;
   - `summary`: the short description, the first sentence of the description as written, cut to about 160 characters on a word boundary and ending in `…` when cut. The cut is made before host paths are scrubbed; a full stop after "et al.", "e.g.", "i.e." or a single initial does not end the sentence; a cut text that holds a host path ends before it, so a summary never shows a scrubbed `…/path` beside the cut's `…`. `null` for no description;
-  - `facts`: the tile's list, in order (Layout, Coverage, Completion, Size on disk, Variants, Analyses, Median sample size, Ancestry, Top hits, HM3, Rho), each `{label, display, detail, na}` with `na` true when `display` is `n/a`;
+  - `facts`: the tile's list, in order (Layout, Coverage, Completion, Format, Built with, Last built, Size on disk, Variants, Analyses, Median sample size, Ancestry, Top hits, HM3, Rho), each `{label, display, detail, na}` with `na` true when `display` is `n/a`;
   - the Completion fact is the `completion_state` cell from `build.yaml`; its `display` is written by the build (its `text` stays the recorded state): `reference_completed` shows "reference completed", `observed_only` "observed only", any other value as written, a gap `n/a`;
+  - Format is `observed.format_version` as written (`n/a` until opengwasdb-stores#512 fills it); Built with is the Validation Record's `build_environment.opengwasdb_version` as "opengwasdb 0.9.1"; Last built is its `validated_at` as a date (`2026-11-13`); a missing value is `n/a` with its reason under "Why n/a";
   - `why_na`: `{label, reason}` for each gap among those facts and Release Status, the reasons the open tile lists under "Why n/a".
 - **`yardstick`** (in `data/benchmarking.json`, not `stores.json`; `static/js/benchmarking.js` draws it, trends first, under the line "One fixed query workload (the yardstick), run at the finish of every epic that changes the engine.", which is the tab's lede and shows even with no results; the script draws the trends first): `stores` (the latest run per Store), `trends`, `unmeasured`, `invalid`,
   `runs`, `workloads`, `load_rule`, `veeam_rule`. Raw runs are not listed.

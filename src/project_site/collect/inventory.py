@@ -29,6 +29,7 @@ BACKFILL = "recorded from opengwasdb-stores#502's backfill"
 HM3_UNRECORDED = "no record says how the HM3 step ended"
 COUNTS = "counts come with opengwasdb#488"
 CLUMPED = "pending opengwasdb-stores#507"
+FORMAT_PENDING = "the format version is recorded once opengwasdb-stores#512 lands"
 
 
 def cell(value: Any = None, gap: str | None = None) -> dict[str, Any]:
@@ -103,6 +104,23 @@ def _top_hits(build: Mapping[str, Any], observed: Mapping[str, Any]) -> dict[str
     return cell([{"threshold": threshold, "count": count} for threshold, count in counts.items()])
 
 
+def _record_cells(bundle: release_bundle.Bundle, observed: Mapping[str, Any], unbuilt: str | None) -> dict[str, dict[str, Any]]:
+    """`format_version`, `built_with` and `last_built`, read from the loaded Validation Record (the bundle has no reader for them)."""
+    validation = _mapping(bundle.validation)
+    if unbuilt:
+        return {k: cell(gap=unbuilt) for k in ("format_version", "built_with", "last_built")}
+    version = observed.get("format_version")
+    environment = validation.get("build_environment")
+    engine = environment.get("opengwasdb_version") if isinstance(environment, Mapping) else None
+    return {
+        "format_version": cell(version) if version not in (None, "") else cell(gap=FORMAT_PENDING),
+        "built_with": (cell(engine) if engine not in (None, "") else
+                       cell(gap="the Validation Record has no build_environment.opengwasdb_version")),
+        "last_built": (cell(validation.get("validated_at")) if validation.get("validated_at") not in (None, "") else
+                       cell(gap="the Validation Record has no validated_at")),
+    }
+
+
 def _manifest(bundle: release_bundle.Bundle) -> dict[str, dict[str, Any]]:
     """`n_analyses`, `median_sample_size` and `ancestry` from `bundle.manifest_summary`; or each as the gap naming why not."""
     try:
@@ -159,5 +177,6 @@ def row(bundle: release_bundle.Bundle) -> dict[str, Any]:
         "coverage": _from_bundle("association_coverage", lambda: bundle.association_coverage),
         "status": _from_bundle("Release Status", lambda: bundle.status),
         **observed_cells,
+        **_record_cells(bundle, observed, unbuilt),
         **_manifest(bundle),
     }

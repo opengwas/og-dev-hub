@@ -47,8 +47,9 @@ def make_registry(root: Path) -> Path:
         release={"label": "dense-new", "status": "validated", "association_coverage": "gwas",
                  "description": "Read at /data/opengwasdb/raw/gwas-vcf/ukb-b by the builder."},
         build={"layout": "dense", "completion_state": "reference_completed", "post": {"top_hits": True}},
-        validation={"status": "passed", "observed": {
-            "n_analyses": 4, "n_variants": 11191070, "store_bytes": 62_100_000_000, "has_hm3": True, "has_rho": False,
+        validation={"status": "passed", "validated_at": "2026-11-13T09:30:00Z", "build_environment": {"opengwasdb_version": "0.9.1"},
+                    "observed": {
+            "format_version": "1.2", "n_analyses": 4, "n_variants": 11191070, "store_bytes": 62_100_000_000, "has_hm3": True, "has_rho": False,
             "n_top_hits": {"5e-08": 10, "5e-06": 1200, "5e-04": 34567}}},
         analyses=ANALYSES_DENSE,
     )
