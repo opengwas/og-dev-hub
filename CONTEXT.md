@@ -49,6 +49,17 @@ _Avoid_: bare "Store" in writing that crosses repositories; LD panel; LD
 Reference Panel, which is the engine's per-block resource for reference
 completion.
 
+**ALID**:
+Short for Alphabetic Variant ID: the variant key every GWAS Store and LD Store
+shares, `chr:pos:A1:A2`, defined in opengwasdb's `CONTEXT.md` (Variant
+Identity). Identity across repositories is the pair (Reference Assembly, ALID),
+and `A1` is the allele every effect and every LD r is signed against. The name
+comes from pleiodb, where `A1` was always the alphabetically first allele. That
+still holds for two alleles of one length, but a GWAS Store's indel puts the
+source's reference allele first (opengwasdb ADR 0079), so "alphabetic" names
+where the key came from, not a rule every ALID follows.
+_Avoid_: variant id, SNP id, chrpos, in writing that crosses repositories.
+
 ## The three kinds of state
 
 **Planned state**:
