@@ -49,6 +49,14 @@ _Avoid_: bare "Store" in writing that crosses repositories; LD panel; LD
 Reference Panel, which is the engine's per-block resource for reference
 completion.
 
+**Store Archive**:
+The single file that holds one public GWAS Store Release, LD Store, Genotype
+Store or LD Reference Panel exactly as currently published, with a file stating
+its identity, provenance and licences. There is at most one current Store
+Archive per resource ([ADR 0006](docs/adr/0006-every-public-store-downloads-whole-through-a-signed-link.md)).
+_Avoid_: store tarball, whole-store download, store bundle (a Release Bundle
+is something else).
+
 **ALID**:
 Short for Alphabetic Variant ID: the variant key every GWAS Store and LD Store
 shares, `chr:pos:A1:A2`, defined in opengwasdb's `CONTEXT.md` (Variant
