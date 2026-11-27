@@ -31,10 +31,9 @@ og-dev-hub = { path = ".", editable = true }
 # so this brings in no second copy of anything here. Every call passes the
 # registry root it reads: an installed `ogstores` does not know where a
 # registry checkout is. It also ships `ld_registry`, whose `index.resource_rows` reads the
-# LD Store Registry (og-dev-hub#10). The pin is opengwasdb-stores' `orch/14-ld-yardstick` (abb2ae5f: the LD
-# yardstick's `ld` result section, opengwasdb-stores#504, on top of `main` 75fe637a's `ld-resources.tsv`);
-# move it to `main` when PR #555 merges.
-ogstores = { git = "https://github.com/opengwas/opengwasdb-stores", rev = "abb2ae5fb89963c9a818aed6f347f5379bdab39d" }
+# LD Store Registry (og-dev-hub#10). The pin is opengwasdb-stores' `main` at 768c4326, the merge of
+# PR #555: the LD yardstick's `ld` result section (opengwasdb-stores#504) and `ld-resources.tsv`.
+ogstores = { git = "https://github.com/opengwas/opengwasdb-stores", rev = "768c43262d1e51204a57be94b4db69f192a55329" }
 # The engine, which `ogstores` reads every `analyses.tsv` through (`bundle.manifest_summary`,
 # og-dev-hub#16): no lighter owner of that read exists. The real cost is the engine's own
 # dependencies (numpy, zarr, pandas, scipy, scikit-learn, pysam, ...): about 40 wheels and 1.1 GB
