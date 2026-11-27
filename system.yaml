@@ -49,8 +49,8 @@ external:
 repos:
   - {name: opengwasdb, visibility: public}
   - {name: opengwasdb-stores, visibility: public}
-  - {name: ogquery, visibility: null}            # new, opengwasdb#450
-  - {name: ogld, visibility: private, status: merging into opengwasdb, then archived}
+  - {name: ogquery, visibility: public}
+  - {name: ogld, visibility: private, status: "merging into opengwasdb, then archived"}
   - {name: ogdb-api, visibility: private}
   - {name: opengwas-gateway, visibility: public}
   - {name: opengwasdb-website, visibility: public}
@@ -82,7 +82,7 @@ containers:
   - {id: ld_stores, name: LD Stores, repo: null, tech: LD Store format on /data,
      summary: "One LD Store per (Source Panel, Reference Assembly)."}
   # Reading
-  - {id: ogquery, name: ogquery, repo: ogquery, tech: Python package (numpy, zarr, numcodecs),
+  - {id: ogquery, name: ogquery, repo: ogquery, tech: "Python package (numpy, zarr, numcodecs)",
      summary: "The one light read path for GWAS Stores and LD Stores: lookups, PheWAS, top hits, clump, proxies and LD matrices."}
   # Serving
   - {id: gateway, name: opengwas-gateway, repo: opengwas-gateway, tech: service,
