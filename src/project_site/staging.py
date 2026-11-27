@@ -91,10 +91,6 @@ def _recorded(command: list[str]) -> dict[str, Any]:
 # What is read from the registry's files, as opposed to through git: the Release
 # Bundles (the Stores collector) and the yardstick's results (og-dev-hub#16).
 REGISTRY_TREE = ("stores", "docs/_yardstick")
-# And, for the LD panels `ld_registry.index.resource_rows` lists (og-dev-hub#10), the declaration of each Reference Resource
-# alone: `resources/reference-resources/<id>/resource.yaml`. The directories beside it hold panel data tables the site never reads.
-RESOURCE_DECLARATIONS = REFERENCE_RESOURCES_DIR.as_posix()
-DECLARATION = DECLARATION_FILENAME
 
 
 def extract_tree(clone: Path, ref: str, dest: Path) -> str:
@@ -107,10 +103,11 @@ def extract_tree(clone: Path, ref: str, dest: Path) -> str:
     if commit is None:
         raise CollectError(f"{clone} cannot be extracted at {ref}: {why}")
     present = [path for path in REGISTRY_TREE if _git(clone, "ls-tree", "--name-only", commit, "--", path).strip()]
-    # The NUL-safe listing (`Tree`): git quotes a path such as `panél/resource.yaml` in its line form, and it would be dropped.
-    slashes = RESOURCE_DECLARATIONS.count("/") + 2
-    declared = [name for name in Tree(clone, commit, only=[RESOURCE_DECLARATIONS]).files
-                if name.endswith(f"/{DECLARATION}") and name.count("/") == slashes]
+    # Read only Reference Resource declarations for LD panels (#10), not the panel data tables beside them.
+    # `Tree` is NUL-safe: git quotes a path such as `panél/resource.yaml` in its line form.
+    slashes = len(REFERENCE_RESOURCES_DIR.parts) + 1
+    declared = [name for name in Tree(clone, commit, only=[REFERENCE_RESOURCES_DIR.as_posix()]).files
+                if name.endswith(f"/{DECLARATION_FILENAME}") and name.count("/") == slashes]
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)

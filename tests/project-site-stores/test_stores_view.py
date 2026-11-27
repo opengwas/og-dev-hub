@@ -11,6 +11,8 @@ import copy
 import json
 import re
 import shutil
+import subprocess
+import sys
 import yaml
 import tempfile
 import unittest
@@ -408,6 +410,11 @@ class LdResourcesTests(Fixture):
         self.assertIn({"label": "Source Panel n", "reason": "the panel's declaration holds no sample size"}, tiles["OGL-00005"]["why_na"])
         self.assertIn({"label": "Source Panel n", "reason": "the Store's record holds no sample size"}, tiles["OGL-00001"]["why_na"])
 
+    def test_the_view_turns_a_numeric_label_into_display_text(self) -> None:
+        doc = copy.deepcopy(self.doc)
+        doc["ld_resources"]["rows"][0]["label"] = 42
+        self.assertEqual(stores_view.stores_view(doc)["ld_resources"]["rows"][0]["label"], "42")
+
     def test_the_sample_size_gap_is_reported_even_without_a_source_panel_name(self) -> None:
         doc = copy.deepcopy(self.doc)
         doc["ld_resources"]["rows"][4].update(n=None, source_panel=None)
@@ -615,6 +622,20 @@ class YardstickTests(Fixture):
         self.assertEqual(view, {"available": False, "reason": "no results"})
 
 
+class LdRegistryVocabularyTests(unittest.TestCase):
+    def test_import_rejects_drift_in_registry_kinds_and_store_statuses_even_with_optimization(self) -> None:
+        for change, diagnostic in (
+            ("record.KINDS += ('new_store',)", "LD resource kinds"),
+            ("panels.PANEL_KIND = 'new_panel'", "LD resource kinds"),
+            ("record.STATUSES += ('available',)", "LD Store statuses"),
+        ):
+            with self.subTest(change=change):
+                code = f"from ld_registry import panels, record; {change}; import project_site.stores_view"
+                done = subprocess.run([sys.executable, "-O", "-c", code], capture_output=True, text=True, check=False)
+                self.assertNotEqual(done.returncode, 0)
+                self.assertIn(f"RuntimeError: {diagnostic}", done.stderr)
+
+
 class LatestRunTests(Fixture):
     def test_a_store_the_newest_run_leaves_out_says_so_above_the_older_run_shown(self) -> None:
         doc = json.loads(json.dumps(self.doc["yardstick"]))
@@ -651,7 +672,6 @@ class LatestRunTests(Fixture):
         self.assertFalse(hasattr(stores_view, "UNTIMED"))
 
     def test_a_status_the_build_cannot_draw_is_a_raise_not_an_assert(self) -> None:
-        import subprocess, sys
         code = ("import yardstick.result as r; r.STATUSES = r.STATUSES + ('paused',); "
                 "import project_site.stores_view")
         done = subprocess.run([sys.executable, "-O", "-c", code], capture_output=True, text=True)

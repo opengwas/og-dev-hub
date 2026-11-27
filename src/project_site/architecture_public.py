@@ -79,6 +79,11 @@ def reason(text: Any) -> Any:
     return HOST_PATH.sub(cut, text)
 
 
+def scrub_text(value: Any) -> str | None:
+    """A public display value as text, with host paths scrubbed; None remains missing."""
+    return None if value is None else reason(str(value))
+
+
 def _pick(source: Any, keys: Iterable[str]) -> dict[str, Any]:
     """The named fields of `source`, and nothing else; a source that is not a mapping gives none."""
     return {k: source[k] for k in keys if isinstance(source, Mapping) and k in source}

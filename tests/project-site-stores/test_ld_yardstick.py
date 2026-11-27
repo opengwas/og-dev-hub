@@ -62,6 +62,7 @@ class DrawnLdYardstick(Fixture):
     def test_both_stores_are_drawn_with_their_measures_and_one_not_applicable_with_its_reason(self) -> None:
         ld = self.view["ld"]
         self.assertTrue(ld["available"])
+        self.assertNotIn("runs", ld)
         self.assertEqual([s["store_id"] for s in ld["stores"]], ["OGL-00006", "OGL-00007"])
         by = {s["store_id"]: s for s in ld["stores"]}
         rows = {m["name"]: m for m in by["OGL-00006"]["measures"]}
@@ -109,6 +110,7 @@ class NoLdRun(Fixture):
     def test_a_result_without_an_ld_section_is_not_measured_in_this_run(self) -> None:
         ld = self.view["ld"]
         self.assertFalse(ld["available"])
+        self.assertNotIn("runs", ld)
         self.assertEqual(ld["stores"], [])
         self.assertIn("LD not measured in this run (2026-11-17)", ld["gap"])
         self.assertIn("not measured yet", ld["gap"])

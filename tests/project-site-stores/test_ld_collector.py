@@ -84,10 +84,11 @@ class Collector(unittest.TestCase):
         for raw in ("receipt:/data/x/y.json", "https://h/?f=/data/x/y.json", "file:///data/x/y.json", "/data/x/y.json at the start",
                     "see /data/x/y.json", "'/data/x/y.json'", '"/data/x/y.json"', "a;/data/x/y.json"):
             with self.subTest(raw=raw):
-                shown = ld_resources.scrub(raw)
+                shown = ld_resources.public_row({"notes": raw})["notes"]
                 self.assertIsNone(HOST_PATH.search(shown), shown)
                 self.assertIn("y.json", shown)
-        self.assertEqual(ld_resources.scrub("from resources/data/derived/x.tsv"), "from resources/data/derived/x.tsv")
+        relative = "from resources/data/derived/x.tsv"
+        self.assertEqual(ld_resources.public_row({"notes": relative})["notes"], relative)
 
     def test_a_number_in_a_text_column_is_text_and_a_text_in_a_number_column_is_a_gap(self) -> None:
         row = ld_resources.public_row({"used_for": 5, "n": "many", "label": None, "record": "stores/ld/OGL-00001/record.yaml"})
