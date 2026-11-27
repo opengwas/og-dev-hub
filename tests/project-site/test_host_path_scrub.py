@@ -12,7 +12,7 @@ import unittest
 
 from project_site import architecture_public
 
-LEFT = re.compile(r"(?<![\w.~-])/data/|file://", re.IGNORECASE)
+LEFT = re.compile(r"(?<!:/)(?<![\w.~-])/data/|file:/|(?<=:)/(?!/)", re.IGNORECASE)
 
 
 class Reason(unittest.TestCase):
@@ -31,6 +31,10 @@ class Reason(unittest.TestCase):
             ("see file://localhost/private/log.txt", "see …/log.txt"),
             ("FILE://build-host/private/log.txt?path=/tmp/other", "…/log.txt"),
             ("see file:///", "see …"),
+            ("receipt:/tmp/work/x", "receipt:…/x"),
+            ("see:/home/u/secret", "see:…/secret"),
+            ("see file:/tmp/work/x", "see …/x"),
+            ("FILE:/tmp/work/log.txt?path=/tmp/other", "…/log.txt"),
             ("clone at /home/u/repo.git failed", "clone at …/repo.git failed"),
         ):
             with self.subTest(raw=raw):
@@ -39,7 +43,7 @@ class Reason(unittest.TestCase):
 
     def test_a_relative_path_and_a_url_are_kept(self) -> None:
         for kept in ("from resources/data/derived/x.tsv", "https://github.com/opengwas/opengwasdb-stores/blob/abc/stores/ld/x.yaml",
-                     "ogld#7", "a/b/c"):
+                     "https://example.org/tmp/work/x", "https://data/archive/x", "ogld#7", "a/b/c"):
             with self.subTest(kept=kept):
                 self.assertEqual(architecture_public.reason(kept), kept)
 

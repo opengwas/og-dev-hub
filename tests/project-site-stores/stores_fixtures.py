@@ -252,6 +252,7 @@ def ld_run_result_with_host_paths() -> dict:
     ld6, ld7 = result["ld"]["stores"]
     ld6["label"] = "/data/opengwasdb/work/ogld/EUR file:///tmp/work/foo"
     ld6["measures"]["region_1mb"]["path"] = "/data/opengwasdb/work/path-in-a-measure"
-    ld6["measures"]["proxies_100"]["reason"] = ["read /data/opengwasdb/x failed", "see file:///tmp/work/bar"]
-    ld7["measures"]["clump"] = {"status": "unavailable", "error": {"file://localhost/tmp/build/input": "read failed"}}
+    ld6["measures"]["proxies_100"]["reason"] = ["read /data/opengwasdb/x failed", "see file:///tmp/work/bar", "receipt:/tmp/work/trace.txt"]
+    ld7["measures"]["clump"] = {"status": "unavailable", "error": {"file://localhost/tmp/build/input": "read failed", "retry": "see:/home/u/secret"}}
+    ld7["measures"]["peak_rss"]["error"] = ["worker stopped", {"input": "file:/tmp/work/81-eur"}]
     return result

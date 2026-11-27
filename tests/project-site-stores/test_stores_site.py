@@ -21,8 +21,9 @@ from project_site import site
 from project_site.collect import common, stores
 
 RUNNER = Path(__file__).resolve().parents[1] / "project-site-architecture" / "view_runner.js"
-# Absolute /data paths and file URLs. Not a repository's relative `resources/data/`.
-HOST_PATH_BYTES = re.compile(rb"(?<![\w.~-])/data/|file://", re.IGNORECASE)
+# Absolute /data paths, file URIs and directory paths after a colon. Requiring a directory segment avoids matching
+# incidental `:/` bytes in fonts or images. Relative `resources/data/` and HTTPS authorities are not host paths.
+HOST_PATH_BYTES = re.compile(rb"(?<!:/)(?<![\w.~-])/data/|file:/|(?<=:)/[\w.~-]+/", re.IGNORECASE)
 
 
 def build(cleanup, *, stores_doc: dict | None, ld_run: bool = False, ld_result: dict | None = None) -> Path:
@@ -199,7 +200,7 @@ class LdYardstickSite(unittest.TestCase):
         text = drawn["benchmarking"]
         self.assertNotIn("could not be drawn", text)
         for expected in ("LD Stores", "OGL-00006", "OGL-00007", "Genotype Store", "engine 0.27.0 · ogquery 0.5.0", "unavailable: the worker was killed reading …/81-eur", "594.9 ms", "files read, links followed",
-                         "the Store's own files: 478.3 MB", "the Store has no Partner Rows", "not applicable", "LD trends across engine versions"):
+                         "the Store's own files: 478.3 MB", "this run did not exercise the 100-proxy query", "not applicable", "LD trends across engine versions"):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
         self.assertLessEqual({"ld-bench-OGL-00006", "ld-bench-OGL-00007"}, set(drawn["_ids"]))
@@ -212,6 +213,11 @@ class LdYardstickSite(unittest.TestCase):
 
     def test_a_result_with_host_paths_keeps_them_out_of_the_site_and_trend_tooltips(self) -> None:
         out = build(self.addCleanup, stores_doc=None, ld_result=fx.ld_run_result_with_host_paths())
+        drawn = self.drawn(out)["benchmarking"]
+        for expected in ("read …/x failed; see …/bar; receipt:…/trace.txt", "…/input: read failed; retry: see:…/secret",
+                         "unavailable: worker stopped; input: …/81-eur"):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, drawn)
         for path in out.rglob("*"):
             if path.is_file():
                 with self.subTest(path=str(path.relative_to(out))):

@@ -162,7 +162,7 @@
     },
     "proxies_100": {
      "status": "not_applicable",
-     "reason": "the Store has no Partner Rows (provenance has no t_partner)"
+     "reason": "this run did not exercise the 100-proxy query"
     },
     "clump": {
      "status": "measured",

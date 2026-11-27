@@ -394,22 +394,25 @@ def _latest(runs: list[Mapping[str, Any]], store_id: str) -> tuple[Mapping[str, 
     return (measured or listed or [None])[-1]
 
 
+def _carry_forward(run: Mapping[str, Any], newest: Mapping[str, Any], *, measured: bool) -> tuple[str | None, str | None]:
+    """The short run label and panel notice when we show an older result for a Store."""
+    if run["file"] == newest["file"]:
+        return None, None
+    label = f"not in the latest run ({newest['started_utc'][:10]})"
+    return label, label + (": this is the latest run that measured it." if measured else ".")
+
+
 def latest_run(store_id: str, labels: Mapping[str, Any], runs: list[Mapping[str, Any]]) -> dict[str, Any] | None:
     found = _latest(runs, store_id)
     if found is None:
         return None
     run, store = found
     measures = store.get("measures") or {}
-    newest = runs[-1]
+    not_in_latest, notice = _carry_forward(run, runs[-1], measured=store["status"] == "measured")
     return {
         "store_id": store_id, "label": labels.get(store_id), "layout": store["layout"], "coverage": store["coverage"],
         "state": store["status"], "reason": text(store.get("reason")),
-        # The newest run left this Store out, or listed it pending: say so above the older run shown.
-        "not_in_latest": None if run is newest else f"not in the latest run ({newest['started_utc'][:10]})",
-        # The wording the panel shows, written here: the script does not choose it.
-        "notice": None if run is newest else (
-            f"not in the latest run ({newest['started_utc'][:10]}): this is the latest run that measured it."
-            if store["status"] == "measured" else f"not in the latest run ({newest['started_utc'][:10]})."),
+        "not_in_latest": not_in_latest, "notice": notice,
         "pending": f"Pending in its latest run: {text(store.get('reason')) or 'no reason recorded'}." if store["status"] != "measured" else None,
         "engine_version": run["engine_version"], "date": run["started_utc"][:10], "workload_id": run["workload_id"],
         "flags": run_flags(run),
@@ -538,16 +541,13 @@ def _ld_store(store_id: str, runs: list[Mapping[str, Any]], newest: Mapping[str,
         return None
     run, store = found
     measures = store.get("measures") or {}
-    date, newest_date = run["started_utc"][:10], newest["started_utc"][:10]
+    _, notice = _carry_forward(run, newest, measured=True)
     peak = _fact("peak_rss", measures.get("peak_rss"))
     return {
         "store_id": store_id, "anchor": f"ld-bench-{store_id}", "label": store.get("label"),
-        "kind": LD_KIND_LABEL.get(store["kind"], store["kind"]), "state": store["status"], "reason": text(store.get("reason")),
-        "versions": f"engine {run['engine_version']} · ogquery {run['ld']['ogquery_version']}", "date": date,
-        "run": f"{date} · {run['workload_id']}", "workload_id": run["workload_id"], "flags": run_flags(run),
-        # Like the GWAS table: each row says which run it is from, and when that is not the newest run, says so.
-        "notice": None if run["file"] == newest["file"] else
-        f"not in the latest run ({newest_date}): this is the latest run that measured it ({date}).",
+        "kind": LD_KIND_LABEL.get(store["kind"], store["kind"]),
+        "versions": f"engine {run['engine_version']} · ogquery {run['ld']['ogquery_version']}",
+        "run": f"{run['started_utc'][:10]} · {run['workload_id']}", "flags": run_flags(run), "notice": notice,
         "peak_memory": {**peak, "display": _display(peak)}, "size_on_disk": _ld_size(measures.get("bytes_on_disk")),
         "measures": [_measure(name, measures[name]) for name in yardstick_result.LD_TIMED if name in measures],
     }

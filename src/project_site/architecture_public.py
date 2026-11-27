@@ -47,11 +47,13 @@ SUMMARY_KEYS = ("edges", "upward_edges", "upward_imports", "registry_to_engine_e
                 "adrs_total", "adrs_placed")
 
 
-# Match a whole file URL, an absolute path starting a word, or a `/data/` path after e.g. a colon or inside an HTTP URL.
-# A relative `resources/data/` continues a word; `…/` is a cut already made.
+# Match a whole file URI, an absolute path starting a word or following a colon, or a `/data/` path in e.g. a URL query.
+# Leave `://` authorities, relative `resources/data/` and paths already shortened to `…/` alone.
 HOST_PATH = re.compile(
-    r"(?P<file_url>(?i:file://)[^\s'\"`,;()]*)"
-    r"|(?<![\w.:/~…-])/[^\s'\"`,;()]+|(?<![\w.~…-])/data/[^\s'\"`,;()]*"
+    r"(?P<file_uri>(?i:file:)/[^\s'\"`,;()]*)"
+    r"|(?<=:)/(?!/)[^\s'\"`,;()]*"
+    r"|(?<![\w.:/~…-])/[^\s'\"`,;()]+"
+    r"|(?<!:/)(?<![\w.~…-])/data/[^\s'\"`,;()]*"
 )
 
 
@@ -66,9 +68,11 @@ def reason(text: Any) -> Any:
 
     def cut(match: re.Match[str]) -> str:
         path = match.group(0)
-        if match.group("file_url"):
-            # Discard the authority, query and fragment as well as the machine's directories.
-            path = re.split(r"[?#]", path, maxsplit=1)[0][len("file://"):].partition("/")[2]
+        if match.group("file_uri"):
+            # Discard the optional authority, query and fragment as well as the machine's directories.
+            path = re.split(r"[?#]", path, maxsplit=1)[0][len("file:"):]
+            if path.startswith("//"):
+                path = path[2:].partition("/")[2]
         name = path.rstrip("/").rsplit("/", 1)[-1]
         return f"…/{name}" if name else "…"
 

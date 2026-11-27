@@ -25,19 +25,24 @@ RECORD_KEYS = ("status", "median_ms", "p95_ms", "reps", "reason", "error", "peak
 LD_RECORD_KEYS = ("status", "median_ms", "p95_ms", "reason", "error", "peak_mb", "bytes", "store_bytes", "genotype_bytes")
 
 
-def _record(record: dict[str, Any], keys: tuple[str, ...] = RECORD_KEYS) -> dict[str, Any]:
-    return {k: record[k] for k in keys if k in record}
-
-
-def _clean(value: Any) -> Any:
-    """A display value of a result with each host path in any text, in a list or a mapping, cut to its last name."""
-    if isinstance(value, str):
-        return architecture_public.reason(value)
+def _display_text(value: Any) -> str | None:
+    """One string for the browser, with host paths scrubbed before joining any structured note."""
+    if value is None:
+        return None
     if isinstance(value, list):
-        return [_clean(v) for v in value]
+        return "; ".join(_display_text(item) or "" for item in value)
     if isinstance(value, dict):
-        return {architecture_public.reason(k): _clean(v) for k, v in value.items()}
-    return value
+        return "; ".join(f"{architecture_public.reason(key)}: {_display_text(item) or ''}" for key, item in value.items())
+    return architecture_public.reason(str(value))
+
+
+def _record(record: dict[str, Any], keys: tuple[str, ...] = RECORD_KEYS) -> dict[str, Any]:
+    out = {}
+    for key in keys:
+        if key in record:
+            value = record[key]
+            out[key] = _display_text(value) if key in ("reason", "error") or isinstance(value, (str, list, dict)) else value
+    return out
 
 
 def _ld(section: Any) -> dict[str, Any] | None:
@@ -47,12 +52,12 @@ def _ld(section: Any) -> dict[str, Any] | None:
     if not isinstance(section, dict):
         return None
     return {
-        "ogquery_version": _clean((section.get("ogquery") or {}).get("version")),
+        "ogquery_version": _display_text((section.get("ogquery") or {}).get("version")),
         "stores": {
             store["ld_id"]: {
-                "kind": _clean(store["kind"]), "label": _clean(store.get("label")), "status": _clean(store["status"]),
-                "reason": _clean(store.get("reason")),
-                "measures": {name: _clean(_record(rec, LD_RECORD_KEYS)) for name, rec in (store.get("measures") or {}).items()},
+                "kind": store["kind"], "label": _display_text(store.get("label")), "status": store["status"],
+                "reason": _display_text(store.get("reason")),
+                "measures": {name: _record(rec, LD_RECORD_KEYS) for name, rec in (store.get("measures") or {}).items()},
             }
             for store in section.get("stores") or []
         },
@@ -64,13 +69,13 @@ def _run(file: str, doc: dict[str, Any]) -> dict[str, Any]:
     for store in doc["stores"]:
         stores[store["store_id"]] = {
             "layout": store["layout"], "coverage": store["coverage"], "status": store["status"],
-            "reason": store.get("reason"),
+            "reason": _display_text(store.get("reason")),
             "measures": {name: _record(rec) for name, rec in (store.get("measures") or {}).items()},
         }
     return {
         "file": file,
-        "workload_id": _clean(doc.get("workload_id")),
-        "engine_version": _clean(doc["opengwasdb"]["version"]),
+        "workload_id": _display_text(doc.get("workload_id")),
+        "engine_version": _display_text(doc["opengwasdb"]["version"]),
         "engine_revision": doc["opengwasdb"]["revision"],
         "started_utc": doc["started_utc"],
         "cpu_count": doc["host"]["cpu_count"],

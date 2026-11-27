@@ -68,7 +68,7 @@ class DrawnLdYardstick(Fixture):
         self.assertEqual(list(rows), list(yardstick_result.LD_TIMED))
         self.assertEqual((rows["region_3mb"]["median"], rows["region_3mb"]["p95"]), ("594.9 ms", "642.3 ms"))
         self.assertEqual((rows["proxies_100"]["state"], rows["proxies_100"]["note"]),
-                         ("not_applicable", "the Store has no Partner Rows (provenance has no t_partner)"))
+                         ("not_applicable", "this run did not exercise the 100-proxy query"))
         self.assertEqual(by["OGL-00006"]["peak_memory"]["display"], "1,146 MB")
         self.assertEqual(by["OGL-00006"]["versions"], "engine 0.27.0 · ogquery 0.5.0")
         self.assertEqual(by["OGL-00007"]["peak_memory"]["display"], "unavailable: the worker was killed reading …/81-eur")
@@ -141,8 +141,8 @@ class NewestRunWithoutLd(Fixture):
         self.assertTrue(ld["available"])
         self.assertEqual(ld["notice"], "LD not measured in this run (2026-11-29): each row is from the latest run that measured that Store, dated in its Run column.")
         self.assertEqual([(s["store_id"], s["run"], s["notice"]) for s in ld["stores"]], [
-            ("OGL-00006", "2026-11-27 · yardstick-6", "not in the latest run (2026-11-29): this is the latest run that measured it (2026-11-27)."),
-            ("OGL-00007", "2026-11-28 · yardstick-7", "not in the latest run (2026-11-29): this is the latest run that measured it (2026-11-28).")])
+            ("OGL-00006", "2026-11-27 · yardstick-6", "not in the latest run (2026-11-29): this is the latest run that measured it."),
+            ("OGL-00007", "2026-11-28 · yardstick-7", "not in the latest run (2026-11-29): this is the latest run that measured it.")])
 
 
 class HostPathsInAResult(unittest.TestCase):
@@ -170,8 +170,9 @@ class HostPathsInAResult(unittest.TestCase):
         self.assertEqual(run["engine_version"], "0.27.0+…/engine")
         self.assertEqual(run["ld"]["ogquery_version"], "0.5.0 at …/ogquery")
         self.assertEqual(ld6["label"], "…/EUR …/foo")
-        self.assertEqual(ld6["measures"]["proxies_100"]["reason"], ["read …/x failed", "see …/bar"])
-        self.assertEqual(ld7["measures"]["clump"]["error"], {"…/input": "read failed"})
+        self.assertEqual(ld6["measures"]["proxies_100"]["reason"], "read …/x failed; see …/bar; receipt:…/trace.txt")
+        self.assertEqual(ld7["measures"]["clump"]["error"], "…/input: read failed; retry: see:…/secret")
+        self.assertEqual(ld7["measures"]["peak_rss"]["error"], "worker stopped; input: …/81-eur")
 
 
 class TheGapIsDecidedFromTheResultsAlone(Fixture):
@@ -218,10 +219,12 @@ class TheGapIsDecidedFromTheResultsAlone(Fixture):
         self.assertEqual(self.view_of(doc)["benchmarking"], stores_view.LD_BENCHMARKING_GAP)
 
 
-class NoPendingBranch(Fixture):
-    def test_an_ld_row_has_no_pending_text(self) -> None:
+class LdRowFields(Fixture):
+    def test_an_ld_row_has_the_run_display_but_no_unused_metadata_or_pending_text(self) -> None:
         for row in self.view["ld"]["stores"]:
-            self.assertNotIn("pending", row)
+            self.assertEqual(row["run"], "2026-11-27 · yardstick-6")
+            self.assertIsNone(row["notice"])
+            self.assertFalse({"date", "workload_id", "state", "reason", "pending"} & row.keys())
 
 
 if __name__ == "__main__":
