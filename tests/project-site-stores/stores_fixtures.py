@@ -106,6 +106,7 @@ def make_registry(root: Path) -> Path:
         validation={"status": "passed", "observed": {"has_rho": None}},
         analyses="analysis_id\tassigned_ancestry\tsample_size\texclude_from_build\nH1\tEUR\t5\ttrue\n",
     )
+    make_ld_registry(root)
     (stores / "by-label").mkdir()
     (stores / "README.md").write_text("x")
     results = root / "docs" / "_yardstick"
@@ -162,3 +163,64 @@ def run(workload: str, version: str, started: str, load: float, stores: list[dic
         "started_utc": started, "ended_utc": started, "duration_s": 60.0, "local_utc_offset_minutes": 0,
         "veeam_window": veeam, "repetitions": {"default": 5}, "stores": stores,
     }
+
+
+# ---------------------------------------------------------------------------
+# The LD Store Registry (og-dev-hub#10): `stores/ld/OGL-NNNNN/record.yaml` and the LD panels' `resource.yaml`.
+# Each record is shaped as the real ones at opengwasdb-stores 75fe637a are (docs/spec/ld-store-registry.md); each
+# `location` is a host path, which the site must never carry.
+# ---------------------------------------------------------------------------
+
+LD_HOST_PATH = "/data/opengwasdb/work/ogld/stores"
+
+
+def ld_record(ld_id: str, kind: str, status: str, **fields) -> dict:
+    """A valid record. `fields` replace top-level keys; `provenance` and `measured` replace their own keys."""
+    provenance = {
+        "source_kind": "genotypes", "source_description": "HGDP+1kGP phased v2 (Koenig et al. 2024), EUR, converted by build-inputs §3",
+        "source_panel": "hgdp1kgp-v2-EUR", "ancestry": "EUR", "n": 665, "k": 10, "reference_assembly": "GRCh38",
+        "format_version": "0.1.0", "r_scale": 511, "near_bp": 3000000, "far_bp": 10000000, "t_far": 0.0318,
+        "n_variants": 8586889, "software": {"ogld": "0.5.0"}, "created_at": "2026-11-21T20:42:19Z", "wall_seconds": 838.3,
+        **fields.pop("provenance", {}),
+    }
+    measured = {"store_bytes": 79_278_843_340, **fields.pop("measured", {})}
+    return {
+        "ld_id": ld_id, "kind": kind, "label": f"hgdp1kgp-v2-EUR-k10-{ld_id[-2:]}", "status": status, "licence": "to confirm",
+        "used_for": "Data API LD: matrix, region, proxies, clump", "issue": "ogld#7",
+        "rebuild": {"repository": "opengwas/ogld", "version": "0.5.0", "script": "ogld build",
+                    "commands": [f"pixi run -e dev ogld build {LD_HOST_PATH}/{ld_id}.store"]},
+        "location": f"{LD_HOST_PATH}/{ld_id}.store", "provenance": provenance, "provenance_sha256": "a" * 64,
+        "measured": measured, **fields,
+    }
+
+
+LD_PANEL = {
+    "resource_id": "fixture-ld-panel", "label": "A fixture LD reference panel", "kind": "ld_panel", "ancestry": ["AMR"],
+    "genome_build": "GRCh38", "location": "/data/opengwasdb/reference/fixture/panel",
+    "ld": {"representation": "eigendecomposition", "n_blocks": {"AMR": 1357}, "bytes": {"AMR": 21_012_529_996}},
+    "source": {"cohort": "gnomAD v3.1.2 HGDP+1kGP, AMR samples only", "n_individuals": {"AMR": 345}},
+    "ld_ids": {"AMR": "OGL-00005"}, "used_for": "reference completion (opengwasdb complete-dense)", "licence": "to confirm",
+    "status": "available", "notes": "Built from /data/opengwasdb/reference/fixture/runs/receipt.json.",
+}
+
+
+def make_ld_registry(root: Path) -> None:
+    """Five rows: an LD Store served, a Genotype Store built, an LD Store retired, one kept as `reference`, and an LD panel
+    (whose `n_variants` its declaration does not hold, so that cell is empty)."""
+    records = [
+        ld_record("OGL-00001", "ld_store", "served", default=True, notes="served by ogdb-api; stays as the reference"),
+        ld_record("OGL-00002", "genotype_store", "built", measured={"genotype_bytes": 4_139_037_382},
+                  provenance={"n_variants": 8586889},
+                  rebuild={"repository": "opengwas/ogld", "version": "0.5.0", "script": "ogld build --genotypes",
+                           "commands": [f"pixi run -e dev ogld build {LD_HOST_PATH}/x.store --genotypes"]}),
+        ld_record("OGL-00003", "ld_store", "retired", provenance={"ancestry": "AFR", "n": 608},
+                  notes="retired 2026-11-27: its files are deleted"),
+        ld_record("OGL-00004", "ld_store", "reference", provenance={"ancestry": "AMR", "n": 345}),
+    ]
+    for record in records:
+        directory = root / "stores" / "ld" / record["ld_id"]
+        directory.mkdir(parents=True)
+        (directory / "record.yaml").write_text(yaml.safe_dump(record, sort_keys=False))
+    panel = root / "resources" / "reference-resources" / LD_PANEL["resource_id"]
+    panel.mkdir(parents=True)
+    (panel / "resource.yaml").write_text(yaml.safe_dump(LD_PANEL, sort_keys=False))

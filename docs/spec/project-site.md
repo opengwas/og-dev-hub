@@ -228,9 +228,15 @@ has `validated_at: null`, never a date borrowed from elsewhere, and a
 `n_variants × n_analyses`). This collector does not run `bundle.check()`;
 `pixi run bundle-check` does.
 
-**LD Stores.** `stores.json` holds GWAS Stores only: the LD Store Registry is
-not yet in opengwasdb-stores (opengwasdb-stores#496), so LD Stores are not
-listed and their number is unknown, never 0. The Stores view says so as `ld_stores.gap`, naming og-dev-hub#10 and opengwasdb-stores#496: unknown, not 0.
+**LD resources** (`collect.ld_resources`, og-dev-hub#10). Beside `stores`, the file holds `ld_resources`:
+`{available, error, rows}`, one row per line of the LD Store Registry's `ld-resources.tsv` , in id order, of three kinds: `ld_store`, `genotype_store` and `ld_panel`. The rows come from the
+registry's own reader, `ld_registry.index.resource_rows`, over the staged `stores/ld/` and each
+`resources/reference-resources/<id>/resource.yaml` (`staging.extract_tree` extracts those declarations alone); the
+collector parses no TSV. A row holds `ld_id`, `label`, `kind`, `provenance`, `status`, `used_for`, `ancestry`,
+`source_panel`, `n`, `reference_assembly`, `store_bytes`, `genotype_bytes`, `n_variants`, `built_with`, `record` and
+`notes`; a missing value is `null`. **`location`, the host path of a Store, is dropped here** and no other column
+reaches the file. A registry revision with no `stores/ld/`, or a record that breaks the spec, is `available: false`
+with the reason: a gap, never a failed build (ADR 0001).
 
 **`inventory[]`** (`collect.inventory`, og-dev-hub#16), one row per Release Bundle: `store_id`,
 `label`, `description`, and a *cell* (`{value, gap}`, never both set) for each of `layout`,

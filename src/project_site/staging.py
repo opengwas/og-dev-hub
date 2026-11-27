@@ -89,6 +89,10 @@ def _recorded(command: list[str]) -> dict[str, Any]:
 # What is read from the registry's files, as opposed to through git: the Release
 # Bundles (the Stores collector) and the yardstick's results (og-dev-hub#16).
 REGISTRY_TREE = ("stores", "docs/_yardstick")
+# And, for the LD panels `ld_registry.index.resource_rows` lists (og-dev-hub#10), the declaration of each Reference Resource
+# alone: `resources/reference-resources/<id>/resource.yaml`. The directories beside it hold panel data tables the site never reads.
+RESOURCE_DECLARATIONS = "resources/reference-resources"
+DECLARATION = "resource.yaml"
 
 
 def extract_tree(clone: Path, ref: str, dest: Path) -> str:
@@ -101,10 +105,14 @@ def extract_tree(clone: Path, ref: str, dest: Path) -> str:
     if commit is None:
         raise CollectError(f"{clone} cannot be extracted at {ref}: {why}")
     present = [path for path in REGISTRY_TREE if _git(clone, "ls-tree", "--name-only", commit, "--", path).strip()]
+    declared = [
+        name for name in _git(clone, "ls-tree", "-r", "--name-only", commit, "--", RESOURCE_DECLARATIONS).splitlines()
+        if name.endswith(f"/{DECLARATION}") and name.count("/") == RESOURCE_DECLARATIONS.count("/") + 2
+    ]
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
-    _extract(clone, commit, present, dest)
+    _extract(clone, commit, present + declared, dest)
     return commit
 
 
