@@ -150,6 +150,10 @@ class RegistryTreeTest(unittest.TestCase):
         "stores/OGS-00001/release.yaml": "store_id: OGS-00001\n",
         "docs/archive/old.yaml": "kept: elsewhere\n",
         "docs/_yardstick/2026-11-01.json": "{}\n",
+        "resources/reference-resources/ld-panel/resource.yaml": "kind: ld_panel\n",
+        "resources/reference-resources/ld-panel/blocks.tsv": "not read\n",
+        "resources/reference-resources/panél/resource.yaml": "kind: ld_panel\n",
+        "resources/generators/ukb-b/resource.yaml": "not a reference resource\n",
         "docs/a.md": "# A\n",
         "CONTEXT.md": "# Glossary\n",
         "pixi.lock": "packages: []\n",
@@ -171,6 +175,10 @@ class RegistryTreeTest(unittest.TestCase):
         self.assertEqual(commit, self.commit)
         self.assertTrue((self.tree / "stores" / "OGS-00001" / "release.yaml").is_file())
         self.assertTrue((self.tree / "docs" / "_yardstick" / "2026-11-01.json").is_file())
+        self.assertTrue((self.tree / "resources" / "reference-resources" / "ld-panel" / "resource.yaml").is_file())
+        self.assertTrue((self.tree / "resources" / "reference-resources" / "panél" / "resource.yaml").is_file(), "a non-ASCII directory")
+        self.assertFalse((self.tree / "resources" / "reference-resources" / "ld-panel" / "blocks.tsv").exists(), "declarations alone")
+        self.assertFalse((self.tree / "resources" / "generators").exists())
         self.assertFalse((self.tree / "docs" / "archive").exists(), "only the Stores' readers' files are extracted")
         self.assertFalse((self.tree / "docs" / "a.md").exists())
         self.assertFalse((self.tree / "CONTEXT.md").exists())

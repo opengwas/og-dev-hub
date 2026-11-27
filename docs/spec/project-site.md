@@ -75,7 +75,7 @@ from those alone:
 |---|---|
 | `data/architecture.json` | the envelope; `repos` (a list, in `system.yaml`'s order: `name`, `label`, `url`, `state`, `visibility`, `status`, `ref`, `commit`, `committed`, `why` (the error of an `unreadable` one, the note of a `no_model` one, else `null`) and `refresh_error` (`null` unless the refresh failed)); `containers` (with `state`: `public`, `private`, `planned` or `data`); `diagrams` (`id`, `title`, `caption`, `svg`); `stages` (with the `components` serving each); `components` (with `anchor`, `container_name`, `size`, `paths` as `{path, url}` on GitHub at the commit read, and `adrs` placed on it with `via`); `component_repos` (the repositories with a component, for the view's filter); `counts` (`components`, `repos_with_model`); `gaps` (each public repository not planned: `state`, which follows the repository's: `unreadable` or `no_model` (with its `why` as `unreadable` or `no_model`), else `gaps` (an unclaimed file, a stale claim or a system gap), `complete`, or `unknown` when its claims were not measured (no gap record, or `unclaimed` or `stale` unknown), never `complete`; `unclaimed` and `stale` are lists only for `gaps` and `complete`, else `null`; `system`); `layering` (`null` when no model declares layers, else each layered repository's `edges`, `imports` against the layering and its `upward` imports); `seam` (`imports`, `pairs`, `baseline`); `across` (imports per pair of repositories); `summary` |
 | `data/decisions.json` | the envelope; `repos` (those with an ADR, in order); `adrs` in `system.yaml`'s order then by number: `repo`, `number`, `title`, `status`, `url`, `components` (`{id, name, via}`) and `cites` (`{repo, number, text, url}`, `url` `null` when the cited ADR was not collected or is a private repository's) |
-| `data/stores.json` | the Stores view (see [The Stores view](#the-stores-view)): the envelope; `registry` (`name`, `url`, `commit`, `stores_url`); `inventory` |
+| `data/stores.json` | the Stores view (see [The Stores view](#the-stores-view)): the envelope; `registry` (`name`, `url`, `commit`, `stores_url`); `counts`; `inventory`; `ld_resources` |
 | `data/benchmarking.json` | the Benchmarking view (`stores_view.benchmarking_view`): the envelope and `yardstick` (see [The Stores view](#the-stores-view)) |
 | `data/context.json` | `html` (the hub's `CONTEXT.md`, rendered by `project_site.markdown`: headings, paragraphs, lists, bold, italics, code spans and links, every character escaped first, a relative link resolved against og-dev-hub's `main` on GitHub, and a link to any other scheme than `http(s)` dropped); `source`; `glossaries`: each public listed repository but og-dev-hub, not planned, with `url` (its `CONTEXT.md` at the commit read) or `null` and a `note` (`no CONTEXT.md at the commit read`, `could not be read`) |
 
@@ -228,9 +228,26 @@ has `validated_at: null`, never a date borrowed from elsewhere, and a
 `n_variants × n_analyses`). This collector does not run `bundle.check()`;
 `pixi run bundle-check` does.
 
-**LD Stores.** `stores.json` holds GWAS Stores only: the LD Store Registry is
-not yet in opengwasdb-stores (opengwasdb-stores#496), so LD Stores are not
-listed and their number is unknown, never 0. The Stores view says so as `ld_stores.gap`, naming og-dev-hub#10 and opengwasdb-stores#496: unknown, not 0.
+**LD resources** (`collect.ld_resources`, og-dev-hub#10). Beside `stores`, the file holds `ld_resources`:
+`{available, error, rows}`, one row per line of the LD Store Registry's `ld-resources.tsv`, in id order, of three kinds: `ld_store`, `genotype_store` and `ld_panel`. The rows come from the
+registry's own reader, `ld_registry.index.resource_rows`, over the staged `stores/ld/` and each
+`resources/reference-resources/<id>/resource.yaml` (`staging.extract_tree` extracts those declarations alone, listed through the NUL-safe `Tree`, so a non-ASCII panel directory is not dropped); the
+collector parses no TSV.
+**`ld-resources.tsv` is not staged** (owner ruling, 27 November 2026): `resource_rows` is the owner of those rows and
+nothing else reads the file. The staged tree is `stores/` (which holds `stores/ld/`), `docs/_yardstick/` and the
+declarations above, named from the owners' constants (`ld_registry.record.LD_ROOT`, `ogstores.resources`).
+
+A row holds `ld_id`, `label`, `kind`, `provenance`, `status`, `used_for`, `ancestry`, `source_panel`, `n`,
+`reference_assembly`, `store_bytes`, `genotype_bytes`, `n_variants`, `n_blocks` (a panel's), `built_with`, `record`,
+`record_gap` and `notes`; a missing value is `null`. **`location`, the host path of a Store, is dropped here** and no
+other column reaches the file. **Host paths are scrubbed here, not downstream**: every text value is text (a number in a
+text column is shown as written) with each host path cut to its last name, including one after a colon or inside a URL
+(`receipt:/data/x`, `file:///data/x`); a relative `resources/data/…` is not a host path. A number column that holds
+anything else is `null`. `record` is a relative path inside `stores/ld/` or `resources/reference-resources/`; any other
+(absolute, `..`, elsewhere) is `null` with the reason in `record_gap`, so the tile has no link and its "Why n/a" says why.
+**Any exception** from the reader or a row makes `ld_resources` `available: false`, with the exception's type and message
+(a record is named by its place in the registry): a gap, never a failed build (ADR 0001), and the GWAS Stores still
+render. So does a registry revision with no `stores/ld/`.
 
 **`inventory[]`** (`collect.inventory`, og-dev-hub#16), one row per Release Bundle: `store_id`,
 `label`, `description`, and a *cell* (`{value, gap}`, never both set) for each of `layout`,
@@ -266,7 +283,12 @@ A value the owner refuses (`observed_flag` on `"yes"`) is a gap carrying its mes
 `docs/_yardstick/` at the commit read), `runs` (every valid result, oldest first, reduced to what
 the view draws: `file`, `workload_id`, `engine_version`, `started_utc`, `cpu_count`,
 `load_average`, `veeam_window`, and per Store its `layout`, `coverage`, `status`, `reason` and
-`measures`) and `invalid` (`{file, error}`). Each file is validated by `yardstick.result.validate`;
+`measures`; and `ld`, below) and `invalid` (`{file, error}`). **`ld`** is a run's LD section
+(opengwasdb-stores#504, `docs/spec/yardstick.md`): `{ogquery_version, stores}`, `ogquery_version` being `ld.ogquery.version`, the
+reader that ran, beside the run's `engine_version`, and `stores` `{<ld_id>: {kind, label, status, reason, measures}}`, each Store's
+measures read through the same `_record` path a GWAS Store's are (plus `store_bytes` and `genotype_bytes` of `bytes_on_disk`).
+`location` and `ld.inputs` (the clump input's host path among them) are not kept. A measure keeps only the keys the LD view draws (`status`, `median_ms`, `p95_ms`, `reason`, `error`, `peak_mb`, `bytes`, `store_bytes`, `genotype_bytes`: not `path`, `source` or `reps`). At collection, `architecture_public.reason` cuts host paths in display values (including absolute paths after a colon) to the last name. A `file:` URI is cut as a whole, including its scheme and any authority or query. Each result note is one scrubbed string: lists join with `; `, and objects become `key: value; …`. A run **without** an `ld` section has `ld: null`:
+LD was not measured in that run, never 0, and every result committed before #504 is such a run. Each file is validated by `yardstick.result.validate`;
 one it refuses is not read but listed in `invalid` with the validator's message, and never stops the others.
 
 ### The Stores view
@@ -277,6 +299,12 @@ named in `stores_view`, and every text a collector wrote has its host paths cut 
 name (`architecture_public.reason`), so no `/data/...` path reaches the file, including in an
 error.
 
+- **`counts`** (og-dev-hub#10): the page counts GWAS Stores and LD resources apart. `gwas_stores` is `{n, text}` (`8 GWAS Stores`); `ld_resources` is `{n, by_kind, text}`, with `by_kind` one `{kind, n, text}` for each of `ld_store`, `genotype_store` and `ld_panel`, in that order, a kind with none counted as 0 (`5 LD resources: 3 LD Stores, 1 Genotype Store, 1 LD panel`). When the registry could not be listed, `ld_resources` is `{n: null, by_kind: [], text: "LD resources: not counted"}`: unknown, never 0.
+- **`ld_resources`** (og-dev-hub#10), the LD section beside the GWAS tiles: `{available, gap, notice, benchmarking, rows}`. `gap` is why the rows are missing (`null` when `available`), `notice` the sentence the page draws for it ("LD resources are not listed: <gap>", written by the build; `null` when available), and `rows` is empty then. Whatever raises while the build makes the tiles makes the section unavailable the same way, with the exception's type and message; `benchmarking` the line "LD Stores are not measured yet: no committed yardstick result has an LD section.", decided from the results alone (whether the inventory is readable, or has tiles, is not asked), and `null` once any committed result has an `ld` section, even one with no Stores. Otherwise `rows` is one tile per row of the collected `ld_resources`, in the GWAS tile's shape (`store_id` is the LD id; `label`, `url`, `summary`, `notes`, `facts`, `why_na`, and `status` as `{display, tone}`, and `benchmark`, `{href, text}` linking a Store some committed result measured to its row in the Benchmarking tab (`#ld-bench-<ld_id>`), else `null`):
+  - `summary` is the short `used_for`, cut as a GWAS tile's is (below), `description` the full `used_for` and `notes` the row's notes, both shown in the open tile; `url` is the row's `record` on GitHub at the commit read (a panel's is its `resource.yaml`);
+  - `facts`, in order: Kind ("LD Store", "Genotype Store" or "LD panel"), Provenance, Source Panel (`source_panel · ancestry · n 665`; a missing sample size reads `n n/a` and adds "Source Panel n" to "Why n/a", even if the whole Source Panel fact is itself `n/a`), Reference Assembly, Size on disk (`store_bytes` through `size`, and `· genotypes <genotype_bytes>` where a Genotype Store has them), Variants, Blocks (`n_blocks`, on `ld_panel` tiles only: it does not apply to a Store, so a Store's tile does not draw it), and Built with (`built_with` as written, never parsed). A record with no valid link adds "Record" to "Why n/a" and has no `url`. An empty one is `n/a`, with its reason under "Why n/a" (a panel's declaration, or a Store's record, holds none). Facts that do not apply to LD (top hits, HM3, Rho, clumping, layout, coverage) are not drawn, not `n/a`;
+  - the status tag shows `status` as written: `served`, `built` and `available` `ok`; `retired` and `reference` `muted`; `retiring` neutral.
+  The Benchmarking tab's `unmeasured` lists GWAS Stores only: an LD id is never in it.
 - **`inventory[]`** (og-dev-hub#21): one row per Store, drawn as a tile (`static/js/stores.js`, a `<details>`: the header, short description and facts are its `<summary>`, so a click anywhere on them opens it; the body holds the registry link, the full description and "Why n/a"; Escape closes every open tile). Each cell is `{text, gap, display, detail}`:
   - `text`: the figure as drawn (`62.1 GB`, `11,191,070`, `AFR 1 · EUR 2 · unassigned 1`, top hits `p < 5e-08: 10`), or `null` for a gap;
   - `gap`: the cause, or `null`. It stays in `stores.json` and is shown only in the open tile;
@@ -321,7 +349,18 @@ error.
     point is ringed (`flag-ring`) and its tooltip says why; **a line never joins an index point to a scan point**
     of `top_hits` (the line breaks, and each tooltip says `via index` or `via scan`); the tooltip also names the workload,
     because a trend across a workload change compares different measures.
-  - *`unmeasured`*: registry Stores no committed run lists: "not measured by yardstick".
+  - *`unmeasured`*: registry Stores no committed run lists: "not measured by yardstick". It lists GWAS Stores only: an LD id is never in it.
+  - *`ld`* (og-dev-hub#10, `stores_view.ld_yardstick`): the LD Stores, drawn apart from the GWAS Stores and never merged into `MEASURES`, keyed by `ld_id`.
+    `{available, gap, notice, runs, stores, trends}`. `stores` is the latest run that measured each LD Store, one summary row
+    each (an anchor, `ld-bench-<ld_id>`, which a tile's `benchmark` link names and `app.js` routes to the tab) and a panel of its
+    `measures`, in `yardstick.result.LD_TIMED`'s order, each the median and p95 with `state` as above: `not_applicable` shows its
+    reason (a Store with no Partner Rows has no `proxies_*` or `clump`), `unavailable` its error. A row gives `kind` ("LD Store" or "Genotype Store"),
+    `versions` ("engine 0.27.0 · ogquery 0.5.0"), `run` (its own run's date and workload) and `notice` (the same as for a GWAS row: "not in the latest run (<date>): this is the latest run that measured it." when showing an older run), `flags`, and `peak_memory` (`peak_rss.peak_mb`) and `size_on_disk` (`bytes_on_disk.bytes`), each with a `display` the build writes: the figure, or its status label with the reason ("unavailable: …", "not applicable: …"). `size_on_disk.details` are "files read, links followed" and the Store's own files (`store_bytes`), with a
+    Genotype Store's `genotype_bytes` stated apart ("the Store's own files: 1.5 GB, and 4.1 GB of genotype files"). The script joins and chooses nothing. A Store never has a `pending` state here: the validator rejects it. `trends` are
+    built as the GWAS ones with `LD_MEASURE` (`LD_TIMED`, `peak_rss`, `bytes_on_disk`), one line per `ld_id`. **A run without an `ld` section is "LD not measured in this run"**:
+    when the newest run is one, `notice` says so with its date and that any rows shown are from the latest run that measured each Store. If the latest run with an LD section holds no Store, the notice also says "The latest run with an LD section (<date>) measured no LD Stores.", even when older rows are shown. This is not "not measured". When no run has an `ld` section,
+    `available` is false and `gap` reads "LD Stores are not measured yet: LD not measured in this run (<date>), nor in any committed run.",
+    with no rows. The real build shows that gap until a result with an `ld` section is committed.
 
 ### Architecture (`architecture.json`)
 

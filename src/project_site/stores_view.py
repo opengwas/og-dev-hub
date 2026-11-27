@@ -58,9 +58,8 @@ if set(_STATE) != set(yardstick_result.STATUSES):  # a raise, not an assert: it 
     raise RuntimeError(f"yardstick.result.STATUSES is {yardstick_result.STATUSES}: say how each status is drawn")
 STATE = {**_STATE, "absent": ("not in this run", None)}
 
-# LD Stores have no registry yet: say so as a gap, never as a count of zero (docs/spec/project-site.md).
-LD_STORES = {"gap": "LD Stores are not listed yet: their registry is opengwasdb-stores#496 and the view waits on "
-                    "og-dev-hub#10. Their number is unknown, not 0."}
+# Said on the LD section while no committed result has an `ld` section (og-dev-hub#10): a gap, worded as the others are.
+LD_BENCHMARKING_GAP = "LD Stores are not measured yet: no committed yardstick result has an LD section."
 
 CHART_COLUMNS = 6  # series classes `series-0` to `series-5`
 
@@ -184,6 +183,15 @@ def _ancestry(value: Mapping[str, int]) -> str:
     return " · ".join(f"{code} {count(n)}" for code, n in value.items())
 
 
+def tile_lists(cells: list[tuple[str, Mapping[str, Any]]], also: list[tuple[str, Mapping[str, Any]]] = ()) -> dict[str, Any]:
+    """The one assembler of a tile's lists, for GWAS and LD tiles alike: `facts` from `cells` (`{label, display, detail, na}`)
+    and `why_na`, the reason behind each gap among `cells` and `also` (cells the tile does not list as facts, such as its status)."""
+    return {
+        "facts": [{"label": label, "display": cell["display"], "detail": cell["detail"], "na": bool(cell["gap"])} for label, cell in cells],
+        "why_na": [{"label": label, "reason": cell["gap"]} for label, cell in [*cells, *also] if cell["gap"]],
+    }
+
+
 def inventory_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
     median = row.get("median_sample_size") or {}
     n_analyses = row.get("n_analyses") or {}
@@ -219,9 +227,120 @@ def inventory_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
     out["status"]["tone"] = None if out["status"]["gap"] else STATUS_TONE.get(out["status"]["text"])
     if not out["completion_state"]["gap"]:  # `text` stays the state as recorded; the tile draws it as a phrase
         out["completion_state"]["display"] = _completion(out["completion_state"]["text"])
-    cells = [(label, out[key]) for key, label in TILE_FACTS]
-    out["facts"] = [{"label": label, "display": cell["display"], "detail": cell["detail"], "na": bool(cell["gap"])} for label, cell in cells]
-    out["why_na"] = [{"label": label, "reason": cell["gap"]} for label, cell in cells + [("Release Status", out["status"])] if cell["gap"]]
+    out.update(tile_lists([(label, out[key]) for key, label in TILE_FACTS], [("Release Status", out["status"])]))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# LD resources (og-dev-hub#10)
+# ---------------------------------------------------------------------------
+
+# The three kinds of the LD Store Registry: (kind, how it is said, singular, plural), in the order the page counts them.
+LD_KINDS = (("ld_store", "LD Store", "LD Stores"), ("genotype_store", "Genotype Store", "Genotype Stores"), ("ld_panel", "LD panel", "LD panels"))
+LD_KIND_LABEL = {kind: one for kind, one, _ in LD_KINDS}
+# The tone of an LD resource's status tag: what is served, built or available is ok, what is gone or only kept is muted.
+LD_STATUS_TONE = {"served": "ok", "built": "ok", "available": "ok", "retiring": None, "reference": "muted", "retired": "muted"}
+
+
+def _ld_gap(kind: Any, what: str) -> str:
+    """Why an LD resource's cell is empty: an LD panel's numbers are in its declaration, a Store's in its record."""
+    return f"the panel's declaration holds no {what}" if kind == "ld_panel" else f"the Store's record holds no {what}"
+
+
+def _ld_footprint(row: Mapping[str, Any]) -> str | None:
+    """`store_bytes`, and the pgen files' `genotype_bytes` where a Genotype Store has them, through `size`."""
+    if row.get("store_bytes") is None:
+        return None
+    if row.get("genotype_bytes") is None:
+        return size(row["store_bytes"])
+    return f"{size(row['store_bytes'])} · genotypes {size(row['genotype_bytes'])}"
+
+
+def _ld_source_panel(row: Mapping[str, Any]) -> str | None:
+    """`cohort · ancestry · n 665`; a sample size the registry does not hold reads `n n/a` (its reason is in the tile's "Why n/a")."""
+    if not row.get("source_panel"):
+        return None
+    return " · ".join([str(row["source_panel"])] + ([str(row["ancestry"])] if row.get("ancestry") else [])
+                      + [f"n {count(row['n'])}" if row.get("n") is not None else f"n {NA}"])
+
+
+def ld_row(row: Mapping[str, Any], url: str | None, anchor: str | None = None) -> dict[str, Any]:
+    """One tile of the LD section, shaped as a GWAS Store's so one script draws both: `store_id` is the LD id.
+
+    Facts that do not apply to LD (top hits, HM3, Rho, clumping) are not here at all, so they are not `n/a`; Blocks is
+    an LD panel's alone. A fact the registry leaves empty is `n/a`, with its reason in `why_na`.
+    """
+    kind = row.get("kind")
+
+    def cell(value: Any, what: str, show=str) -> dict[str, Any]:
+        return _cell({"value": value, "gap": None if value is not None else _ld_gap(kind, what)}, show)
+
+    cells = [
+        ("Kind", cell(LD_KIND_LABEL.get(kind, kind), "kind")),
+        ("Provenance", cell(row.get("provenance") or None, "provenance")),
+        ("Source Panel", cell(_ld_source_panel(row), "source panel")),
+        ("Reference Assembly", cell(row.get("reference_assembly") or None, "reference assembly")),
+        ("Size on disk", cell(_ld_footprint(row), "size on disk")),
+        ("Variants", cell(row.get("n_variants"), "variant count", count)),
+        *([("Blocks", cell(row.get("n_blocks"), "block count", count))] if kind == "ld_panel" else []),
+        ("Built with", cell(row.get("built_with") or None, "build version")),
+    ]
+    status = row.get("status")
+    status_cell = cell(status or None, "status")
+    record_gap = row.get("record_gap")
+    description = (row.get("used_for") or "").strip() or None
+    out = {
+        "store_id": row.get("ld_id"), "url": url, "label": text(row.get("label")), "kind": kind,
+        "status": {"display": status if status else NA, "tone": LD_STATUS_TONE.get(status)},
+        # As a GWAS tile: the short description in the summary, the full text (and the notes) in the open tile.
+        "summary": text(summary(description)), "description": text(description),
+        "notes": text((row.get("notes") or "").strip() or None),
+        **tile_lists(cells, [("Status", status_cell)]),
+        # A Store a committed result measured links to its row in the Benchmarking tab.
+        "benchmark": {"href": f"#{anchor}", "text": "LD yardstick results"} if anchor else None,
+    }
+    if row.get("n") is None:
+        out["why_na"].append({"label": "Source Panel n", "reason": _ld_gap(kind, "sample size")})
+    if record_gap:  # no link: the reason is a gap, shown with the others
+        out["why_na"].append({"label": "Record", "reason": text(record_gap)})
+    return out
+
+
+def _unavailable(reason: str, benchmarking: str | None) -> dict[str, Any]:
+    return {"available": False, "gap": reason, "notice": f"LD resources are not listed: {reason}",
+            "benchmarking": benchmarking, "rows": []}
+
+
+def ld_resources_view(doc: Document, commit: str | None) -> dict[str, Any]:
+    """The LD section, assembled once: its tiles, or the reason there are none. Whatever raises here makes the section
+    unavailable, with the exception's type and message, and never the whole view (ADR 0001)."""
+    ld = mapping(doc.get("ld_resources"))
+    benchmarked = ld_benchmarked(doc)
+    # The gap is "no committed result has an `ld` section", decided from the results alone.
+    benchmarking = None if ld_runs(doc) else LD_BENCHMARKING_GAP
+    if not ld.get("available"):
+        return _unavailable(text(ld.get("error")) or "the LD Store Registry was not collected", benchmarking)
+    try:
+        rows = [ld_row(r, paths.github_url(paths.REGISTRY, commit, str(r["record"])) if commit and r.get("record") else None,
+                       benchmarked.get(r.get("ld_id")))
+                for r in ld.get("rows") or [] if isinstance(r, Mapping)]
+    except Exception as error:  # noqa: BLE001
+        return _unavailable(text(f"{type(error).__name__}: {error}"), benchmarking)
+    return {"available": True, "gap": None, "notice": None, "rows": rows,
+            "benchmarking": benchmarking}
+
+
+def counts(gwas: int, ld: Mapping[str, Any]) -> dict[str, Any]:
+    """The page's two counts: GWAS Stores, and the LD section's rows with how many of each LD kind (`None` when not listed)."""
+    out: dict[str, Any] = {"gwas_stores": {"n": gwas, "text": plural(gwas, "GWAS Store", "GWAS Stores")}}
+    if not ld["available"]:
+        out["ld_resources"] = {"n": None, "by_kind": [], "text": "LD resources: not counted"}
+        return out
+    rows = ld["rows"]
+    by_kind = [{"kind": kind, "n": n, "text": plural(n, one, many)}
+               for kind, one, many in LD_KINDS for n in [sum(1 for r in rows if r["kind"] == kind)]]
+    out["ld_resources"] = {"n": len(rows), "by_kind": by_kind,
+                           "text": f"{plural(len(rows), 'LD resource', 'LD resources')}: " + ", ".join(k["text"] for k in by_kind)}
     return out
 
 
@@ -275,22 +394,25 @@ def _latest(runs: list[Mapping[str, Any]], store_id: str) -> tuple[Mapping[str, 
     return (measured or listed or [None])[-1]
 
 
+def _carry_forward(run: Mapping[str, Any], newest: Mapping[str, Any], *, measured: bool) -> tuple[str | None, str | None]:
+    """The short run label and panel notice when we show an older result for a Store."""
+    if run["file"] == newest["file"]:
+        return None, None
+    label = f"not in the latest run ({newest['started_utc'][:10]})"
+    return label, label + (": this is the latest run that measured it." if measured else ".")
+
+
 def latest_run(store_id: str, labels: Mapping[str, Any], runs: list[Mapping[str, Any]]) -> dict[str, Any] | None:
     found = _latest(runs, store_id)
     if found is None:
         return None
     run, store = found
     measures = store.get("measures") or {}
-    newest = runs[-1]
+    not_in_latest, notice = _carry_forward(run, runs[-1], measured=store["status"] == "measured")
     return {
         "store_id": store_id, "label": labels.get(store_id), "layout": store["layout"], "coverage": store["coverage"],
         "state": store["status"], "reason": text(store.get("reason")),
-        # The newest run left this Store out, or listed it pending: say so above the older run shown.
-        "not_in_latest": None if run is newest else f"not in the latest run ({newest['started_utc'][:10]})",
-        # The wording the panel shows, written here: the script does not choose it.
-        "notice": None if run is newest else (
-            f"not in the latest run ({newest['started_utc'][:10]}): this is the latest run that measured it."
-            if store["status"] == "measured" else f"not in the latest run ({newest['started_utc'][:10]})."),
+        "not_in_latest": not_in_latest, "notice": notice,
         "pending": f"Pending in its latest run: {text(store.get('reason')) or 'no reason recorded'}." if store["status"] != "measured" else None,
         "engine_version": run["engine_version"], "date": run["started_utc"][:10], "workload_id": run["workload_id"],
         "flags": run_flags(run),
@@ -305,8 +427,8 @@ def latest_run(store_id: str, labels: Mapping[str, Any], runs: list[Mapping[str,
 # ---------------------------------------------------------------------------
 
 
-def _value(name: str, record: Mapping[str, Any]) -> float | None:
-    value = record.get(MEASURE[name].key)
+def _value(name: str, record: Mapping[str, Any], table: Mapping[str, Measure] = MEASURE) -> float | None:
+    value = record.get(table[name].key)
     return float(value) if record.get("status") == "measured" and isinstance(value, (int, float)) else None
 
 
@@ -315,7 +437,7 @@ def _path(name: str, point: tuple) -> Any:
     return ((point[2].get("measures") or {}).get(name) or {}).get("path")
 
 
-def trend(name: str, runs: list[Mapping[str, Any]], stores: list[str]) -> dict[str, Any] | None:
+def trend(name: str, runs: list[Mapping[str, Any]], stores: list[str], table: Mapping[str, Measure] = MEASURE) -> dict[str, Any] | None:
     """One measure across engine versions, as SVG: a series per Store, one point per engine version it was measured at.
 
     A version run more than once shows its latest run of that Store. Versions
@@ -326,7 +448,7 @@ def trend(name: str, runs: list[Mapping[str, Any]], stores: list[str]) -> dict[s
     for run in runs:
         for store_id in stores:
             store = run["stores"].get(store_id)
-            value = _value(name, (store or {}).get("measures", {}).get(name) or {})
+            value = _value(name, (store or {}).get("measures", {}).get(name) or {}, table)
             if value is None:
                 continue
             if run["engine_version"] not in versions:
@@ -335,7 +457,7 @@ def trend(name: str, runs: list[Mapping[str, Any]], stores: list[str]) -> dict[s
     if not points:
         return None
     series = [s for s in stores if s in points]
-    unit = MEASURE[name].unit
+    unit = table[name].unit
     width, height, left, right, top, bottom = 440, 190, 58, 12, 12, 54
     top_value = max(v for s in points.values() for v, _, _ in s.values()) * 1.08 or 1.0
 
@@ -350,7 +472,7 @@ def trend(name: str, runs: list[Mapping[str, Any]], stores: list[str]) -> dict[s
     for tick in (0, 0.5, 1):
         value = top_value / 1.08 * tick
         parts.append(f'<line class="grid" x1="{left}" x2="{width - right}" y1="{y(value):.1f}" y2="{y(value):.1f}"/>'
-                     f'<text class="tick" x="{left - 5}" y="{y(value) + 3:.1f}" text-anchor="end">{html.escape(MEASURE[name].show(value))}</text>')
+                     f'<text class="tick" x="{left - 5}" y="{y(value) + 3:.1f}" text-anchor="end">{html.escape(table[name].show(value))}</text>')
     for index, version in enumerate(versions):
         parts.append(f'<text class="tick" x="{x(index):.1f}" y="{height - bottom + 14}" text-anchor="end" '
                      f'transform="rotate(-40 {x(index):.1f} {height - bottom + 14})">{html.escape(version)}</text>')
@@ -372,7 +494,7 @@ def trend(name: str, runs: list[Mapping[str, Any]], stores: list[str]) -> dict[s
         for i, (value, run, store) in mine:
             flags = run_flags(run)
             via = _path(name, (value, run, store))
-            title = (f"{store_id} · engine {run['engine_version']} · {MEASURE[name].show(value)} · {run['started_utc'][:10]}"
+            title = (f"{store_id} · engine {run['engine_version']} · {table[name].show(value)} · {run['started_utc'][:10]}"
                      f" · {run['workload_id']}" + (f" · via {via}" if via else "") + "".join(f" · {f}" for f in flags))
             if flags:
                 flagged += 1
@@ -385,6 +507,88 @@ def trend(name: str, runs: list[Mapping[str, Any]], stores: list[str]) -> dict[s
         "series": [{"store_id": s, "class": f"series-{n % CHART_COLUMNS}", "points": len(points[s])} for n, s in enumerate(series)],
         "svg": "".join(parts),
     }
+
+
+# The LD section's measures (opengwasdb-stores#504), drawn apart from `MEASURE`: `yardstick.result.LD_TIMED` as timings,
+# and the two facts every Store has. Keyed by `ld_id`, never mixed into the GWAS table, trends or unmeasured list.
+LD_MEASURE: dict[str, Measure] = {
+    **{name: Measure("ms", "median_ms", lambda v: duration(v)) for name in yardstick_result.LD_TIMED},
+    "peak_rss": MEASURE["peak_rss"], "bytes_on_disk": MEASURE["bytes_on_disk"],
+}
+LD_SIZE_BASIS = "files read, links followed"
+
+
+def _ld_size(record: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Size on disk of an LD Store: the files a query reads (`bytes`), and, apart, the Store's own files and a Genotype Store's pgen files."""
+    fact = _fact("bytes_on_disk", record)
+    out = {**fact, "display": _display(fact), "details": []}
+    if record is not None and record.get("status") == "measured":
+        own = f"the Store's own files: {size(record['store_bytes'])}" if record.get("store_bytes") is not None else None
+        if own and record.get("genotype_bytes") is not None:
+            own += f", and {size(record['genotype_bytes'])} of genotype files"
+        out["details"] = [LD_SIZE_BASIS] + ([own] if own else [])
+    return out
+
+
+def _display(fact: Mapping[str, Any]) -> str:
+    """What a table cell draws of a figure: the figure, or its state with why, as the timed measures say it."""
+    return fact["text"] if fact.get("text") else f"{fact['label']}: {fact['note']}" if fact.get("note") else str(fact["label"])
+
+
+def _ld_store(store_id: str, runs: list[Mapping[str, Any]], newest: Mapping[str, Any]) -> dict[str, Any] | None:
+    found = _latest(runs, store_id)
+    if found is None:
+        return None
+    run, store = found
+    measures = store.get("measures") or {}
+    _, notice = _carry_forward(run, newest, measured=True)
+    peak = _fact("peak_rss", measures.get("peak_rss"))
+    return {
+        "store_id": store_id, "anchor": f"ld-bench-{store_id}", "label": store.get("label"),
+        "kind": LD_KIND_LABEL.get(store["kind"], store["kind"]),
+        "versions": f"engine {run['engine_version']} · ogquery {run['ld']['ogquery_version']}",
+        "run": f"{run['started_utc'][:10]} · {run['workload_id']}", "flags": run_flags(run), "notice": notice,
+        "peak_memory": {**peak, "display": _display(peak)}, "size_on_disk": _ld_size(measures.get("bytes_on_disk")),
+        "measures": [_measure(name, measures[name]) for name in yardstick_result.LD_TIMED if name in measures],
+    }
+
+
+def ld_yardstick(runs: list[Mapping[str, Any]]) -> dict[str, Any]:
+    """The Benchmarking tab's LD section: the latest run per LD Store that measured it, and one trend per measure.
+
+    A run without an `ld` section did not measure LD, which is not a measure of zero, and every result before
+    opengwasdb-stores#504 is such a run. With no run that has one, there is only the gap. A run whose section
+    holds no Store measured no LD Stores, which is not the same thing.
+    """
+    ld_runs = [{**run, "stores": run["ld"]["stores"]} for run in runs if run.get("ld")]
+    newest = runs[-1]["started_utc"][:10] if runs else None
+    if not ld_runs:
+        why = f"LD not measured in this run ({newest}), nor in any committed run." if newest else "no yardstick result is committed."
+        return {"available": False, "gap": f"LD Stores are not measured yet: {why}", "notice": None, "runs": 0, "stores": [], "trends": []}
+    ids = sorted({i for run in ld_runs for i in run["stores"]})
+    rows = [row for row in (_ld_store(i, ld_runs, runs[-1]) for i in ids) if row]
+    latest_ld = ld_runs[-1]
+    notices = []
+    if latest_ld["file"] != runs[-1]["file"]:
+        not_measured = f"LD not measured in this run ({newest})"
+        notices.append(not_measured + (": each row is from the latest run that measured that Store, dated in its Run column."
+                                       if rows else "."))
+    if not latest_ld["stores"]:
+        notices.append(f"The latest run with an LD section ({latest_ld['started_utc'][:10]}) measured no LD Stores.")
+    return {
+        "available": True, "gap": None, "runs": len(ld_runs), "notice": " ".join(notices) or None, "stores": rows,
+        "trends": [t for t in (trend(name, ld_runs, ids, LD_MEASURE) for name in LD_MEASURE) if t],
+    }
+
+
+def ld_runs(doc: Document) -> list[Mapping[str, Any]]:
+    """The committed results that hold an `ld` section, from the results alone: whether the inventory is readable or has tiles is not asked."""
+    return [run for run in mapping(doc.get("yardstick")).get("runs") or [] if isinstance(run, Mapping) and run.get("ld")]
+
+
+def ld_benchmarked(doc: Document) -> dict[str, str]:
+    """`{ld_id: anchor}` for each LD Store some committed result measured: where its tile links to."""
+    return {i: f"ld-bench-{i}" for run in ld_runs(doc) for i in run["ld"]["stores"]}
 
 
 def yardstick_view(doc: Mapping[str, Any], labels: Mapping[str, Any], registry_ids: list[str]) -> dict[str, Any]:
@@ -401,6 +605,7 @@ def yardstick_view(doc: Mapping[str, Any], labels: Mapping[str, Any], registry_i
         "unmeasured": [{"store_id": s, "label": labels.get(s)} for s in registry_ids if s not in measured_ids],
         "trends": [t for t in (trend(name, runs, measured_ids) for name in MEASURES) if t],
         "workloads": list(dict.fromkeys(str(run["workload_id"]) for run in runs)),
+        "ld": ld_yardstick(runs),
     }
 
 
@@ -427,7 +632,8 @@ def stores_view(doc: Document) -> dict[str, Any]:
         "name": paths.REGISTRY, "url": paths.clone_url(paths.REGISTRY), "commit": commit,
         "stores_url": paths.github_url(paths.REGISTRY, commit, "stores/") if commit else None,
     }
-    out["ld_stores"] = LD_STORES
+    out["ld_resources"] = ld_resources_view(doc, commit)
+    out["counts"] = counts(len(rows), out["ld_resources"])
     out["inventory"] = [
         inventory_row(r, paths.github_url(paths.REGISTRY, commit, f"stores/{r['store_id']}/") if commit else None) for r in rows
     ]

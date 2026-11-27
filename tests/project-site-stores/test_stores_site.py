@@ -21,14 +21,17 @@ from project_site import site
 from project_site.collect import common, stores
 
 RUNNER = Path(__file__).resolve().parents[1] / "project-site-architecture" / "view_runner.js"
-# An absolute path under /data on the host that built the site: not a `resources/data/` of a repository.
-HOST_PATH_BYTES = re.compile(rb"(?<![\w.:/~-])/data/")
+# Absolute /data paths, file URIs and directory paths after a colon. Requiring a directory segment avoids matching
+# incidental `:/` bytes in fonts or images. Relative `resources/data/` and HTTPS authorities are not host paths.
+HOST_PATH_BYTES = re.compile(rb"(?<!:/)(?<![\w.~-])/data/|file:/|(?<=:)/[\w.~-]+/", re.IGNORECASE)
 
 
-def build(cleanup, *, stores_doc: dict | None) -> Path:
+def build(cleanup, *, stores_doc: dict | None, ld_run: bool = False, ld_result: dict | None = None) -> Path:
     root = Path(tempfile.mkdtemp(prefix="stores-site-"))
     cleanup(shutil.rmtree, root, True)
-    registry = fx.make_registry(root / "registry")
+    registry = fx.make_registry(root / "registry", ld_run=ld_run or ld_result is not None)
+    if ld_result is not None:
+        (registry.parent / "docs" / "_yardstick" / "20261127T121611Z-0.27.0.json").write_text(json.dumps(ld_result))
     data = root / "data"
     unavailable = {"source": "architecture", "available": False, "collected_at": None, "error": "not collected here"}
     common.write_source(data, unavailable)
@@ -65,6 +68,13 @@ class BuiltStoresView(unittest.TestCase):
                 self.assertIsNone(HOST_PATH_BYTES.search(raw))
                 self.assertNotIn(b"/data/opengwasdb", raw)
 
+    def test_the_built_site_lists_every_ld_row_and_carries_no_location(self) -> None:
+        data = json.loads((self.out / "data" / "stores.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(data["ld_resources"]["rows"]), 5)
+        self.assertEqual(data["counts"]["ld_resources"]["n"], 5)
+        self.assertNotIn("location", json.dumps(data))
+        self.assertNotIn(fx.LD_HOST_PATH.encode(), b"".join(p.read_bytes() for p in self.out.rglob("*") if p.is_file()))
+
     def test_the_page_names_the_script_and_the_content_section(self) -> None:
         page = (self.out / "index.html").read_text(encoding="utf-8")
         self.assertIn('src="js/stores.js"', page)
@@ -91,7 +101,7 @@ class StoresScript(unittest.TestCase):
                          "recorded from opengwasdb-stores#502's backfill", "counts come with opengwasdb#488",
                          "not computed",
                          "not built yet (Release Status candidate)", "withdrawn",
-                         "no record says how the HM3 step ended", "LD Stores are not listed yet", "og-dev-hub#10", "unknown, not 0"):
+                         "no record says how the HM3 step ended"):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
 
@@ -101,14 +111,15 @@ class StoresScript(unittest.TestCase):
         self.assertIn("Why n/a", text)
         self.assertIn("Size on disk n/a", text)
         self.assertNotIn("Inventory", text)
-        self.assertIn("LD Stores are not listed yet", text)
+        self.assertNotIn("LD Stores are not listed yet", text)
 
     def test_each_tile_is_a_details_whose_summary_holds_the_facts_and_escape_closes_it(self) -> None:
         out = build(self.addCleanup, stores_doc=None)
         done = subprocess.run(["node", str(RUNNER), str(out)], capture_output=True, text=True, check=True, timeout=60)
         drawn = json.loads(done.stdout)
-        self.assertEqual(len(drawn["_tiles"]), 8)
-        for tile in drawn["_tiles"]:
+        gwas = [t for t in drawn["_tiles"] if t["id"].startswith("store-")]
+        self.assertEqual(len(gwas), 8)
+        for tile in gwas:
             with self.subTest(tile=tile["id"]):
                 self.assertTrue(tile["summary"])
                 for label in ("Layout", "Size on disk", "Top hits", "Rho"):
@@ -117,18 +128,43 @@ class StoresScript(unittest.TestCase):
                     self.assertIn(label, tile["summaryText"])
                 self.assertFalse(tile["linkInSummary"])
                 self.assertTrue(tile["linkInBody"])
-        by_id = {t["id"]: t["summaryText"] for t in drawn["_tiles"]}
+        by_id = {t["id"]: t["summaryText"] for t in gwas}
         self.assertRegex(by_id["store-OGS-00001"], r"Completion\s*reference completed")
         self.assertRegex(by_id["store-OGS-00001"], r"Built with\s*opengwasdb 0\.9\.1")
         self.assertRegex(by_id["store-OGS-00001"], r"Last built\s*2026-11-13")
         self.assertRegex(by_id["store-OGS-00001"], r"Format\s*1\.2")
         self.assertRegex(by_id["store-OGS-00003"], r"Completion\s*observed only")
-        tags = {t["id"]: t["tagClass"] for t in drawn["_tiles"]}
+        tags = {t["id"]: t["tagClass"] for t in gwas}
         self.assertEqual(tags["store-OGS-00001"], "tag tag-ok")        # validated
         self.assertEqual(tags["store-OGS-00005"], "tag")               # candidate
         self.assertEqual(tags["store-OGS-00007"], "tag tag-muted")     # withdrawn
         self.assertEqual(drawn["_escape"], {"before": 2, "after": 0})  # every open tile, focus or none
         self.assertTrue(drawn["_otherKey"])                            # another key closes nothing
+
+    def test_ld_resources_are_drawn_as_tiles_with_the_separate_counts(self) -> None:
+        out = build(self.addCleanup, stores_doc=None)
+        drawn = json.loads(subprocess.run(["node", str(RUNNER), str(out)], capture_output=True, text=True, check=True, timeout=60).stdout)
+        text = drawn["stores"]
+        self.assertIn("8 GWAS Stores", text)
+        self.assertIn("5 LD resources: 3 LD Stores, 1 Genotype Store, 1 LD panel", text)
+        self.assertIn("LD Stores are not measured yet: no committed yardstick result has an LD section.", text)
+        ld = {t["id"]: t for t in drawn["_tiles"] if t["id"].startswith("ld-")}
+        self.assertEqual(sorted(ld), [f"ld-OGL-0000{n}" for n in range(1, 6)])
+        for tile in ld.values():
+            with self.subTest(tile=tile["id"]):
+                self.assertTrue(tile["summary"])
+                for label in ("Kind", "Provenance", "Source Panel", "Reference Assembly", "Size on disk", "Variants", "Built with"):
+                    self.assertIn(label, tile["summaryText"])
+                for label in ("Top hits", "HM3", "Rho", "Layout"):
+                    self.assertNotIn(label, tile["summaryText"])
+                self.assertFalse(tile["linkInSummary"])
+                self.assertTrue(tile["linkInBody"])
+        self.assertRegex(ld["ld-OGL-00002"]["summaryText"], r"Kind\s*Genotype Store")
+        self.assertRegex(ld["ld-OGL-00002"]["summaryText"], r"Size on disk\s*79\.3 GB · genotypes 4\.1 GB")
+        self.assertRegex(ld["ld-OGL-00005"]["summaryText"], r"Variants\s*n/a")
+        self.assertRegex(ld["ld-OGL-00005"]["summaryText"], r"Blocks\s*1,357")
+        self.assertNotIn("Blocks", ld["ld-OGL-00001"]["summaryText"])
+        self.assertEqual({k: v["tagClass"] for k, v in ld.items()}["ld-OGL-00003"], "tag tag-muted")  # retired
 
     def test_the_benchmarking_tab_is_drawn_with_its_line_and_the_runs(self) -> None:
         self.out_page = build(self.addCleanup, stores_doc=None)
@@ -150,6 +186,64 @@ class StoresScript(unittest.TestCase):
         self.assertNotIn("could not be drawn", text)
         self.assertIn("The Stores could not be collected", text)
         self.assertIn("could not be collected", self.drawn(build(self.addCleanup, stores_doc=doc), "benchmarking"))
+
+
+class LdYardstickSite(unittest.TestCase):
+    """The LD yardstick in a built site: the Benchmarking tab's LD table in `node`, the tiles' links to its rows, no host path."""
+
+    def drawn(self, out: Path) -> dict:
+        return json.loads(subprocess.run(["node", str(RUNNER), str(out)], capture_output=True, text=True, check=True, timeout=60).stdout)
+
+    def test_the_ld_table_is_drawn_with_a_row_anchor_for_each_store_and_the_tiles_link_to_them(self) -> None:
+        out = build(self.addCleanup, stores_doc=None, ld_run=True)
+        drawn = self.drawn(out)
+        text = drawn["benchmarking"]
+        self.assertNotIn("could not be drawn", text)
+        for expected in ("LD Stores", "OGL-00006", "OGL-00007", "Genotype Store", "engine 0.27.0 · ogquery 0.5.0", "unavailable: the worker was killed reading …/81-eur", "594.9 ms", "files read, links followed",
+                         "the Store's own files: 478.3 MB", "this run did not exercise the 100-proxy query", "not applicable", "LD trends across engine versions"):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, text)
+        self.assertLessEqual({"ld-bench-OGL-00006", "ld-bench-OGL-00007"}, set(drawn["_ids"]))
+        self.assertLessEqual({"#ld-bench-OGL-00006", "#ld-bench-OGL-00007"}, set(drawn["_links"]))
+        self.assertNotIn("LD Stores are not measured yet", drawn["stores"])
+        for path in out.rglob("*"):
+            if path.is_file():
+                with self.subTest(path=str(path.relative_to(out))):
+                    self.assertIsNone(HOST_PATH_BYTES.search(path.read_bytes()))
+
+    def test_a_result_with_host_paths_keeps_them_out_of_the_site_and_trend_tooltips(self) -> None:
+        out = build(self.addCleanup, stores_doc=None, ld_result=fx.ld_run_result_with_host_paths())
+        drawn = self.drawn(out)["benchmarking"]
+        for expected in ("read …/x failed; see …/bar; receipt:…/trace.txt", "…/input: read failed; retry: see:…/secret",
+                         "unavailable: worker stopped; input: …/81-eur"):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, drawn)
+        for path in out.rglob("*"):
+            if path.is_file():
+                with self.subTest(path=str(path.relative_to(out))):
+                    self.assertNotRegex(path.read_bytes(), HOST_PATH_BYTES)
+        data = json.loads((out / "data" / "benchmarking.json").read_text(encoding="utf-8"))
+        ld = data["yardstick"]["ld"]
+        self.assertEqual(ld["stores"][0]["label"], "…/EUR …/foo")
+        self.assertEqual(ld["stores"][0]["versions"], "engine 0.27.0+…/engine · ogquery 0.5.0 at …/ogquery")
+        svg = next(t for t in ld["trends"] if t["measure"] == "region_1mb")["svg"]
+        self.assertIn("<title>OGL-00006 · engine 0.27.0+…/engine ·", svg)
+        self.assertNotIn("via", svg)
+
+    def test_a_link_to_an_ld_row_opens_the_benchmarking_tab_at_that_row(self) -> None:
+        out = build(self.addCleanup, stores_doc=None, ld_run=True)
+        done = subprocess.run(["node", str(RUNNER), str(out), "#ld-bench-OGL-00006"], capture_output=True, text=True, check=True, timeout=60)
+        opened = json.loads(done.stdout)
+        self.assertEqual([v for v, shown in opened["_panes"].items() if shown], ["benchmarking"])
+        self.assertTrue(opened["_target"])
+        self.assertEqual(opened["_scrolled"], ["ld-bench-OGL-00006"])
+
+    def test_without_an_ld_result_the_gap_is_drawn_and_there_are_no_ld_rows(self) -> None:
+        drawn = self.drawn(build(self.addCleanup, stores_doc=None))
+        self.assertIn("LD Stores are not measured yet: LD not measured in this run (2026-11-17)", drawn["benchmarking"])
+        self.assertIn("LD Stores are not measured yet: no committed yardstick result has an LD section.", drawn["stores"])
+        self.assertFalse([i for i in drawn["_ids"] if i.startswith("ld-bench-")])
+        self.assertFalse([l for l in drawn["_links"] if l.startswith("#ld-bench-")])
 
 
 if __name__ == "__main__":
