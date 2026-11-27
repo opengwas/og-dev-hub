@@ -21,8 +21,8 @@ from project_site import site
 from project_site.collect import common, stores
 
 RUNNER = Path(__file__).resolve().parents[1] / "project-site-architecture" / "view_runner.js"
-# An absolute path under /data on the host that built the site: not a `resources/data/` of a repository.
-HOST_PATH_BYTES = re.compile(rb"(?<![\w.:/~-])/data/")
+# A host path under /data anywhere: at the start, after a space, quote or colon, inside a URL. Not a repository's relative `resources/data/`.
+HOST_PATH_BYTES = re.compile(rb"(?<![\w.~-])/data/")
 
 
 def build(cleanup, *, stores_doc: dict | None) -> Path:
@@ -159,6 +159,8 @@ class StoresScript(unittest.TestCase):
         self.assertRegex(ld["ld-OGL-00002"]["summaryText"], r"Kind\s*Genotype Store")
         self.assertRegex(ld["ld-OGL-00002"]["summaryText"], r"Size on disk\s*79\.3 GB · genotypes 4\.1 GB")
         self.assertRegex(ld["ld-OGL-00005"]["summaryText"], r"Variants\s*n/a")
+        self.assertRegex(ld["ld-OGL-00005"]["summaryText"], r"Blocks\s*1,357")
+        self.assertNotIn("Blocks", ld["ld-OGL-00001"]["summaryText"])
         self.assertEqual({k: v["tagClass"] for k, v in ld.items()}["ld-OGL-00003"], "tag tag-muted")  # retired
 
     def test_the_benchmarking_tab_is_drawn_with_its_line_and_the_runs(self) -> None:

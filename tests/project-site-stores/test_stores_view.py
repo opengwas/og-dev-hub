@@ -7,6 +7,7 @@ Run from the repository root:
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 import shutil
@@ -20,7 +21,7 @@ import stores_fixtures as fx
 from project_site import stores_view
 from project_site.collect import common, stores
 
-HOST_PATH = re.compile(r"(?<![\w.:/~-])/data/")
+HOST_PATH = re.compile(r"(?<![\w.~-])/data/")
 
 
 def collected(registry: Path) -> dict:
@@ -390,12 +391,73 @@ class LdResourcesTests(Fixture):
 
     def test_an_ld_panel_links_its_declaration_and_an_empty_cell_is_n_a_with_its_reason(self) -> None:
         tile, facts = self.tiles["OGL-00005"], self.facts("OGL-00005")
-        self.assertEqual((facts["Kind"], facts["Variants"], facts["Built with"]), ("LD panel", "n/a", "n/a"))
+        self.assertEqual((facts["Kind"], facts["Variants"], facts["Built with"], facts["Blocks"]), ("LD panel", "n/a", "n/a", "1,357"))
         self.assertEqual(facts["Source Panel"], "gnomAD v3.1.2 HGDP+1kGP, AMR samples only · AMR · n 345")
         self.assertTrue(tile["url"].endswith("/resources/reference-resources/fixture-ld-panel/resource.yaml"))
         reasons = {w["label"]: w["reason"] for w in tile["why_na"]}
         self.assertEqual(set(reasons), {"Variants", "Built with"})
         self.assertIn("declaration", reasons["Variants"])
+
+    def test_blocks_are_a_panels_fact_and_no_store_draws_them(self) -> None:
+        for ld_id, tile in self.tiles.items():
+            self.assertEqual("Blocks" in self.facts(ld_id), ld_id == "OGL-00005", ld_id)
+            self.assertNotIn("Blocks", {w["label"] for w in tile["why_na"]} if ld_id != "OGL-00005" else set())
+
+    def test_the_description_is_abbreviated_as_a_gwas_tile_is_and_the_open_tile_holds_it_whole(self) -> None:
+        long = "Data API LD for every ancestry, " + "with a very long account of what it is used for, " * 8 + "and the end."
+        doc = copy.deepcopy(self.doc)
+        doc["ld_resources"]["rows"][0]["used_for"] = long
+        tile = stores_view.stores_view(doc)["ld_resources"]["rows"][0]
+        self.assertTrue(tile["summary"].endswith("…"))
+        self.assertLessEqual(len(tile["summary"]), 162)
+        self.assertEqual(tile["description"], long)
+        self.assertEqual(tile["notes"], "served by ogdb-api; stays as the reference")
+
+    def test_a_record_with_no_valid_link_has_no_url_and_says_why(self) -> None:
+        doc = copy.deepcopy(self.doc)
+        doc["ld_resources"]["rows"][0].update(record=None, record_gap="the record path is not inside stores/ld")
+        tile = stores_view.stores_view(doc)["ld_resources"]["rows"][0]
+        self.assertIsNone(tile["url"])
+        self.assertIn({"label": "Record", "reason": "the record path is not inside stores/ld"}, tile["why_na"])
+
+    def test_the_build_writes_the_notice_for_a_section_that_is_not_listed(self) -> None:
+        doc = {**self.doc, "ld_resources": {"available": False, "error": "no stores/ld/", "rows": []}}
+        ld = stores_view.stores_view(doc)["ld_resources"]
+        self.assertEqual(ld["notice"], "LD resources are not listed: no stores/ld/")
+        self.assertIsNone(stores_view.stores_view(self.doc)["ld_resources"]["notice"])
+
+    def test_a_row_the_view_cannot_draw_makes_the_section_unavailable_and_the_gwas_tiles_still_render(self) -> None:
+        doc = copy.deepcopy(self.doc)
+        doc["ld_resources"]["rows"][1]["n_variants"] = "many"
+        view = stores_view.stores_view(doc)
+        self.assertFalse(view["ld_resources"]["available"])
+        self.assertRegex(view["ld_resources"]["gap"], r"^ValueError: ")
+        self.assertEqual(view["counts"]["ld_resources"]["text"], "LD resources: not counted")
+        self.assertEqual(view["counts"]["gwas_stores"]["n"], 8)
+        self.assertEqual(len(view["inventory"]), 8)
+
+    def test_a_panel_the_reader_cannot_read_leaves_the_gwas_tiles_and_count(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="stores-ld-bad-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        registry = fx.make_registry(root)
+        declaration = root / "resources" / "reference-resources" / "fixture-ld-panel" / "resource.yaml"
+        declaration.write_text(declaration.read_text().replace("source:", "source: scalar\nignored:", 1))
+        view = stores_view.stores_view(collected(registry))
+        self.assertTrue(view["available"])
+        self.assertEqual((len(view["inventory"]), view["counts"]["gwas_stores"]["n"]), (8, 8))
+        self.assertFalse(view["ld_resources"]["available"])
+        self.assertIn("AttributeError", view["ld_resources"]["notice"])
+        self.assertEqual(view["counts"]["ld_resources"]["n"], None)
+
+    def test_a_numeric_used_for_is_shown_as_text(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="stores-ld-num-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        registry = fx.make_registry(root)
+        declaration = root / "resources" / "reference-resources" / "fixture-ld-panel" / "resource.yaml"
+        declaration.write_text(declaration.read_text().replace("used_for: reference completion (opengwasdb complete-dense)", "used_for: 42"))
+        view = stores_view.stores_view(collected(registry))
+        self.assertTrue(view["ld_resources"]["available"])
+        self.assertEqual(view["ld_resources"]["rows"][4]["summary"], "42")
 
     def test_retired_and_reference_are_shown_as_they_are(self) -> None:
         self.assertEqual(self.tiles["OGL-00003"]["status"], {"display": "retired", "tone": "muted"})

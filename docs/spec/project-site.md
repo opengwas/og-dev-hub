@@ -232,11 +232,22 @@ has `validated_at: null`, never a date borrowed from elsewhere, and a
 `{available, error, rows}`, one row per line of the LD Store Registry's `ld-resources.tsv`, in id order, of three kinds: `ld_store`, `genotype_store` and `ld_panel`. The rows come from the
 registry's own reader, `ld_registry.index.resource_rows`, over the staged `stores/ld/` and each
 `resources/reference-resources/<id>/resource.yaml` (`staging.extract_tree` extracts those declarations alone); the
-collector parses no TSV. A row holds `ld_id`, `label`, `kind`, `provenance`, `status`, `used_for`, `ancestry`,
-`source_panel`, `n`, `reference_assembly`, `store_bytes`, `genotype_bytes`, `n_variants`, `built_with`, `record` and
-`notes`; a missing value is `null`. **`location`, the host path of a Store, is dropped here** and no other column
-reaches the file. A registry revision with no `stores/ld/`, or a record that breaks the spec, is `available: false`
-with the reason: a gap, never a failed build (ADR 0001).
+collector parses no TSV.
+**`ld-resources.tsv` is not staged** (owner ruling, 27 November 2026): `resource_rows` is the owner of those rows and
+nothing else reads the file. The staged tree is `stores/` (which holds `stores/ld/`), `docs/_yardstick/` and the
+declarations above, named from the owners' constants (`ld_registry.record.LD_ROOT`, `ogstores.resources`).
+
+A row holds `ld_id`, `label`, `kind`, `provenance`, `status`, `used_for`, `ancestry`, `source_panel`, `n`,
+`reference_assembly`, `store_bytes`, `genotype_bytes`, `n_variants`, `n_blocks` (a panel's), `built_with`, `record`,
+`record_gap` and `notes`; a missing value is `null`. **`location`, the host path of a Store, is dropped here** and no
+other column reaches the file. **Host paths are scrubbed here, not downstream**: every text value is text (a number in a
+text column is shown as written) with each host path cut to its last name, including one after a colon or inside a URL
+(`receipt:/data/x`, `file:///data/x`); a relative `resources/data/…` is not a host path. A number column that holds
+anything else is `null`. `record` is a relative path inside `stores/ld/` or `resources/reference-resources/`; any other
+(absolute, `..`, elsewhere) is `null` with the reason in `record_gap`, so the tile has no link and its "Why n/a" says why.
+**Any exception** from the reader or a row makes `ld_resources` `available: false`, with the exception's type and message
+(a record is named by its place in the registry): a gap, never a failed build (ADR 0001), and the GWAS Stores still
+render. So does a registry revision with no `stores/ld/`.
 
 **`inventory[]`** (`collect.inventory`, og-dev-hub#16), one row per Release Bundle: `store_id`,
 `label`, `description`, and a *cell* (`{value, gap}`, never both set) for each of `layout`,
@@ -284,9 +295,9 @@ name (`architecture_public.reason`), so no `/data/...` path reaches the file, in
 error.
 
 - **`counts`** (og-dev-hub#10): the page counts GWAS Stores and LD resources apart. `gwas_stores` is `{n, text}` (`8 GWAS Stores`); `ld_resources` is `{n, by_kind, text}`, with `by_kind` one `{kind, n, text}` for each of `ld_store`, `genotype_store` and `ld_panel`, in that order, a kind with none counted as 0 (`5 LD resources: 3 LD Stores, 1 Genotype Store, 1 LD panel`). When the registry could not be listed, `ld_resources` is `{n: null, by_kind: [], text: "LD resources: not counted"}`: unknown, never 0.
-- **`ld_resources`** (og-dev-hub#10), the LD section beside the GWAS tiles: `{available, gap, benchmarking, rows}`. `gap` is why the rows are missing (`null` when `available`), `benchmarking` the line "LD Stores are not measured yet: opengwasdb-stores#504" until that issue's results are drawn, and `rows` one tile per row of the collected `ld_resources`, in the GWAS tile's shape (`store_id` is the LD id; `label`, `url`, `summary`, `notes`, `facts`, `why_na`, and `status` as `{display, tone}`):
-  - `summary` is `used_for`; `notes` is shown in the open tile; `url` is the row's `record` on GitHub at the commit read (a panel's is its `resource.yaml`);
-  - `facts`, in order: Kind ("LD Store", "Genotype Store" or "LD panel"), Provenance, Source Panel (`source_panel · ancestry · n 665`), Reference Assembly, Size on disk (`store_bytes` through `size`, and `· genotypes <genotype_bytes>` where a Genotype Store has them), Variants, and Built with (`built_with` as written, never parsed). An empty one is `n/a`, with its reason under "Why n/a" (a panel's declaration, or a Store's record, holds none). Facts that do not apply to LD (top hits, HM3, Rho, clumping, layout, coverage) are not drawn, not `n/a`;
+- **`ld_resources`** (og-dev-hub#10), the LD section beside the GWAS tiles: `{available, gap, notice, benchmarking, rows}`. `gap` is why the rows are missing (`null` when `available`), `notice` the sentence the page draws for it ("LD resources are not listed: <gap>", written by the build; `null` when available), and `rows` is empty then. Whatever raises while the build makes the tiles makes the section unavailable the same way, with the exception's type and message; `benchmarking` the line "LD Stores are not measured yet: opengwasdb-stores#504" until that issue's results are drawn, Otherwise `rows` is one tile per row of the collected `ld_resources`, in the GWAS tile's shape (`store_id` is the LD id; `label`, `url`, `summary`, `notes`, `facts`, `why_na`, and `status` as `{display, tone}`):
+  - `summary` is the short `used_for`, cut as a GWAS tile's is (below), `description` the full `used_for` and `notes` the row's notes, both shown in the open tile; `url` is the row's `record` on GitHub at the commit read (a panel's is its `resource.yaml`);
+  - `facts`, in order: Kind ("LD Store", "Genotype Store" or "LD panel"), Provenance, Source Panel (`source_panel · ancestry · n 665`), Reference Assembly, Size on disk (`store_bytes` through `size`, and `· genotypes <genotype_bytes>` where a Genotype Store has them), Variants, Blocks (`n_blocks`, on `ld_panel` tiles only: it does not apply to a Store, so a Store's tile does not draw it), and Built with (`built_with` as written, never parsed). A record with no valid link adds "Record" to "Why n/a" and has no `url`. An empty one is `n/a`, with its reason under "Why n/a" (a panel's declaration, or a Store's record, holds none). Facts that do not apply to LD (top hits, HM3, Rho, clumping, layout, coverage) are not drawn, not `n/a`;
   - the status tag shows `status` as written: `served`, `built` and `available` `ok`; `retired` and `reference` `muted`; `retiring` neutral.
   The Benchmarking tab's `unmeasured` lists GWAS Stores only: an LD id is never in it.
 - **`inventory[]`** (og-dev-hub#21): one row per Store, drawn as a tile (`static/js/stores.js`, a `<details>`: the header, short description and facts are its `<summary>`, so a click anywhere on them opens it; the body holds the registry link, the full description and "Why n/a"; Escape closes every open tile). Each cell is `{text, gap, display, detail}`:

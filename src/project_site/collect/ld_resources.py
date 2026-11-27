@@ -15,23 +15,72 @@ else (ADR 0001: a gap never fails the build).
 
 from __future__ import annotations
 
-from pathlib import Path
+import re
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ld_registry.index import resource_rows, resources_root_of
+from ld_registry.record import LD_ROOT
+from ogstores.resources import REFERENCE_RESOURCES_DIR
+
+from project_site import architecture_public
 
 # The columns the Stores page draws, and no others: `location` is never among them.
-PUBLIC = ("ld_id", "label", "kind", "provenance", "status", "used_for", "ancestry", "source_panel", "n",
-          "reference_assembly", "store_bytes", "genotype_bytes", "n_variants", "built_with", "record", "notes")
+TEXT = ("ld_id", "label", "kind", "provenance", "status", "used_for", "ancestry", "source_panel", "reference_assembly",
+        "built_with", "notes")
+NUMBERS = ("n", "store_bytes", "genotype_bytes", "n_variants", "n_blocks")
+PUBLIC = TEXT + NUMBERS + ("record",)
+# Where a row's `record` may point: a record under `stores/ld/`, or a declaration under `resources/reference-resources/`.
+RECORD_DIRECTORIES = (LD_ROOT.as_posix(), REFERENCE_RESOURCES_DIR.as_posix())
+
+# `architecture_public.reason` leaves a path after a colon (`receipt:/data/x`) or inside a URL (`file:///data/x`): any
+# `/data/` not continuing a relative path (`resources/data/`) is a host path, and is cut to its last name as `reason` does.
+_DATA_PATH = re.compile(r"(?<![\w.~-])/data/[^\s'\"`,;()]*")
+
+
+def scrub(value: Any) -> str | None:
+    """A text value as the public site may show it: text (a number in a text column is shown as written), no host path."""
+    if value is None:
+        return None
+    shown = architecture_public.reason(str(value))
+    return _DATA_PATH.sub(lambda m: "…/" + m.group(0).rstrip("/").rsplit("/", 1)[-1], shown)
+
+
+def number(value: Any) -> int | float | None:
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def record_link(record: Any) -> tuple[str | None, str | None]:
+    """`(record, gap)`: the record path if it is relative and inside the registry's two directories, else no link and why."""
+    path = PurePosixPath(str(record)) if record else None
+    if path is None:
+        return None, "the registry gives no record path"
+    if path.is_absolute() or ".." in path.parts or not any(path.parts[:len(PurePosixPath(d).parts)] == PurePosixPath(d).parts for d in RECORD_DIRECTORIES):
+        return None, f"the record path {scrub(record)} is not inside {' or '.join(RECORD_DIRECTORIES)}"
+    return path.as_posix(), None
+
+
+def public_row(row: Any) -> dict[str, Any]:
+    """The columns the page draws, every text scrubbed and every number a number, and the record link checked."""
+    out: dict[str, Any] = {c: scrub(row.get(c)) for c in TEXT}
+    out.update({c: number(row.get(c)) for c in NUMBERS})
+    out["record"], out["record_gap"] = record_link(row.get("record"))
+    return out
 
 
 def collect(stores: Path) -> dict[str, Any]:
-    """`{available, error, rows}` for the registry whose Release Bundles are under `stores` (its `stores/`)."""
-    ld_root = Path(stores) / "ld"
+    """`{available, error, rows}` for the registry whose Release Bundles are under `stores` (its `stores/`).
+
+    Whatever the reader or a row raises makes the LD section unavailable with the exception's type and message:
+    an LD failure is a gap and never takes the GWAS Stores down with it (ADR 0001).
+    """
+    ld_root = Path(stores) / LD_ROOT.name
     if not ld_root.is_dir():
-        return {"available": False, "error": "this registry revision has no stores/ld/: the LD Store Registry is not in it", "rows": []}
+        return {"available": False, "error": f"this registry revision has no {LD_ROOT.as_posix()}/: the LD Store Registry is not in it", "rows": []}
     try:
-        rows = resource_rows(ld_root, resources_root_of(ld_root))
-    except (ValueError, OSError) as error:  # InvalidRecords, IdCollision and PanelError are ValueErrors
-        return {"available": False, "error": f"the LD Store Registry could not be listed: {error}", "rows": []}
-    return {"available": True, "error": None, "rows": [{column: row.get(column) for column in PUBLIC} for row in rows]}
+        rows = [public_row(row) for row in resource_rows(ld_root, resources_root_of(ld_root))]
+    except Exception as error:  # noqa: BLE001 — the reader is the owner's: any failure of it is a gap here
+        # The registry's root is the host's business, so a record is named by its place in the registry (`stores/ld/OGL-00003/…`).
+        why = f"{type(error).__name__}: {error}".replace(str(ld_root.parent.parent) + "/", "")
+        return {"available": False, "error": scrub(f"the LD Store Registry could not be listed: {why}"), "rows": []}
+    return {"available": True, "error": None, "rows": rows}

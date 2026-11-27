@@ -183,6 +183,15 @@ def _ancestry(value: Mapping[str, int]) -> str:
     return " · ".join(f"{code} {count(n)}" for code, n in value.items())
 
 
+def tile_lists(cells: list[tuple[str, Mapping[str, Any]]], also: list[tuple[str, Mapping[str, Any]]] = ()) -> dict[str, Any]:
+    """The one assembler of a tile's lists, for GWAS and LD tiles alike: `facts` from `cells` (`{label, display, detail, na}`)
+    and `why_na`, the reason behind each gap among `cells` and `also` (cells the tile does not list as facts, such as its status)."""
+    return {
+        "facts": [{"label": label, "display": cell["display"], "detail": cell["detail"], "na": bool(cell["gap"])} for label, cell in cells],
+        "why_na": [{"label": label, "reason": cell["gap"]} for label, cell in [*cells, *also] if cell["gap"]],
+    }
+
+
 def inventory_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
     median = row.get("median_sample_size") or {}
     n_analyses = row.get("n_analyses") or {}
@@ -218,9 +227,7 @@ def inventory_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
     out["status"]["tone"] = None if out["status"]["gap"] else STATUS_TONE.get(out["status"]["text"])
     if not out["completion_state"]["gap"]:  # `text` stays the state as recorded; the tile draws it as a phrase
         out["completion_state"]["display"] = _completion(out["completion_state"]["text"])
-    cells = [(label, out[key]) for key, label in TILE_FACTS]
-    out["facts"] = [{"label": label, "display": cell["display"], "detail": cell["detail"], "na": bool(cell["gap"])} for label, cell in cells]
-    out["why_na"] = [{"label": label, "reason": cell["gap"]} for label, cell in cells + [("Release Status", out["status"])] if cell["gap"]]
+    out.update(tile_lists([(label, out[key]) for key, label in TILE_FACTS], [("Release Status", out["status"])]))
     return out
 
 
@@ -259,55 +266,72 @@ def _ld_source_panel(row: Mapping[str, Any]) -> str | None:
 def ld_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
     """One tile of the LD section, shaped as a GWAS Store's so one script draws both: `store_id` is the LD id.
 
-    Facts that do not apply to LD (top hits, HM3, Rho, clumping) are not here at all, so they are not `n/a`.
-    A fact the registry leaves empty is `n/a`, with its reason in `why_na`.
+    Facts that do not apply to LD (top hits, HM3, Rho, clumping) are not here at all, so they are not `n/a`; Blocks is
+    an LD panel's alone. A fact the registry leaves empty is `n/a`, with its reason in `why_na`.
     """
     kind = row.get("kind")
-    shown = [
-        ("Kind", LD_KIND_LABEL.get(kind, kind), "kind"),
-        ("Provenance", row.get("provenance"), "provenance"),
-        ("Source Panel", _ld_source_panel(row), "source panel"),
-        ("Reference Assembly", row.get("reference_assembly"), "reference assembly"),
-        ("Size on disk", _ld_footprint(row), "size on disk"),
-        ("Variants", None if row.get("n_variants") is None else count(row["n_variants"]), "variant count"),
-        ("Built with", row.get("built_with") or None, "build version"),
+
+    def cell(value: Any, what: str, show=str) -> dict[str, Any]:
+        return _cell({"value": value, "gap": None if value is not None else _ld_gap(kind, what)}, show)
+
+    cells = [
+        ("Kind", cell(LD_KIND_LABEL.get(kind, kind), "kind")),
+        ("Provenance", cell(row.get("provenance") or None, "provenance")),
+        ("Source Panel", cell(_ld_source_panel(row), "source panel")),
+        ("Reference Assembly", cell(row.get("reference_assembly") or None, "reference assembly")),
+        ("Size on disk", cell(_ld_footprint(row), "size on disk")),
+        ("Variants", cell(row.get("n_variants"), "variant count", count)),
+        *([("Blocks", cell(row.get("n_blocks"), "block count", count))] if kind == "ld_panel" else []),
+        ("Built with", cell(row.get("built_with") or None, "build version")),
     ]
-    facts = [{"label": label, "display": text(value) if value is not None else NA, "detail": None, "na": value is None}
-             for label, value, _ in shown]
     status = row.get("status")
-    return {
+    status_cell = cell(status or None, "status")
+    record_gap = row.get("record_gap")
+    description = (row.get("used_for") or "").strip() or None
+    out = {
         "store_id": row.get("ld_id"), "url": url, "label": text(row.get("label")), "kind": kind,
         "status": {"display": status if status else NA, "tone": LD_STATUS_TONE.get(status)},
-        "summary": text((row.get("used_for") or "").strip() or None),
-        "description": None, "notes": text((row.get("notes") or "").strip() or None),
-        "facts": facts,
-        "why_na": [{"label": label, "reason": _ld_gap(kind, what)} for label, value, what in shown if value is None]
-                  + ([{"label": "Status", "reason": _ld_gap(kind, "status")}] if not status else []),
+        # As a GWAS tile: the short description in the summary, the full text (and the notes) in the open tile.
+        "summary": text(summary(description)), "description": text(description),
+        "notes": text((row.get("notes") or "").strip() or None),
+        **tile_lists(cells, [("Status", status_cell)]),
     }
-
-
-def counts(gwas: int, ld: Mapping[str, Any], rows: list[Mapping[str, Any]]) -> dict[str, Any]:
-    """The page's two counts: GWAS Stores, and LD resources with how many of each LD kind (`None` when they could not be listed)."""
-    out: dict[str, Any] = {"gwas_stores": {"n": gwas, "text": plural(gwas, "GWAS Store", "GWAS Stores")}}
-    if not ld.get("available"):
-        out["ld_resources"] = {"n": None, "by_kind": [], "text": "LD resources: not counted"}
-        return out
-    by_kind = [{"kind": kind, "n": n, "text": plural(n, one, many)}
-               for kind, one, many in LD_KINDS for n in [sum(1 for r in rows if r.get("kind") == kind)]]
-    out["ld_resources"] = {"n": len(rows), "by_kind": by_kind,
-                           "text": f"{plural(len(rows), 'LD resource', 'LD resources')}: " + ", ".join(k["text"] for k in by_kind)}
+    if record_gap:  # no link: the reason is a gap, shown with the others
+        out["why_na"].append({"label": "Record", "reason": text(record_gap)})
     return out
 
 
+def _unavailable(reason: str) -> dict[str, Any]:
+    return {"available": False, "gap": reason, "notice": f"LD resources are not listed: {reason}",
+            "benchmarking": LD_BENCHMARKING_GAP, "rows": []}
+
+
 def ld_resources_view(doc: Document, commit: str | None) -> dict[str, Any]:
+    """The LD section, assembled once: its tiles, or the reason there are none. Whatever raises here makes the section
+    unavailable, with the exception's type and message, and never the whole view (ADR 0001)."""
     ld = mapping(doc.get("ld_resources"))
-    rows = [r for r in ld.get("rows") or [] if isinstance(r, Mapping)]
-    return {
-        "available": bool(ld.get("available")),
-        "gap": None if ld.get("available") else text(ld.get("error")) or "the LD Store Registry was not collected",
-        "benchmarking": LD_BENCHMARKING_GAP,
-        "rows": [ld_row(r, paths.github_url(paths.REGISTRY, commit, str(r["record"])) if commit and r.get("record") else None) for r in rows],
-    }
+    if not ld.get("available"):
+        return _unavailable(text(ld.get("error")) or "the LD Store Registry was not collected")
+    try:
+        rows = [ld_row(r, paths.github_url(paths.REGISTRY, commit, str(r["record"])) if commit and r.get("record") else None)
+                for r in ld.get("rows") or [] if isinstance(r, Mapping)]
+    except Exception as error:  # noqa: BLE001
+        return _unavailable(text(f"{type(error).__name__}: {error}"))
+    return {"available": True, "gap": None, "notice": None, "benchmarking": LD_BENCHMARKING_GAP, "rows": rows}
+
+
+def counts(gwas: int, ld: Mapping[str, Any]) -> dict[str, Any]:
+    """The page's two counts: GWAS Stores, and the LD section's rows with how many of each LD kind (`None` when not listed)."""
+    out: dict[str, Any] = {"gwas_stores": {"n": gwas, "text": plural(gwas, "GWAS Store", "GWAS Stores")}}
+    if not ld["available"]:
+        out["ld_resources"] = {"n": None, "by_kind": [], "text": "LD resources: not counted"}
+        return out
+    rows = ld["rows"]
+    by_kind = [{"kind": kind, "n": n, "text": plural(n, one, many)}
+               for kind, one, many in LD_KINDS for n in [sum(1 for r in rows if r["kind"] == kind)]]
+    out["ld_resources"] = {"n": len(rows), "by_kind": by_kind,
+                           "text": f"{plural(len(rows), 'LD resource', 'LD resources')}: " + ", ".join(k["text"] for k in by_kind)}
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -512,9 +536,8 @@ def stores_view(doc: Document) -> dict[str, Any]:
         "name": paths.REGISTRY, "url": paths.clone_url(paths.REGISTRY), "commit": commit,
         "stores_url": paths.github_url(paths.REGISTRY, commit, "stores/") if commit else None,
     }
-    ld = mapping(doc.get("ld_resources"))
-    out["counts"] = counts(len(rows), ld, [r for r in ld.get("rows") or [] if isinstance(r, Mapping)])
     out["ld_resources"] = ld_resources_view(doc, commit)
+    out["counts"] = counts(len(rows), out["ld_resources"])
     out["inventory"] = [
         inventory_row(r, paths.github_url(paths.REGISTRY, commit, f"stores/{r['store_id']}/") if commit else None) for r in rows
     ]

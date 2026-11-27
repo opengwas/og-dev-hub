@@ -22,6 +22,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from ogstores.resources import DECLARATION_FILENAME, REFERENCE_RESOURCES_DIR
+
 from project_site import paths
 from project_site.collect.architecture_model import split_nul
 from project_site.collect.common import CollectError
@@ -91,8 +93,8 @@ def _recorded(command: list[str]) -> dict[str, Any]:
 REGISTRY_TREE = ("stores", "docs/_yardstick")
 # And, for the LD panels `ld_registry.index.resource_rows` lists (og-dev-hub#10), the declaration of each Reference Resource
 # alone: `resources/reference-resources/<id>/resource.yaml`. The directories beside it hold panel data tables the site never reads.
-RESOURCE_DECLARATIONS = "resources/reference-resources"
-DECLARATION = "resource.yaml"
+RESOURCE_DECLARATIONS = REFERENCE_RESOURCES_DIR.as_posix()
+DECLARATION = DECLARATION_FILENAME
 
 
 def extract_tree(clone: Path, ref: str, dest: Path) -> str:

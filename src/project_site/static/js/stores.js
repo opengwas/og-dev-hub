@@ -45,7 +45,7 @@
   function ldSection(ld) {
     return [el("h2", { class: "section-heading" }, "LD resources"),
       D.alert("note", el("p", {}, ld.benchmarking)),
-      ld.available ? tiles(ld.rows, "ld-") : D.alert("note", el("p", {}, "LD resources are not listed: " + ld.gap))];
+      ld.available ? tiles(ld.rows, "ld-") : D.alert("note", el("p", {}, ld.notice))];
   }
 
   /* Escape closes every open tile, whether or not the focus is inside one (Safari does not focus a <summary> on click). */
