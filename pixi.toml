@@ -30,17 +30,17 @@ og-dev-hub = { path = ".", editable = true }
 # collector reads the registry through. Its `dependencies` are empty,
 # so this brings in no second copy of anything here. Every call passes the
 # registry root it reads: an installed `ogstores` does not know where a
-# registry checkout is. The pin is opengwasdb-stores' epic branch
-# (`orch/14-what-is-built`), where the bundle helpers and the schema live; move it to
-# `main` when that merges.
-ogstores = { git = "https://github.com/opengwas/opengwasdb-stores", rev = "04b71902792b50abdeec7435b407727628d94fbd" }
+# registry checkout is. It also ships `ld_registry`, whose `index.resource_rows` reads the
+# LD Store Registry (og-dev-hub#10). The pin is opengwasdb-stores' `main` (75fe637a, which holds
+# `ld-resources.tsv` and the 27 November retirements).
+ogstores = { git = "https://github.com/opengwas/opengwasdb-stores", rev = "75fe637ab7979f0c76c0b1bf816a79dfaa2fe93e" }
 # The engine, which `ogstores` reads every `analyses.tsv` through (`bundle.manifest_summary`,
 # og-dev-hub#16): no lighter owner of that read exists. The real cost is the engine's own
 # dependencies (numpy, zarr, pandas, scipy, scikit-learn, pysam, ...): about 40 wheels and 1.1 GB
 # of environment. Only the suites and the build that read a manifest import it. This pin follows
 # `ogstores`' lock: keep it equal to the revision opengwasdb-stores' `pixi.lock` resolves
 # `opengwasdb` to at the `ogstores` rev above, and re-read that lock whenever the rev moves.
-opengwasdb = { git = "https://github.com/opengwas/opengwasdb", rev = "1230629a2c0958851f8ed5e1bcc8db9472b7516a" }
+opengwasdb = { git = "https://github.com/opengwas/opengwasdb", rev = "1a1165410bc696aa609f4c1b9d98f7c7cac15d83" }
 
 [tasks]
 # The suites: every tests/**/test_*.py, each run as a script, one at a time.
