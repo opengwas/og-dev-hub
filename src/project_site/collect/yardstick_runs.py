@@ -15,7 +15,7 @@ from typing import Any
 
 from yardstick import result as yardstick_result
 
-from project_site import architecture_public
+from project_site.architecture_public import scrub_text
 
 # What a measure record may carry that the view draws (`path` is `top_hits`': `index` or `scan`, which differ in kind); every other key stays in the registry.
 RECORD_KEYS = ("status", "median_ms", "p95_ms", "reps", "reason", "error", "peak_mb", "bytes", "source", "path")
@@ -27,13 +27,11 @@ LD_RECORD_KEYS = ("status", "median_ms", "p95_ms", "reason", "error", "peak_mb",
 
 def _display_text(value: Any) -> str | None:
     """One string for the browser, with host paths scrubbed before joining any structured note."""
-    if value is None:
-        return None
     if isinstance(value, list):
         return "; ".join(_display_text(item) or "" for item in value)
     if isinstance(value, dict):
-        return "; ".join(f"{architecture_public.reason(key)}: {_display_text(item) or ''}" for key, item in value.items())
-    return architecture_public.reason(str(value))
+        return "; ".join(f"{scrub_text(key)}: {_display_text(item) or ''}" for key, item in value.items())
+    return scrub_text(value)
 
 
 def _record(record: dict[str, Any], keys: tuple[str, ...] = RECORD_KEYS) -> dict[str, Any]:
