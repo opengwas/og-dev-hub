@@ -65,6 +65,13 @@ class BuiltStoresView(unittest.TestCase):
                 self.assertIsNone(HOST_PATH_BYTES.search(raw))
                 self.assertNotIn(b"/data/opengwasdb", raw)
 
+    def test_the_built_site_lists_every_ld_row_and_carries_no_location(self) -> None:
+        data = json.loads((self.out / "data" / "stores.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(data["ld_resources"]["rows"]), 5)
+        self.assertEqual(data["counts"]["ld_resources"]["n"], 5)
+        self.assertNotIn("location", json.dumps(data))
+        self.assertNotIn(fx.LD_HOST_PATH.encode(), b"".join(p.read_bytes() for p in self.out.rglob("*") if p.is_file()))
+
     def test_the_page_names_the_script_and_the_content_section(self) -> None:
         page = (self.out / "index.html").read_text(encoding="utf-8")
         self.assertIn('src="js/stores.js"', page)
@@ -91,7 +98,7 @@ class StoresScript(unittest.TestCase):
                          "recorded from opengwasdb-stores#502's backfill", "counts come with opengwasdb#488",
                          "not computed",
                          "not built yet (Release Status candidate)", "withdrawn",
-                         "no record says how the HM3 step ended", "LD Stores are not listed yet", "og-dev-hub#10", "unknown, not 0"):
+                         "no record says how the HM3 step ended"):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
 
@@ -101,14 +108,15 @@ class StoresScript(unittest.TestCase):
         self.assertIn("Why n/a", text)
         self.assertIn("Size on disk n/a", text)
         self.assertNotIn("Inventory", text)
-        self.assertIn("LD Stores are not listed yet", text)
+        self.assertNotIn("LD Stores are not listed yet", text)
 
     def test_each_tile_is_a_details_whose_summary_holds_the_facts_and_escape_closes_it(self) -> None:
         out = build(self.addCleanup, stores_doc=None)
         done = subprocess.run(["node", str(RUNNER), str(out)], capture_output=True, text=True, check=True, timeout=60)
         drawn = json.loads(done.stdout)
-        self.assertEqual(len(drawn["_tiles"]), 8)
-        for tile in drawn["_tiles"]:
+        gwas = [t for t in drawn["_tiles"] if t["id"].startswith("store-")]
+        self.assertEqual(len(gwas), 8)
+        for tile in gwas:
             with self.subTest(tile=tile["id"]):
                 self.assertTrue(tile["summary"])
                 for label in ("Layout", "Size on disk", "Top hits", "Rho"):
@@ -117,18 +125,41 @@ class StoresScript(unittest.TestCase):
                     self.assertIn(label, tile["summaryText"])
                 self.assertFalse(tile["linkInSummary"])
                 self.assertTrue(tile["linkInBody"])
-        by_id = {t["id"]: t["summaryText"] for t in drawn["_tiles"]}
+        by_id = {t["id"]: t["summaryText"] for t in gwas}
         self.assertRegex(by_id["store-OGS-00001"], r"Completion\s*reference completed")
         self.assertRegex(by_id["store-OGS-00001"], r"Built with\s*opengwasdb 0\.9\.1")
         self.assertRegex(by_id["store-OGS-00001"], r"Last built\s*2026-11-13")
         self.assertRegex(by_id["store-OGS-00001"], r"Format\s*1\.2")
         self.assertRegex(by_id["store-OGS-00003"], r"Completion\s*observed only")
-        tags = {t["id"]: t["tagClass"] for t in drawn["_tiles"]}
+        tags = {t["id"]: t["tagClass"] for t in gwas}
         self.assertEqual(tags["store-OGS-00001"], "tag tag-ok")        # validated
         self.assertEqual(tags["store-OGS-00005"], "tag")               # candidate
         self.assertEqual(tags["store-OGS-00007"], "tag tag-muted")     # withdrawn
         self.assertEqual(drawn["_escape"], {"before": 2, "after": 0})  # every open tile, focus or none
         self.assertTrue(drawn["_otherKey"])                            # another key closes nothing
+
+    def test_ld_resources_are_drawn_as_tiles_with_the_separate_counts(self) -> None:
+        out = build(self.addCleanup, stores_doc=None)
+        drawn = json.loads(subprocess.run(["node", str(RUNNER), str(out)], capture_output=True, text=True, check=True, timeout=60).stdout)
+        text = drawn["stores"]
+        self.assertIn("8 GWAS Stores", text)
+        self.assertIn("5 LD resources: 3 LD Stores, 1 Genotype Store, 1 LD panel", text)
+        self.assertIn("LD Stores are not measured yet: opengwasdb-stores#504", text)
+        ld = {t["id"]: t for t in drawn["_tiles"] if t["id"].startswith("ld-")}
+        self.assertEqual(sorted(ld), [f"ld-OGL-0000{n}" for n in range(1, 6)])
+        for tile in ld.values():
+            with self.subTest(tile=tile["id"]):
+                self.assertTrue(tile["summary"])
+                for label in ("Kind", "Provenance", "Source Panel", "Reference Assembly", "Size on disk", "Variants", "Built with"):
+                    self.assertIn(label, tile["summaryText"])
+                for label in ("Top hits", "HM3", "Rho", "Layout"):
+                    self.assertNotIn(label, tile["summaryText"])
+                self.assertFalse(tile["linkInSummary"])
+                self.assertTrue(tile["linkInBody"])
+        self.assertRegex(ld["ld-OGL-00002"]["summaryText"], r"Kind\s*Genotype Store")
+        self.assertRegex(ld["ld-OGL-00002"]["summaryText"], r"Size on disk\s*79\.3 GB · genotypes 4\.1 GB")
+        self.assertRegex(ld["ld-OGL-00005"]["summaryText"], r"Variants\s*n/a")
+        self.assertEqual({k: v["tagClass"] for k, v in ld.items()}["ld-OGL-00003"], "tag tag-muted")  # retired
 
     def test_the_benchmarking_tab_is_drawn_with_its_line_and_the_runs(self) -> None:
         self.out_page = build(self.addCleanup, stores_doc=None)

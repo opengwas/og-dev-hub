@@ -350,13 +350,86 @@ class CauseTests(Fixture):
         self.assertEqual(self.shown["OGS-00004"]["store_bytes"]["text"], "1 B")  # built once: its record reads as any built Store's
 
 
-class LdStoresTests(Fixture):
-    def test_ld_stores_are_a_named_gap_not_a_zero(self) -> None:
-        gap = self.view["ld_stores"]["gap"]
-        self.assertIn("og-dev-hub#10", gap)
-        self.assertIn("opengwasdb-stores#496", gap)
-        self.assertIn("unknown, not 0", gap)
-        self.assertNotIn("n", {k for k in self.view["ld_stores"] if k != "gap"})
+class LdResourcesTests(Fixture):
+    """Seam 2: the counts, each fact as display text, a NULL column as n/a with its reason, retired as retired (og-dev-hub#10)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        cls.ld = cls.view["ld_resources"]
+        cls.tiles = {r["store_id"]: r for r in cls.ld["rows"]}
+
+    def facts(self, ld_id: str) -> dict:
+        return {f["label"]: f["display"] for f in self.tiles[ld_id]["facts"]}
+
+    def test_the_old_gap_is_gone(self) -> None:
+        self.assertNotIn("ld_stores", self.view)
+
+    def test_gwas_stores_and_ld_resources_are_counted_separately_with_each_ld_kind(self) -> None:
+        self.assertEqual(self.view["counts"]["gwas_stores"], {"n": 8, "text": "8 GWAS Stores"})
+        ld = self.view["counts"]["ld_resources"]
+        self.assertEqual(ld["n"], 5)
+        self.assertEqual([(k["kind"], k["n"], k["text"]) for k in ld["by_kind"]],
+                         [("ld_store", 3, "3 LD Stores"), ("genotype_store", 1, "1 Genotype Store"), ("ld_panel", 1, "1 LD panel")])
+        self.assertEqual(ld["text"], "5 LD resources: 3 LD Stores, 1 Genotype Store, 1 LD panel")
+
+    def test_an_ld_store_tile_states_each_fact_as_text(self) -> None:
+        self.assertEqual(self.facts("OGL-00001"), {
+            "Kind": "LD Store", "Provenance": "genotypes", "Source Panel": "hgdp1kgp-v2-EUR · EUR · n 665",
+            "Reference Assembly": "GRCh38", "Size on disk": "79.3 GB", "Variants": "8,586,889",
+            "Built with": "ogld 0.5.0 (ogld build)"})
+        tile = self.tiles["OGL-00001"]
+        self.assertEqual((tile["label"], tile["status"]["display"], tile["status"]["tone"]), ("hgdp1kgp-v2-EUR-k10-01", "served", "ok"))
+        self.assertEqual(tile["summary"], "Data API LD: matrix, region, proxies, clump")
+        self.assertEqual(tile["notes"], "served by ogdb-api; stays as the reference")
+        self.assertEqual(tile["url"], "https://github.com/opengwas/opengwasdb-stores/blob/" + "c" * 40 + "/stores/ld/OGL-00001/record.yaml")
+
+    def test_a_genotype_store_shows_its_genotype_bytes_too_and_the_kind_in_words(self) -> None:
+        facts = self.facts("OGL-00002")
+        self.assertEqual((facts["Kind"], facts["Size on disk"]), ("Genotype Store", "79.3 GB · genotypes 4.1 GB"))
+
+    def test_an_ld_panel_links_its_declaration_and_an_empty_cell_is_n_a_with_its_reason(self) -> None:
+        tile, facts = self.tiles["OGL-00005"], self.facts("OGL-00005")
+        self.assertEqual((facts["Kind"], facts["Variants"], facts["Built with"]), ("LD panel", "n/a", "n/a"))
+        self.assertEqual(facts["Source Panel"], "gnomAD v3.1.2 HGDP+1kGP, AMR samples only · AMR · n 345")
+        self.assertTrue(tile["url"].endswith("/resources/reference-resources/fixture-ld-panel/resource.yaml"))
+        reasons = {w["label"]: w["reason"] for w in tile["why_na"]}
+        self.assertEqual(set(reasons), {"Variants", "Built with"})
+        self.assertIn("declaration", reasons["Variants"])
+
+    def test_retired_and_reference_are_shown_as_they_are(self) -> None:
+        self.assertEqual(self.tiles["OGL-00003"]["status"], {"display": "retired", "tone": "muted"})
+        self.assertEqual(self.tiles["OGL-00004"]["status"], {"display": "reference", "tone": "muted"})
+
+    def test_facts_that_do_not_apply_to_ld_are_not_drawn_at_all(self) -> None:
+        for tile in self.ld["rows"]:
+            labels = {f["label"] for f in tile["facts"]} | {w["label"] for w in tile["why_na"]}
+            self.assertFalse(labels & {"Top hits", "HM3", "Rho", "Clumped", "Layout", "Coverage", "Analyses"}, labels)
+
+    def test_benchmarking_is_a_named_gap_worded_like_the_others(self) -> None:
+        self.assertEqual(self.ld["benchmarking"], "LD Stores are not measured yet: opengwasdb-stores#504")
+
+    def test_a_host_path_in_a_note_is_cut_to_its_last_name(self) -> None:
+        self.assertNotIn("/data/", json.dumps(self.view))
+        self.assertIn("receipt.json", self.tiles["OGL-00005"]["notes"])
+
+    def test_a_registry_that_could_not_be_listed_is_a_gap_and_not_a_count_of_zero(self) -> None:
+        doc = {**self.doc, "ld_resources": {"available": False, "error": "the LD Store Registry could not be listed: OGL-00003", "rows": []}}
+        ld = stores_view.stores_view(doc)
+        self.assertIsNone(ld["counts"]["ld_resources"]["n"])
+        self.assertEqual(ld["counts"]["ld_resources"]["text"], "LD resources: not counted")
+        self.assertEqual(ld["ld_resources"]["rows"], [])
+        self.assertIn("could not be listed", ld["ld_resources"]["gap"])
+        self.assertEqual(ld["counts"]["gwas_stores"]["n"], 8)
+
+
+class LdBenchmarkingTests(Fixture):
+    """Seam 5: an LD id is never one of the GWAS Stores the Benchmarking tab lists as unmeasured."""
+
+    def test_ld_ids_are_not_in_the_unmeasured_list(self) -> None:
+        unmeasured = [u["store_id"] for u in stores_view.benchmarking_view(self.doc)["yardstick"]["unmeasured"]]
+        self.assertTrue(unmeasured)
+        self.assertFalse([i for i in unmeasured if i.startswith("OGL-")])
 
 
 class DeclaredTopHitsTests(unittest.TestCase):

@@ -200,7 +200,7 @@ LD_PANEL = {
     "ld": {"representation": "eigendecomposition", "n_blocks": {"AMR": 1357}, "bytes": {"AMR": 21_012_529_996}},
     "source": {"cohort": "gnomAD v3.1.2 HGDP+1kGP, AMR samples only", "n_individuals": {"AMR": 345}},
     "ld_ids": {"AMR": "OGL-00005"}, "used_for": "reference completion (opengwasdb complete-dense)", "licence": "to confirm",
-    "status": "available", "notes": "Built from /data/opengwasdb/reference/fixture/runs/receipt.json.",
+    "status": "available", "index_notes": "Built from /data/opengwasdb/reference/fixture/runs/receipt.json.",
 }
 
 

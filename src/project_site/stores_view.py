@@ -58,9 +58,8 @@ if set(_STATE) != set(yardstick_result.STATUSES):  # a raise, not an assert: it 
     raise RuntimeError(f"yardstick.result.STATUSES is {yardstick_result.STATUSES}: say how each status is drawn")
 STATE = {**_STATE, "absent": ("not in this run", None)}
 
-# LD Stores have no registry yet: say so as a gap, never as a count of zero (docs/spec/project-site.md).
-LD_STORES = {"gap": "LD Stores are not listed yet: their registry is opengwasdb-stores#496 and the view waits on "
-                    "og-dev-hub#10. Their number is unknown, not 0."}
+# LD resources are not measured by the yardstick yet (og-dev-hub#10): said as a gap, worded as the others are.
+LD_BENCHMARKING_GAP = "LD Stores are not measured yet: opengwasdb-stores#504"
 
 CHART_COLUMNS = 6  # series classes `series-0` to `series-5`
 
@@ -223,6 +222,92 @@ def inventory_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
     out["facts"] = [{"label": label, "display": cell["display"], "detail": cell["detail"], "na": bool(cell["gap"])} for label, cell in cells]
     out["why_na"] = [{"label": label, "reason": cell["gap"]} for label, cell in cells + [("Release Status", out["status"])] if cell["gap"]]
     return out
+
+
+# ---------------------------------------------------------------------------
+# LD resources (og-dev-hub#10)
+# ---------------------------------------------------------------------------
+
+# The three kinds of the LD Store Registry: (kind, how it is said, singular, plural), in the order the page counts them.
+LD_KINDS = (("ld_store", "LD Store", "LD Stores"), ("genotype_store", "Genotype Store", "Genotype Stores"), ("ld_panel", "LD panel", "LD panels"))
+LD_KIND_LABEL = {kind: one for kind, one, _ in LD_KINDS}
+# The tone of an LD resource's status tag: what is served, built or available is ok, what is gone or only kept is muted.
+LD_STATUS_TONE = {"served": "ok", "built": "ok", "available": "ok", "retiring": None, "reference": "muted", "retired": "muted"}
+
+
+def _ld_gap(kind: Any, what: str) -> str:
+    """Why an LD resource's cell is empty: an LD panel's numbers are in its declaration, a Store's in its record."""
+    return f"the panel's declaration holds no {what}" if kind == "ld_panel" else f"the Store's record holds no {what}"
+
+
+def _ld_footprint(row: Mapping[str, Any]) -> str | None:
+    """`store_bytes`, and the pgen files' `genotype_bytes` where a Genotype Store has them, through `size`."""
+    if row.get("store_bytes") is None:
+        return None
+    if row.get("genotype_bytes") is None:
+        return size(row["store_bytes"])
+    return f"{size(row['store_bytes'])} · genotypes {size(row['genotype_bytes'])}"
+
+
+def _ld_source_panel(row: Mapping[str, Any]) -> str | None:
+    if not row.get("source_panel"):
+        return None
+    return " · ".join([str(row["source_panel"])] + ([str(row["ancestry"])] if row.get("ancestry") else [])
+                      + ([f"n {count(row['n'])}"] if row.get("n") is not None else []))
+
+
+def ld_row(row: Mapping[str, Any], url: str | None) -> dict[str, Any]:
+    """One tile of the LD section, shaped as a GWAS Store's so one script draws both: `store_id` is the LD id.
+
+    Facts that do not apply to LD (top hits, HM3, Rho, clumping) are not here at all, so they are not `n/a`.
+    A fact the registry leaves empty is `n/a`, with its reason in `why_na`.
+    """
+    kind = row.get("kind")
+    shown = [
+        ("Kind", LD_KIND_LABEL.get(kind, kind), "kind"),
+        ("Provenance", row.get("provenance"), "provenance"),
+        ("Source Panel", _ld_source_panel(row), "source panel"),
+        ("Reference Assembly", row.get("reference_assembly"), "reference assembly"),
+        ("Size on disk", _ld_footprint(row), "size on disk"),
+        ("Variants", None if row.get("n_variants") is None else count(row["n_variants"]), "variant count"),
+        ("Built with", row.get("built_with") or None, "build version"),
+    ]
+    facts = [{"label": label, "display": text(value) if value is not None else NA, "detail": None, "na": value is None}
+             for label, value, _ in shown]
+    status = row.get("status")
+    return {
+        "store_id": row.get("ld_id"), "url": url, "label": text(row.get("label")), "kind": kind,
+        "status": {"display": status if status else NA, "tone": LD_STATUS_TONE.get(status)},
+        "summary": text((row.get("used_for") or "").strip() or None),
+        "description": None, "notes": text((row.get("notes") or "").strip() or None),
+        "facts": facts,
+        "why_na": [{"label": label, "reason": _ld_gap(kind, what)} for label, value, what in shown if value is None]
+                  + ([{"label": "Status", "reason": _ld_gap(kind, "status")}] if not status else []),
+    }
+
+
+def counts(gwas: int, ld: Mapping[str, Any], rows: list[Mapping[str, Any]]) -> dict[str, Any]:
+    """The page's two counts: GWAS Stores, and LD resources with how many of each LD kind (`None` when they could not be listed)."""
+    out: dict[str, Any] = {"gwas_stores": {"n": gwas, "text": plural(gwas, "GWAS Store", "GWAS Stores")}}
+    if not ld.get("available"):
+        out["ld_resources"] = {"n": None, "by_kind": [], "text": "LD resources: not counted"}
+        return out
+    by_kind = [{"kind": kind, "n": n, "text": plural(n, one, many)}
+               for kind, one, many in LD_KINDS for n in [sum(1 for r in rows if r.get("kind") == kind)]]
+    out["ld_resources"] = {"n": len(rows), "by_kind": by_kind,
+                           "text": f"{plural(len(rows), 'LD resource', 'LD resources')}: " + ", ".join(k["text"] for k in by_kind)}
+    return out
+
+
+def ld_resources_view(doc: Document, commit: str | None) -> dict[str, Any]:
+    ld = mapping(doc.get("ld_resources"))
+    rows = [r for r in ld.get("rows") or [] if isinstance(r, Mapping)]
+    return {
+        "available": bool(ld.get("available")),
+        "gap": None if ld.get("available") else text(ld.get("error")) or "the LD Store Registry was not collected",
+        "benchmarking": LD_BENCHMARKING_GAP,
+        "rows": [ld_row(r, paths.github_url(paths.REGISTRY, commit, str(r["record"])) if commit and r.get("record") else None) for r in rows],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +512,9 @@ def stores_view(doc: Document) -> dict[str, Any]:
         "name": paths.REGISTRY, "url": paths.clone_url(paths.REGISTRY), "commit": commit,
         "stores_url": paths.github_url(paths.REGISTRY, commit, "stores/") if commit else None,
     }
-    out["ld_stores"] = LD_STORES
+    ld = mapping(doc.get("ld_resources"))
+    out["counts"] = counts(len(rows), ld, [r for r in ld.get("rows") or [] if isinstance(r, Mapping)])
+    out["ld_resources"] = ld_resources_view(doc, commit)
     out["inventory"] = [
         inventory_row(r, paths.github_url(paths.REGISTRY, commit, f"stores/{r['store_id']}/") if commit else None) for r in rows
     ]
