@@ -16,7 +16,7 @@ from typing import Any, Callable
 from ogstores import bundle as release_bundle
 from ogstores import paths
 
-from project_site.collect import inventory, yardstick_runs
+from project_site.collect import inventory, ld_resources, yardstick_runs
 from project_site.collect.common import CollectError
 from project_site.shapes import mapping as _mapping
 
@@ -71,7 +71,7 @@ def collect(registry: Path, *, yardstick: Path | None = None, commit: str | None
     """The Release Bundles under `registry` (the run's `stores/`), their inventory rows and yardstick's results.
 
     `yardstick` is the registry's `docs/_yardstick/` (by default beside `stores/`), `commit` the
-    registry commit read. `registry` is a host path and is never published (`stores_view`).
+    registry commit read. `ld_resources` is the LD Store Registry's rows (`collect.ld_resources`), without `location`. `registry` is a host path and is never published (`stores_view`).
     """
     registry = Path(registry)
     if not registry.is_dir():
@@ -81,5 +81,6 @@ def collect(registry: Path, *, yardstick: Path | None = None, commit: str | None
         "registry": str(registry), "commit": commit,
         "stores": [record for record, _ in read],
         "inventory": [row for _, row in read],
+        "ld_resources": ld_resources.collect(registry),
         "yardstick": yardstick_runs.collect(yardstick or registry.parent / "docs" / "_yardstick"),
     }

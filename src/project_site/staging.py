@@ -22,6 +22,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from ogstores.resources import DECLARATION_FILENAME, REFERENCE_RESOURCES_DIR
+
 from project_site import paths
 from project_site.collect.architecture_model import split_nul
 from project_site.collect.common import CollectError
@@ -101,10 +103,15 @@ def extract_tree(clone: Path, ref: str, dest: Path) -> str:
     if commit is None:
         raise CollectError(f"{clone} cannot be extracted at {ref}: {why}")
     present = [path for path in REGISTRY_TREE if _git(clone, "ls-tree", "--name-only", commit, "--", path).strip()]
+    # Read only Reference Resource declarations for LD panels (#10), not the panel data tables beside them.
+    # `Tree` is NUL-safe: git quotes a path such as `panél/resource.yaml` in its line form.
+    slashes = len(REFERENCE_RESOURCES_DIR.parts) + 1
+    declared = [name for name in Tree(clone, commit, only=[REFERENCE_RESOURCES_DIR.as_posix()]).files
+                if name.endswith(f"/{DECLARATION_FILENAME}") and name.count("/") == slashes]
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
-    _extract(clone, commit, present, dest)
+    _extract(clone, commit, present + declared, dest)
     return commit
 
 

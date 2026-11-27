@@ -41,9 +41,9 @@
       measures(s.measures));
   }
 
-  function trends(y) {
-    if (!y.trends.length) return D.panel("Trends", "No measure has been recorded at two engine versions yet.");
-    return D.panel("Trends across engine versions",
+  function trends(y, title) {
+    if (!y.trends.length) return D.panel(title || "Trends", "No measure has been recorded at two engine versions yet.");
+    return D.panel(title || "Trends across engine versions",
       "One chart per measure, the median over the warm reads (peak memory and size on disk for those two), one point per engine version in the order they were first run, " +
       "one line per Store. A ringed point is a run taken in the Veeam window or under load; hover for why.",
       el("div", { class: "trends" }, y.trends.map(function (t) {
@@ -56,6 +56,33 @@
           })),
           frame);
       })));
+  }
+
+  /* The LD Stores (opengwasdb-stores#504): a table of one row per Store, each row an anchor its tile links to, then each
+   * Store's measures and the trends. Keyed by LD id, apart from the GWAS Stores. */
+  function ldYardstick(ld) {
+    var head = el("h2", { class: "section-heading" }, "LD Stores");
+    if (!ld.available) return [head, D.alert("note", el("p", {}, ld.gap))];
+    var notice = ld.notice ? D.alert("", el("p", {}, ld.notice)) : null;
+    if (!ld.stores.length) return [head, notice];
+    var summary = D.table([
+      { label: "LD Store", cell: function (s) { return [el("span", { class: "code-face" }, s.store_id), " ", s.label || ""]; } },
+      { label: "Kind", cell: function (s) { return s.kind; } },
+      { label: "Versions", cell: function (s) { return s.versions; } },
+      { label: "Run", cell: function (s) { return s.run; } },
+      { label: "Peak memory", count: true, cell: function (s) { return s.peak_memory.display; } },
+      { label: "Size on disk", cell: function (s) {
+        return [s.size_on_disk.display].concat(s.size_on_disk.details.map(function (d) { return el("span", { class: "detail" }, d); }));
+      } }
+    ], ld.stores, function (s) { return s.anchor; });
+    return [head, notice, summary,
+      ld.stores.map(function (s) {
+        return D.panel([s.store_id, " ", s.label || ""], null,
+          s.notice ? D.alert("", el("p", {}, s.notice)) : null,
+          s.flags.length ? el("div", { class: "tag-row" }, s.flags.map(function (f) { return D.tag([f, "caution"]); })) : null,
+          measures(s.measures));
+      }),
+      trends(ld, "LD trends across engine versions")];
   }
 
   function yardstick(y) {
@@ -71,7 +98,8 @@
       y.stores.map(storePanel),
       y.unmeasured.length ? D.panel("Not measured by yardstick",
         "The workload names one representative Store per layout; these are not measured.",
-        el("p", {}, y.unmeasured.map(function (s) { return s.store_id; }).join(", "))) : null
+        el("p", {}, y.unmeasured.map(function (s) { return s.store_id; }).join(", "))) : null,
+      ldYardstick(y.ld)
     ];
   }
 

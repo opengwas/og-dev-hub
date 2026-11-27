@@ -47,8 +47,14 @@ SUMMARY_KEYS = ("edges", "upward_edges", "upward_imports", "registry_to_engine_e
                 "adrs_total", "adrs_placed")
 
 
-# An absolute path on the host that collected (a clone's git directory, in git's own message).
-HOST_PATH = re.compile(r"(?<![\w.:/~-])/[^\s'\"`,;()]+")
+# Match a whole file URI, an absolute path starting a word or following a colon, or a `/data/` path in e.g. a URL query.
+# Leave `://` authorities, relative `resources/data/` and paths already shortened to `…/` alone.
+HOST_PATH = re.compile(
+    r"(?P<file_uri>(?i:file:)/[^\s'\"`,;()]*)"
+    r"|(?<=:)/(?!/)[^\s'\"`,;()]*"
+    r"|(?<![\w.:/~…-])/[^\s'\"`,;()]+"
+    r"|(?<!:/)(?<![\w.~…-])/data/[^\s'\"`,;()]*"
+)
 
 
 def reason(text: Any) -> Any:
@@ -59,7 +65,23 @@ def reason(text: Any) -> Any:
     """
     if not isinstance(text, str):
         return text
-    return HOST_PATH.sub(lambda m: "…/" + m.group(0).rstrip("/").rsplit("/", 1)[-1], text)
+
+    def cut(match: re.Match[str]) -> str:
+        path = match.group(0)
+        if match.group("file_uri"):
+            # Discard the optional authority, query and fragment as well as the machine's directories.
+            path = re.split(r"[?#]", path, maxsplit=1)[0][len("file:"):]
+            if path.startswith("//"):
+                path = path[2:].partition("/")[2]
+        name = path.rstrip("/").rsplit("/", 1)[-1]
+        return f"…/{name}" if name else "…"
+
+    return HOST_PATH.sub(cut, text)
+
+
+def scrub_text(value: Any) -> str | None:
+    """A public display value as text, with host paths scrubbed; None remains missing."""
+    return None if value is None else reason(str(value))
 
 
 def _pick(source: Any, keys: Iterable[str]) -> dict[str, Any]:

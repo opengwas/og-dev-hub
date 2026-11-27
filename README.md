@@ -2,7 +2,7 @@
 
 The developers' view of OpenGWAS's built state: every repository's components,
 how they depend on one another, the decisions that govern them and the terms
-that cross repositories, and (og-dev-hub#16) the GWAS Stores, and the LD Stores once og-dev-hub#10 lands. It
+that cross repositories, and (og-dev-hub#16) the GWAS Stores and the LD resources (og-dev-hub#10). It
 shows no planned state, which is the project board's, and no running state,
 which is the operations dashboard's.
 
