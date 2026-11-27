@@ -1,0 +1,303 @@
+{
+ "repetitions": {
+  "default": 5,
+  "clump": 3
+ },
+ "ogquery": {
+  "version": "0.5.0"
+ },
+ "inputs": {
+  "matrix": {
+   "chromosome": "22",
+   "seed": 8,
+   "count": 500,
+   "variants_sha256": "ff844c4dc37f448f7718a2c708106ff377f921091626dfe1c9848cfe51741811"
+  },
+  "region": {
+   "chromosome": "22",
+   "centre": 25000000,
+   "widths_bp": {
+    "region_1mb": 1000000,
+    "region_3mb": 3000000
+   }
+  },
+  "proxies": {
+   "r2": 0.8,
+   "kb": 10000,
+   "seeds": {
+    "proxies_1": 9,
+    "proxies_10": 8,
+    "proxies_100": 8
+   },
+   "variants_sha256": {
+    "proxies_1": "2d9650f56210a03a90d26189bdee1fce1b82f3ccc541a3383e94cabfd5e13667",
+    "proxies_10": "bcf2f20da8b7d27cbdf166663c838ea0972d14cf71037f7c15ae11c5d7d163e9",
+    "proxies_100": "e2e518ad93ceae888340c580397f2049ccfb16ba4d70dd39800ee69c69fd0be3"
+   }
+  },
+  "clump": {
+   "path": "/data/opengwasdb/work/ogld/realdata/403-analyses",
+   "source": "default",
+   "env": "OPENGWASDB_LD_403_ANALYSES",
+   "file": "hits.tsv",
+   "analyses": [
+    "OGS-00009__ukb-b-16489",
+    "OGS-00009__ukb-b-4171",
+    "OGS-00009__ukb-b-9685",
+    "OGS-00011__GCST90000025",
+    "OGS-00011__GCST90002401",
+    "OGS-00011__GCST90012057",
+    "OGS-00011__GCST90012107",
+    "OGS-00011__GCST90012111",
+    "OGS-00011__GCST90025947",
+    "OGS-00011__GCST90025960",
+    "OGS-00011__GCST90025965",
+    "OGS-00011__GCST90025973",
+    "OGS-00011__GCST90025993",
+    "OGS-00011__GCST90025996",
+    "OGS-00011__GCST90029004",
+    "OGS-00011__GCST90029011",
+    "OGS-00011__GCST90029025",
+    "OGS-00011__GCST90134590",
+    "OGS-00011__GCST90162563",
+    "OGS-00011__GCST90239658",
+    "OGS-00011__GCST90239826",
+    "OGS-00011__GCST90271559",
+    "OGS-00011__GCST90274804",
+    "OGS-00011__GCST90319610",
+    "OGS-00011__GCST90319613",
+    "OGS-00011__GCST90319621",
+    "OGS-00011__GCST90319631",
+    "OGS-00011__GCST90559267",
+    "OGS-00011__GCST90704619",
+    "OGS-00011__GCST90704637",
+    "OGS-00012__GCST90475442",
+    "OGS-00012__GCST90475446",
+    "OGS-00012__GCST90475523",
+    "OGS-00012__GCST90475532",
+    "OGS-00012__GCST90475852",
+    "OGS-00012__GCST90476249",
+    "OGS-00012__GCST90476460"
+   ],
+   "hits": 1608735,
+   "manifest_sha256": "ded720a3cde1f7bc4f93c857f95f9a03206282b052d0efa1fbf092ca173fe7e9",
+   "sha256": "74950ca90e43db4f0d2b6b993f75e7972b298d3ff033a01babe69d1a40546f7c",
+   "r2": 0.01,
+   "kb": 3000,
+   "score": "|z|"
+  }
+ },
+ "stores": [
+  {
+   "ld_id": "OGL-00006",
+   "kind": "ld_store",
+   "label": "hgdp1kgp-v2-EUR-k10 (Partner Rows)",
+   "location": "/data/opengwasdb/work/ogld/scratch/64/81-eur",
+   "status": "measured",
+   "measures": {
+    "open": {
+     "status": "measured",
+     "first_read_ms": 25.903,
+     "median_ms": 12.576,
+     "p95_ms": 16.048,
+     "reps": 5
+    },
+    "matrix_10": {
+     "status": "measured",
+     "first_read_ms": 597.68,
+     "median_ms": 0.581,
+     "p95_ms": 0.829,
+     "reps": 5,
+     "result_count": 10,
+     "first_result_count": 10,
+     "absent": 0
+    },
+    "matrix_500": {
+     "status": "measured",
+     "first_read_ms": 464.735,
+     "median_ms": 3.327,
+     "p95_ms": 5.438,
+     "reps": 5,
+     "result_count": 500,
+     "first_result_count": 500,
+     "absent": 0
+    },
+    "region_1mb": {
+     "status": "measured",
+     "first_read_ms": 196.16,
+     "median_ms": 110.926,
+     "p95_ms": 115.103,
+     "reps": 5,
+     "result_count": 3790,
+     "first_result_count": 3790
+    },
+    "region_3mb": {
+     "status": "measured",
+     "first_read_ms": 808.588,
+     "median_ms": 594.934,
+     "p95_ms": 642.342,
+     "reps": 5,
+     "result_count": 10364,
+     "first_result_count": 10364
+    },
+    "proxies_1": {
+     "status": "measured",
+     "first_read_ms": 56.542,
+     "median_ms": 0.391,
+     "p95_ms": 0.554,
+     "reps": 5,
+     "result_count": 60,
+     "first_result_count": 60,
+     "absent": 0
+    },
+    "proxies_10": {
+     "status": "measured",
+     "first_read_ms": 230.313,
+     "median_ms": 1.533,
+     "p95_ms": 1.724,
+     "reps": 5,
+     "result_count": 402,
+     "first_result_count": 402,
+     "absent": 0
+    },
+    "proxies_100": {
+     "status": "not_applicable",
+     "reason": "the Store has no Partner Rows (provenance has no t_partner)"
+    },
+    "clump": {
+     "status": "measured",
+     "first_read_ms": 10351.431,
+     "median_ms": 8687.269,
+     "p95_ms": 8930.884,
+     "reps": 3,
+     "result_count": 1608735,
+     "first_result_count": 1608735,
+     "analyses": 37,
+     "hits": 1608735,
+     "leads": 23445
+    },
+    "bytes_on_disk": {
+     "status": "measured",
+     "bytes": 84969553324,
+     "source": "walk",
+     "store_bytes": 478327170
+    },
+    "peak_rss": {
+     "status": "measured",
+     "baseline_mb": 57.3,
+     "peak_mb": 1146.1,
+     "delta_mb": 1088.8,
+     "result_count": 10364,
+     "query": "region_3mb"
+    }
+   }
+  },
+  {
+   "ld_id": "OGL-00007",
+   "kind": "genotype_store",
+   "label": "hgdp1kgp-v2-EUR-k10",
+   "location": "/data/opengwasdb/ld-stores/hgdp1kgp-v2-EUR/hgdp1kgp-v2-EUR-k10.store",
+   "status": "measured",
+   "measures": {
+    "open": {
+     "status": "measured",
+     "first_read_ms": 33.874,
+     "median_ms": 18.918,
+     "p95_ms": 22.323,
+     "reps": 5
+    },
+    "matrix_10": {
+     "status": "measured",
+     "first_read_ms": 540.639,
+     "median_ms": 2.154,
+     "p95_ms": 2.852,
+     "reps": 5,
+     "result_count": 10,
+     "first_result_count": 10,
+     "absent": 0
+    },
+    "matrix_500": {
+     "status": "measured",
+     "first_read_ms": 50.017,
+     "median_ms": 14.325,
+     "p95_ms": 16.335,
+     "reps": 5,
+     "result_count": 500,
+     "first_result_count": 500,
+     "absent": 0
+    },
+    "region_1mb": {
+     "status": "measured",
+     "first_read_ms": 285.195,
+     "median_ms": 281.509,
+     "p95_ms": 284.895,
+     "reps": 5,
+     "result_count": 3790,
+     "first_result_count": 3790
+    },
+    "region_3mb": {
+     "status": "measured",
+     "first_read_ms": 1941.663,
+     "median_ms": 1993.838,
+     "p95_ms": 2008.347,
+     "reps": 5,
+     "result_count": 10364,
+     "first_result_count": 10364
+    },
+    "proxies_1": {
+     "status": "measured",
+     "first_read_ms": 176.012,
+     "median_ms": 55.926,
+     "p95_ms": 61.972,
+     "reps": 5,
+     "result_count": 60,
+     "first_result_count": 60,
+     "absent": 0
+    },
+    "proxies_10": {
+     "status": "measured",
+     "first_read_ms": 1186.92,
+     "median_ms": 984.684,
+     "p95_ms": 1010.101,
+     "reps": 5,
+     "result_count": 402,
+     "first_result_count": 402,
+     "absent": 0
+    },
+    "proxies_100": {
+     "status": "measured",
+     "first_read_ms": 7706.727,
+     "median_ms": 7345.035,
+     "p95_ms": 7364.495,
+     "reps": 5,
+     "result_count": 4937,
+     "first_result_count": 4937,
+     "absent": 0
+    },
+    "clump": {
+     "status": "measured",
+     "first_read_ms": 18947.936,
+     "median_ms": 14534.365,
+     "p95_ms": 15121.756,
+     "reps": 3,
+     "result_count": 1608735,
+     "first_result_count": 1608735,
+     "analyses": 37,
+     "hits": 1608735,
+     "leads": 23445
+    },
+    "bytes_on_disk": {
+     "status": "measured",
+     "bytes": 5613571291,
+     "source": "walk",
+     "store_bytes": 1474533909,
+     "genotype_bytes": 4139037382
+    },
+    "peak_rss": {
+     "status": "unavailable",
+     "error": "the worker was killed reading /data/opengwasdb/work/ogld/scratch/64/81-eur"
+    }
+   }
+  }
+ ]
+}

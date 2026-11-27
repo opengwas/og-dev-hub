@@ -28,6 +28,7 @@
         facts),
       el("div", { class: "tile-more" },
         row.url ? el("p", {}, D.link(row.store_id + " in the registry", row.url)) : null,
+        row.benchmark ? el("p", {}, el("a", { href: row.benchmark.href }, row.benchmark.text)) : null,
         row.description ? el("p", {}, row.description) : null,
         row.notes ? el("p", {}, el("strong", {}, "Notes: "), row.notes) : null, why));
   }
@@ -44,7 +45,7 @@
 
   function ldSection(ld) {
     return [el("h2", { class: "section-heading" }, "LD resources"),
-      D.alert("note", el("p", {}, ld.benchmarking)),
+      ld.benchmarking ? D.alert("note", el("p", {}, ld.benchmarking)) : null,
       ld.available ? tiles(ld.rows, "ld-") : D.alert("note", el("p", {}, ld.notice))];
   }
 

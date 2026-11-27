@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 
 import yaml
+from yardstick.fixture import write_ld_records
 
 ANALYSES_HEADER = "analysis_id\tassigned_ancestry\tsample_size\texclude_from_build"
 # OGS-00001's Release Manifest: three built rows with a sample size (100, 200, 300), one built row without,
@@ -38,7 +39,7 @@ def write_bundle(registry: Path, store_id: str, *, release: dict, build: dict, v
         (root / "validation.yaml").write_text(yaml.safe_dump(validation))
 
 
-def make_registry(root: Path) -> Path:
+def make_registry(root: Path, *, ld_run: bool = False) -> Path:
     """`root/stores/` with a Dense, a Hybrid and a Ragged Store, and `root/docs/_yardstick/` with three results."""
     stores = root / "stores"
     stores.mkdir(parents=True)
@@ -106,7 +107,7 @@ def make_registry(root: Path) -> Path:
         validation={"status": "passed", "observed": {"has_rho": None}},
         analyses="analysis_id\tassigned_ancestry\tsample_size\texclude_from_build\nH1\tEUR\t5\ttrue\n",
     )
-    make_ld_registry(root)
+    make_ld_registry(root, measured=ld_run)
     (stores / "by-label").mkdir()
     (stores / "README.md").write_text("x")
     results = root / "docs" / "_yardstick"
@@ -123,6 +124,8 @@ def make_registry(root: Path) -> Path:
             store("OGS-00002", "hybrid", 150.0, bytes_=1_000_000_000, rss=320.0, new=True)], cpus=224)),
     ):
         (results / name).write_text(json.dumps(doc))
+    if ld_run:
+        (results / "20261127T121611Z-0.27.0.json").write_text(json.dumps(ld_run_result()))
     broken = copy.deepcopy(json.loads((results / "20261117T113000Z-0.10.0.json").read_text()))
     broken["schema"] = 99
     (results / "20261118T000000Z-broken.json").write_text(json.dumps(broken))
@@ -204,7 +207,7 @@ LD_PANEL = {
 }
 
 
-def make_ld_registry(root: Path) -> None:
+def make_ld_registry(root: Path, *, measured: bool = False) -> None:
     """Five rows: an LD Store served, a Genotype Store built, an LD Store retired, one kept as `reference`, and an LD panel
     (whose `n_variants` its declaration does not hold, so that cell is empty)."""
     records = [
@@ -217,10 +220,38 @@ def make_ld_registry(root: Path) -> None:
                   notes="retired 2026-11-27: its files are deleted"),
         ld_record("OGL-00004", "ld_store", "reference", provenance={"ancestry": "AMR", "n": 345}),
     ]
-    for record in records:
-        directory = root / "stores" / "ld" / record["ld_id"]
-        directory.mkdir(parents=True)
-        (directory / "record.yaml").write_text(yaml.safe_dump(record, sort_keys=False))
+    if measured:  # the two Stores the LD yardstick measures (`ld_run_result`): an LD Store with Partner Rows, and a Genotype Store
+        records += [ld_record("OGL-00006", "ld_store", "built", provenance={"t_partner": 0.01}),
+                    ld_record("OGL-00007", "genotype_store", "built", measured={"genotype_bytes": 4_139_037_382})]
+    write_ld_records(root / "stores" / "ld", *records)  # the owner's writer (opengwasdb-stores' `yardstick.fixture`)
     panel = root / "resources" / "reference-resources" / LD_PANEL["resource_id"]
     panel.mkdir(parents=True)
     (panel / "resource.yaml").write_text(yaml.safe_dump(LD_PANEL, sort_keys=False))
+
+
+# ---------------------------------------------------------------------------
+# The LD yardstick (og-dev-hub#10, opengwasdb-stores#504): a result with an `ld` section. The section is the smoke
+# result's (`notes/504-smoke/fix2/20261127T121611Z-0.27.0.json`, workload yardstick-6) as it was written, `location`
+# and the clump input's host path included, but for one record: OGL-00006's `proxies_100` is `not_applicable` here,
+# so the table has a reason to show. OGL-00007's `peak_rss` is `unavailable` (its error holds a host path).
+# ---------------------------------------------------------------------------
+
+LD_SECTION = Path(__file__).with_name("ld_yardstick_section.json")
+
+
+def ld_run_result() -> dict:
+    return {**run("yardstick-6", "0.27.0", "2026-11-27T12:16:11Z", 1.0, [
+        store("OGS-00001", "dense", 90.0, bytes_=62_100_000_000, rss=950.0, new=True, top_hits="scan")]),
+        "ld": json.loads(LD_SECTION.read_text())}
+
+
+def ld_run_result_with_host_paths() -> dict:
+    result = ld_run_result()
+    result["opengwasdb"]["version"] = "0.27.0+/data/opengwasdb/work/engine"
+    result["ld"]["ogquery"]["version"] = "0.5.0 at /data/opengwasdb/work/ogquery"
+    ld6, ld7 = result["ld"]["stores"]
+    ld6["label"] = "/data/opengwasdb/work/ogld/EUR file:///tmp/work/foo"
+    ld6["measures"]["region_1mb"]["path"] = "/data/opengwasdb/work/path-in-a-measure"
+    ld6["measures"]["proxies_100"]["reason"] = ["read /data/opengwasdb/x failed", "see file:///tmp/work/bar"]
+    ld7["measures"]["clump"] = {"status": "unavailable", "error": {"file://localhost/tmp/build/input": "read failed"}}
+    return result

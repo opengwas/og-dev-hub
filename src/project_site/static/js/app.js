@@ -149,6 +149,7 @@
   function current() {
     var hash = window.location.hash.replace(/^#/, "");
     if (hash.indexOf("component-") === 0) return "architecture";
+    if (hash.indexOf("ld-bench-") === 0) return "benchmarking";
     return document.getElementById("pane-" + hash) ? hash : "stores";
   }
 

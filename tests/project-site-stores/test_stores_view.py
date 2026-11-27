@@ -398,6 +398,23 @@ class LdResourcesTests(Fixture):
         self.assertEqual(set(reasons), {"Variants", "Built with"})
         self.assertIn("declaration", reasons["Variants"])
 
+    def test_a_missing_sample_size_is_n_a_with_its_reason_and_not_nothing(self) -> None:
+        doc = copy.deepcopy(self.doc)
+        doc["ld_resources"]["rows"][4]["n"] = None  # the panel
+        doc["ld_resources"]["rows"][0]["n"] = None  # a Store
+        tiles = {r["store_id"]: r for r in stores_view.stores_view(doc)["ld_resources"]["rows"]}
+        self.assertEqual({f["label"]: f["display"] for f in tiles["OGL-00005"]["facts"]}["Source Panel"],
+                         "gnomAD v3.1.2 HGDP+1kGP, AMR samples only · AMR · n n/a")
+        self.assertIn({"label": "Source Panel n", "reason": "the panel's declaration holds no sample size"}, tiles["OGL-00005"]["why_na"])
+        self.assertIn({"label": "Source Panel n", "reason": "the Store's record holds no sample size"}, tiles["OGL-00001"]["why_na"])
+
+    def test_the_sample_size_gap_is_reported_even_without_a_source_panel_name(self) -> None:
+        doc = copy.deepcopy(self.doc)
+        doc["ld_resources"]["rows"][4].update(n=None, source_panel=None)
+        tile = next(r for r in stores_view.stores_view(doc)["ld_resources"]["rows"] if r["store_id"] == "OGL-00005")
+        self.assertEqual({f["label"]: f["display"] for f in tile["facts"]}["Source Panel"], "n/a")
+        self.assertIn({"label": "Source Panel n", "reason": "the panel's declaration holds no sample size"}, tile["why_na"])
+
     def test_blocks_are_a_panels_fact_and_no_store_draws_them(self) -> None:
         for ld_id, tile in self.tiles.items():
             self.assertEqual("Blocks" in self.facts(ld_id), ld_id == "OGL-00005", ld_id)
@@ -469,7 +486,7 @@ class LdResourcesTests(Fixture):
             self.assertFalse(labels & {"Top hits", "HM3", "Rho", "Clumped", "Layout", "Coverage", "Analyses"}, labels)
 
     def test_benchmarking_is_a_named_gap_worded_like_the_others(self) -> None:
-        self.assertEqual(self.ld["benchmarking"], "LD Stores are not measured yet: opengwasdb-stores#504")
+        self.assertEqual(self.ld["benchmarking"], "LD Stores are not measured yet: no committed yardstick result has an LD section.")
 
     def test_a_host_path_in_a_note_is_cut_to_its_last_name(self) -> None:
         self.assertNotIn("/data/", json.dumps(self.view))

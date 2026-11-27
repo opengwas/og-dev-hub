@@ -47,8 +47,12 @@ SUMMARY_KEYS = ("edges", "upward_edges", "upward_imports", "registry_to_engine_e
                 "adrs_total", "adrs_placed")
 
 
-# An absolute path on the host that collected (a clone's git directory, in git's own message).
-HOST_PATH = re.compile(r"(?<![\w.:/~-])/[^\s'\"`,;()]+")
+# Match a whole file URL, an absolute path starting a word, or a `/data/` path after e.g. a colon or inside an HTTP URL.
+# A relative `resources/data/` continues a word; `…/` is a cut already made.
+HOST_PATH = re.compile(
+    r"(?P<file_url>(?i:file://)[^\s'\"`,;()]*)"
+    r"|(?<![\w.:/~…-])/[^\s'\"`,;()]+|(?<![\w.~…-])/data/[^\s'\"`,;()]*"
+)
 
 
 def reason(text: Any) -> Any:
@@ -59,7 +63,16 @@ def reason(text: Any) -> Any:
     """
     if not isinstance(text, str):
         return text
-    return HOST_PATH.sub(lambda m: "…/" + m.group(0).rstrip("/").rsplit("/", 1)[-1], text)
+
+    def cut(match: re.Match[str]) -> str:
+        path = match.group(0)
+        if match.group("file_url"):
+            # Discard the authority, query and fragment as well as the machine's directories.
+            path = re.split(r"[?#]", path, maxsplit=1)[0][len("file://"):].partition("/")[2]
+        name = path.rstrip("/").rsplit("/", 1)[-1]
+        return f"…/{name}" if name else "…"
+
+    return HOST_PATH.sub(cut, text)
 
 
 def _pick(source: Any, keys: Iterable[str]) -> dict[str, Any]:

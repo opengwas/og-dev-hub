@@ -21,14 +21,16 @@ from project_site import site
 from project_site.collect import common, stores
 
 RUNNER = Path(__file__).resolve().parents[1] / "project-site-architecture" / "view_runner.js"
-# A host path under /data anywhere: at the start, after a space, quote or colon, inside a URL. Not a repository's relative `resources/data/`.
-HOST_PATH_BYTES = re.compile(rb"(?<![\w.~-])/data/")
+# Absolute /data paths and file URLs. Not a repository's relative `resources/data/`.
+HOST_PATH_BYTES = re.compile(rb"(?<![\w.~-])/data/|file://", re.IGNORECASE)
 
 
-def build(cleanup, *, stores_doc: dict | None) -> Path:
+def build(cleanup, *, stores_doc: dict | None, ld_run: bool = False, ld_result: dict | None = None) -> Path:
     root = Path(tempfile.mkdtemp(prefix="stores-site-"))
     cleanup(shutil.rmtree, root, True)
-    registry = fx.make_registry(root / "registry")
+    registry = fx.make_registry(root / "registry", ld_run=ld_run or ld_result is not None)
+    if ld_result is not None:
+        (registry.parent / "docs" / "_yardstick" / "20261127T121611Z-0.27.0.json").write_text(json.dumps(ld_result))
     data = root / "data"
     unavailable = {"source": "architecture", "available": False, "collected_at": None, "error": "not collected here"}
     common.write_source(data, unavailable)
@@ -144,7 +146,7 @@ class StoresScript(unittest.TestCase):
         text = drawn["stores"]
         self.assertIn("8 GWAS Stores", text)
         self.assertIn("5 LD resources: 3 LD Stores, 1 Genotype Store, 1 LD panel", text)
-        self.assertIn("LD Stores are not measured yet: opengwasdb-stores#504", text)
+        self.assertIn("LD Stores are not measured yet: no committed yardstick result has an LD section.", text)
         ld = {t["id"]: t for t in drawn["_tiles"] if t["id"].startswith("ld-")}
         self.assertEqual(sorted(ld), [f"ld-OGL-0000{n}" for n in range(1, 6)])
         for tile in ld.values():
@@ -183,6 +185,59 @@ class StoresScript(unittest.TestCase):
         self.assertNotIn("could not be drawn", text)
         self.assertIn("The Stores could not be collected", text)
         self.assertIn("could not be collected", self.drawn(build(self.addCleanup, stores_doc=doc), "benchmarking"))
+
+
+class LdYardstickSite(unittest.TestCase):
+    """The LD yardstick in a built site: the Benchmarking tab's LD table in `node`, the tiles' links to its rows, no host path."""
+
+    def drawn(self, out: Path) -> dict:
+        return json.loads(subprocess.run(["node", str(RUNNER), str(out)], capture_output=True, text=True, check=True, timeout=60).stdout)
+
+    def test_the_ld_table_is_drawn_with_a_row_anchor_for_each_store_and_the_tiles_link_to_them(self) -> None:
+        out = build(self.addCleanup, stores_doc=None, ld_run=True)
+        drawn = self.drawn(out)
+        text = drawn["benchmarking"]
+        self.assertNotIn("could not be drawn", text)
+        for expected in ("LD Stores", "OGL-00006", "OGL-00007", "Genotype Store", "engine 0.27.0 · ogquery 0.5.0", "unavailable: the worker was killed reading …/81-eur", "594.9 ms", "files read, links followed",
+                         "the Store's own files: 478.3 MB", "the Store has no Partner Rows", "not applicable", "LD trends across engine versions"):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, text)
+        self.assertLessEqual({"ld-bench-OGL-00006", "ld-bench-OGL-00007"}, set(drawn["_ids"]))
+        self.assertLessEqual({"#ld-bench-OGL-00006", "#ld-bench-OGL-00007"}, set(drawn["_links"]))
+        self.assertNotIn("LD Stores are not measured yet", drawn["stores"])
+        for path in out.rglob("*"):
+            if path.is_file():
+                with self.subTest(path=str(path.relative_to(out))):
+                    self.assertIsNone(HOST_PATH_BYTES.search(path.read_bytes()))
+
+    def test_a_result_with_host_paths_keeps_them_out_of_the_site_and_trend_tooltips(self) -> None:
+        out = build(self.addCleanup, stores_doc=None, ld_result=fx.ld_run_result_with_host_paths())
+        for path in out.rglob("*"):
+            if path.is_file():
+                with self.subTest(path=str(path.relative_to(out))):
+                    self.assertNotRegex(path.read_bytes(), HOST_PATH_BYTES)
+        data = json.loads((out / "data" / "benchmarking.json").read_text(encoding="utf-8"))
+        ld = data["yardstick"]["ld"]
+        self.assertEqual(ld["stores"][0]["label"], "…/EUR …/foo")
+        self.assertEqual(ld["stores"][0]["versions"], "engine 0.27.0+…/engine · ogquery 0.5.0 at …/ogquery")
+        svg = next(t for t in ld["trends"] if t["measure"] == "region_1mb")["svg"]
+        self.assertIn("<title>OGL-00006 · engine 0.27.0+…/engine ·", svg)
+        self.assertNotIn("via", svg)
+
+    def test_a_link_to_an_ld_row_opens_the_benchmarking_tab_at_that_row(self) -> None:
+        out = build(self.addCleanup, stores_doc=None, ld_run=True)
+        done = subprocess.run(["node", str(RUNNER), str(out), "#ld-bench-OGL-00006"], capture_output=True, text=True, check=True, timeout=60)
+        opened = json.loads(done.stdout)
+        self.assertEqual([v for v, shown in opened["_panes"].items() if shown], ["benchmarking"])
+        self.assertTrue(opened["_target"])
+        self.assertEqual(opened["_scrolled"], ["ld-bench-OGL-00006"])
+
+    def test_without_an_ld_result_the_gap_is_drawn_and_there_are_no_ld_rows(self) -> None:
+        drawn = self.drawn(build(self.addCleanup, stores_doc=None))
+        self.assertIn("LD Stores are not measured yet: LD not measured in this run (2026-11-17)", drawn["benchmarking"])
+        self.assertIn("LD Stores are not measured yet: no committed yardstick result has an LD section.", drawn["stores"])
+        self.assertFalse([i for i in drawn["_ids"] if i.startswith("ld-bench-")])
+        self.assertFalse([l for l in drawn["_links"] if l.startswith("#ld-bench-")])
 
 
 if __name__ == "__main__":

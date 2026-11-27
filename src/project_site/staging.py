@@ -107,10 +107,10 @@ def extract_tree(clone: Path, ref: str, dest: Path) -> str:
     if commit is None:
         raise CollectError(f"{clone} cannot be extracted at {ref}: {why}")
     present = [path for path in REGISTRY_TREE if _git(clone, "ls-tree", "--name-only", commit, "--", path).strip()]
-    declared = [
-        name for name in _git(clone, "ls-tree", "-r", "--name-only", commit, "--", RESOURCE_DECLARATIONS).splitlines()
-        if name.endswith(f"/{DECLARATION}") and name.count("/") == RESOURCE_DECLARATIONS.count("/") + 2
-    ]
+    # The NUL-safe listing (`Tree`): git quotes a path such as `panél/resource.yaml` in its line form, and it would be dropped.
+    slashes = RESOURCE_DECLARATIONS.count("/") + 2
+    declared = [name for name in Tree(clone, commit, only=[RESOURCE_DECLARATIONS]).files
+                if name.endswith(f"/{DECLARATION}") and name.count("/") == slashes]
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)

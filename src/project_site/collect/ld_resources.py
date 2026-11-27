@@ -15,7 +15,6 @@ else (ADR 0001: a gap never fails the build).
 
 from __future__ import annotations
 
-import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -33,17 +32,9 @@ PUBLIC = TEXT + NUMBERS + ("record",)
 # Where a row's `record` may point: a record under `stores/ld/`, or a declaration under `resources/reference-resources/`.
 RECORD_DIRECTORIES = (LD_ROOT.as_posix(), REFERENCE_RESOURCES_DIR.as_posix())
 
-# `architecture_public.reason` leaves a path after a colon (`receipt:/data/x`) or inside a URL (`file:///data/x`): any
-# `/data/` not continuing a relative path (`resources/data/`) is a host path, and is cut to its last name as `reason` does.
-_DATA_PATH = re.compile(r"(?<![\w.~-])/data/[^\s'\"`,;()]*")
-
-
 def scrub(value: Any) -> str | None:
     """A text value as the public site may show it: text (a number in a text column is shown as written), no host path."""
-    if value is None:
-        return None
-    shown = architecture_public.reason(str(value))
-    return _DATA_PATH.sub(lambda m: "…/" + m.group(0).rstrip("/").rsplit("/", 1)[-1], shown)
+    return None if value is None else architecture_public.reason(str(value))
 
 
 def number(value: Any) -> int | float | None:

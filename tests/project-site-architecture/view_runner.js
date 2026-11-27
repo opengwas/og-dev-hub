@@ -1,6 +1,9 @@
 // Run the site's view scripts against a built `_site/` in node, with the little DOM they use (og-dev-hub#15).
 //
-//   node view_runner.js <_site>
+//   node view_runner.js <_site> [#hash]
+//
+// With a hash, the page is opened at it directly instead of at each view: the output is `{_panes, _target, _scrolled}`,
+// which pane is shown, whether the element the hash names was drawn, and what was scrolled into view.
 //
 // Prints one JSON object: each view's name to the text it drew. A view that throws
 // is drawn by app.js as "This view could not be drawn: ...", which the test looks for.
@@ -12,6 +15,7 @@ const site = process.argv[2];
 const byId = {};
 const all = [];
 const listeners = {};
+const scrolled = [];
 
 class Base {
   constructor() { this.children = []; }
@@ -25,13 +29,14 @@ class Text extends Base {
 }
 class Element extends Base {
   constructor(tag) { super(); this.tagName = tag.toUpperCase(); this.attributes = {}; this.hidden = false; this.open = false; all.push(this); }
+  get id() { return this.attributes.id; }
   get classes() { return String(this.attributes.class || "").split(" "); }
   setAttribute(key, value) { this.attributes[key] = value; if (key === "id") byId[value] = this; }
   getAttribute(key) { return this.attributes[key]; }
   removeAttribute(key) { delete this.attributes[key]; }
   set className(value) { this.attributes.class = value; }
   addEventListener() {}
-  scrollIntoView() {}
+  scrollIntoView() { scrolled.push(this.attributes.id); }
   set innerHTML(markup) { this.children = [new Text("[markup]")]; }
 }
 
@@ -43,7 +48,8 @@ global.document = {
   getElementById: (id) => byId[id] || null,
   // Only the one selector the Stores script uses: an open tile.
   querySelectorAll: (selector) => selector === "details.tile[open]"
-    ? all.filter((e) => e.tagName === "DETAILS" && e.classes.includes("tile") && e.open) : [],
+    ? all.filter((e) => e.tagName === "DETAILS" && e.classes.includes("tile") && e.open)
+    : selector === ".pane" ? all.filter((e) => e.classes.includes("pane")) : [],
   addEventListener: (event, handler) => {
     if (event === "DOMContentLoaded") global.ready = handler;
     else (listeners[event] = listeners[event] || []).push(handler);
@@ -63,6 +69,8 @@ global.fetch = async (url) => {
 const views = ["architecture", "decisions", "context", "stores", "benchmarking"];
 for (const view of views) {
   byId[`pane-${view}`] = new Element("section");
+  byId[`pane-${view}`].setAttribute("id", `pane-${view}`);
+  byId[`pane-${view}`].setAttribute("class", "pane");
   byId[`${view}-content`] = new Element("div");
 }
 byId["theme-switch"] = new Element("button");
@@ -71,6 +79,15 @@ for (const script of ["app", ...views]) {
 }
 
 (async () => {
+  if (process.argv[3]) {
+    window.location.hash = process.argv[3];
+    global.ready();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const panes = {};
+    for (const view of views) panes[view] = !byId[`pane-${view}`].hidden;
+    process.stdout.write(JSON.stringify({ _panes: panes, _target: !!byId[process.argv[3].slice(1)], _scrolled: scrolled }));
+    return;
+  }
   for (const view of views) {
     window.location.hash = `#${view}`;
     global.ready();
@@ -101,5 +118,7 @@ for (const script of ["app", ...views]) {
     (listeners.keydown || []).forEach((h) => h({ key: "a", target: null }));
     drawn._otherKey = tiles[0].open;
   }
+  drawn._ids = Object.keys(byId);
+  drawn._links = all.filter((e) => e.tagName === "A" && e.attributes.href).map((e) => e.attributes.href);
   process.stdout.write(JSON.stringify(drawn));
 })();

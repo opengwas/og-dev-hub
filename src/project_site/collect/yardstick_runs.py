@@ -15,12 +15,48 @@ from typing import Any
 
 from yardstick import result as yardstick_result
 
+from project_site import architecture_public
+
 # What a measure record may carry that the view draws (`path` is `top_hits`': `index` or `scan`, which differ in kind); every other key stays in the registry.
 RECORD_KEYS = ("status", "median_ms", "p95_ms", "reps", "reason", "error", "peak_mb", "bytes", "source", "path")
+# What the LD view draws of a measure record, and no GWAS-only key (`path` and `source` are `top_hits`' and the walk's). An LD
+# Store's `bytes_on_disk` is the files a query reads, links followed (`bytes`); `store_bytes` is the Store's own files
+# and `genotype_bytes` a Genotype Store's pgen, psam and pvar files.
+LD_RECORD_KEYS = ("status", "median_ms", "p95_ms", "reason", "error", "peak_mb", "bytes", "store_bytes", "genotype_bytes")
 
 
-def _record(record: dict[str, Any]) -> dict[str, Any]:
-    return {k: record[k] for k in RECORD_KEYS if k in record}
+def _record(record: dict[str, Any], keys: tuple[str, ...] = RECORD_KEYS) -> dict[str, Any]:
+    return {k: record[k] for k in keys if k in record}
+
+
+def _clean(value: Any) -> Any:
+    """A display value of a result with each host path in any text, in a list or a mapping, cut to its last name."""
+    if isinstance(value, str):
+        return architecture_public.reason(value)
+    if isinstance(value, list):
+        return [_clean(v) for v in value]
+    if isinstance(value, dict):
+        return {architecture_public.reason(k): _clean(v) for k, v in value.items()}
+    return value
+
+
+def _ld(section: Any) -> dict[str, Any] | None:
+    """A run's `ld` section (opengwasdb-stores#504) as the view draws it, or `None` for a run without one: LD was not
+    measured in that run, which is not a measure of zero. Each Store is read through `_record` as a GWAS Store is.
+    `location` (a host path) and the inputs (the clump input's path among them) are not kept: only the reader's version is."""
+    if not isinstance(section, dict):
+        return None
+    return {
+        "ogquery_version": _clean((section.get("ogquery") or {}).get("version")),
+        "stores": {
+            store["ld_id"]: {
+                "kind": _clean(store["kind"]), "label": _clean(store.get("label")), "status": _clean(store["status"]),
+                "reason": _clean(store.get("reason")),
+                "measures": {name: _clean(_record(rec, LD_RECORD_KEYS)) for name, rec in (store.get("measures") or {}).items()},
+            }
+            for store in section.get("stores") or []
+        },
+    }
 
 
 def _run(file: str, doc: dict[str, Any]) -> dict[str, Any]:
@@ -33,14 +69,15 @@ def _run(file: str, doc: dict[str, Any]) -> dict[str, Any]:
         }
     return {
         "file": file,
-        "workload_id": doc.get("workload_id"),
-        "engine_version": doc["opengwasdb"]["version"],
+        "workload_id": _clean(doc.get("workload_id")),
+        "engine_version": _clean(doc["opengwasdb"]["version"]),
         "engine_revision": doc["opengwasdb"]["revision"],
         "started_utc": doc["started_utc"],
         "cpu_count": doc["host"]["cpu_count"],
         "load_average": doc["load_average"],
         "veeam_window": doc["veeam_window"],
         "stores": stores,
+        "ld": _ld(doc.get("ld")),
     }
 
 
